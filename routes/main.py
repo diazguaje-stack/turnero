@@ -5,6 +5,14 @@ from utils.auth import login_required, hash_password, verify_password
 
 main_bp = Blueprint('main', __name__)
 
+
+@main_bp.route('/')
+def index():
+    """Ruta raíz: redirige al dashboard si está autenticado, sino al login"""
+    if session.get('user_id'):
+        return redirect(url_for('main.dashboard'))
+    return redirect(url_for('auth.login'))
+
 @main_bp.route('/dashboard')
 @login_required
 def dashboard():
