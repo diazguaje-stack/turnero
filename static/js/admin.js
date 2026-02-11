@@ -505,6 +505,21 @@ function showCreateUserModal() {
     showModal('createUserModal');
 }
 
+// Alternar visibilidad de contraseña en modales
+function togglePasswordVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    const icon = btn.querySelector('i');
+    if (input.type === 'password') {
+        input.type = 'text';
+        if (icon) icon.classList.remove('fa-eye'), icon.classList.add('fa-eye-slash');
+    } else {
+        input.type = 'password';
+        if (icon) icon.classList.remove('fa-eye-slash'), icon.classList.add('fa-eye');
+    }
+}
+
 // Cargar datos al cambiar de tab
 const originalSwitchTab = window.switchTab;
 window.switchTab = function(tabName) {

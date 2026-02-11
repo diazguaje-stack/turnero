@@ -126,7 +126,12 @@
             </div>
             <div class="form-group">
                 <label>Contraseña</label>
-                <input type="password" name="password" required minlength="8">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="password" id="createUserPassword" name="password" required minlength="8" style="flex:1;">
+                    <button type="button" class="password-toggle" onclick="togglePasswordVisibility('createUserPassword', this)" title="Mostrar / Ocultar contraseña" style="background:none;border:none;cursor:pointer;padding:6px 8px;color:#667eea;font-size:16px;">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </div>
             </div>
             <div class="form-group">
                 <label>Rol</label>
