@@ -180,6 +180,22 @@ MAIL_PASSWORD=uvadtlstdtrnqhjx
 - Verifica credenciales SMTP (`MAIL_USERNAME`, `MAIL_PASSWORD`).
 - Si usas Gmail con 2FA, confirma que usaste **contraseña de aplicación**.
 - Comprueba en Render Logs si hay errores de SMTP.
+- Ejecuta en Render Shell: `python scripts/check_mail_config.py` para diagnosticar.
+
+**Pasos para configurar Gmail en Render:**
+1. Ve a [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+2. Si no ves esa opción, activa **2-Step Verification** primero.
+3. Selecciona `Mail` y `Windows Computer` (aplica a cualquier dispositivo).
+4. Google generará una contraseña de 16 caracteres → **cópiala**.
+5. En Render → Environment Variables:
+   - `MAIL_SERVER` = `smtp.gmail.com`
+   - `MAIL_PORT` = `587`
+   - `MAIL_USE_TLS` = `True`
+   - `MAIL_USERNAME` = `tu-correo@gmail.com`
+   - `MAIL_PASSWORD` = `[los 16 caracteres generados]` (sin espacios)
+6. Haz clic en "Save, rebuild, and deploy".
+7. Espera a que Render redeploy la app.
+8. Prueba la recuperación de contraseña.
 
 ### "Sesión no persiste / Login no funciona"
 - Verifica que `SECRET_KEY` esté seteado (e igual en todas las instancias si usas múltiples dynos).

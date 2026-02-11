@@ -4,10 +4,32 @@ Utilidad para envío de correos electrónicos
 from flask_mail import Message
 from extensions import mail
 from datetime import datetime
+import os
+
+# Verificar si las credenciales de correo están configuradas
+def check_mail_config():
+    """Verificar que las credenciales de correo estén presentes"""
+    config = {
+        'MAIL_SERVER': os.environ.get('MAIL_SERVER', ''),
+        'MAIL_PORT': os.environ.get('MAIL_PORT', ''),
+        'MAIL_USERNAME': os.environ.get('MAIL_USERNAME', ''),
+        'MAIL_PASSWORD': os.environ.get('MAIL_PASSWORD', ''),
+    }
+    
+    missing = [k for k, v in config.items() if not v]
+    if missing:
+        print(f"⚠️  Credenciales de correo incompletas: falta {', '.join(missing)}")
+        return False
+    return True
 
 def send_password_reset_email(user_email, user_name, reset_url):
     """Enviar correo de recuperación de contraseña"""
     try:
+        # Validar configuración de correo
+        if not check_mail_config():
+            print(f"❌ Error: Credenciales de correo no configuradas en Render")
+            return False
+        
         msg = Message(
             subject='Recuperación de Contraseña - Turnero Médico',
             recipients=[user_email],
@@ -63,12 +85,23 @@ def send_password_reset_email(user_email, user_name, reset_url):
             """
         )
         
+        print(f"✅ Enviando correo a {user_email}...")
         mail.send(msg)
         print(f"✅ Correo de recuperación enviado a {user_email}")
         return True
         
+    except OSError as e:
+        print(f"❌ Error de conexión SMTP (OSError): {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    except ConnectionError as e:
+        print(f"❌ Error de conexión (ConnectionError): {e}")
+        import traceback
+        traceback.print_exc()
+        return False
     except Exception as e:
-        print(f"❌ Error enviando correo a {user_email}: {e}")
+        print(f"❌ Error enviando correo a {user_email}: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
         return False

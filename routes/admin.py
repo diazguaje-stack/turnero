@@ -524,3 +524,61 @@ def send_email_message():
         }), 500
     finally:
         db.close()
+
+
+# ============================================================
+# DIAGNÓSTICO DE CONFIGURACIÓN DE CORREO
+# ============================================================
+
+@admin_bp.route('/mail-config')
+@login_required
+@role_required('admin')
+def mail_config():
+    """Diagnosticar configuración de correo SMTP (solo admin)"""
+    import os
+    
+    try:
+        config_status = {
+            'MAIL_SERVER': os.environ.get('MAIL_SERVER', 'smtp.gmail.com'),
+            'MAIL_PORT': os.environ.get('MAIL_PORT', '587'),
+            'MAIL_USE_TLS': os.environ.get('MAIL_USE_TLS', 'True'),
+            'MAIL_USERNAME': os.environ.get('MAIL_USERNAME', ''),
+            'MAIL_PASSWORD_SET': bool(os.environ.get('MAIL_PASSWORD', False)),
+        }
+        
+        # Intentar conexión
+        connection_status = None
+        try:
+            import smtplib
+            
+            server = smtplib.SMTP(
+                config_status['MAIL_SERVER'],
+                int(config_status['MAIL_PORT']),
+                timeout=5
+            )
+            server.starttls()
+            
+            if config_status['MAIL_USERNAME'] and os.environ.get('MAIL_PASSWORD'):
+                server.login(
+                    config_status['MAIL_USERNAME'],
+                    os.environ.get('MAIL_PASSWORD')
+                )
+            
+            server.quit()
+            connection_status = 'success'
+        except smtplib.SMTPAuthenticationError:
+            connection_status = 'auth_error'
+        except Exception as e:
+            connection_status = f'connection_error: {str(e)}'
+        
+        return jsonify({
+            'success': True,
+            'config': config_status,
+            'connection': connection_status
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
