@@ -2,9 +2,21 @@
 
 let availableUsers = {}; // Cache de usuarios por rol
 
+// Helper para fetch que incluye cookies y marca la petición como AJAX
+async function apiFetch(url, options = {}) {
+    options.credentials = options.credentials || 'same-origin';
+    options.headers = options.headers || {};
+    // Marcar como petición AJAX para que el backend devuelva JSON en errores de auth
+    if (!options.headers['X-Requested-With']) {
+        options.headers['X-Requested-With'] = 'XMLHttpRequest';
+    }
+
+    return fetch(url, options);
+}
+
 async function loadUsers() {
     try {
-        const response = await fetch('/admin/users/data');
+        const response = await apiFetch('/admin/users/data');
         const users = await response.json();
         
         const grid = document.getElementById('usersGrid');
@@ -52,7 +64,7 @@ async function createUser(event) {
     const formData = new FormData(form);
     
     try {
-        const response = await fetch('/admin/create-user', {
+        const response = await apiFetch('/admin/create-user', {
             method: 'POST',
             body: formData
         });
@@ -75,7 +87,7 @@ async function createUser(event) {
 
 async function toggleUser(userId) {
     try {
-        const response = await fetch(`/admin/toggle-user/${userId}`, {
+        const response = await apiFetch(`/admin/toggle-user/${userId}`, {
             method: 'POST'
         });
         
@@ -99,7 +111,7 @@ async function deleteUser(userId, userName) {
     }
     
     try {
-        const response = await fetch(`/admin/delete-user/${userId}`, {
+        const response = await apiFetch(`/admin/delete-user/${userId}`, {
             method: 'POST'
         });
         
@@ -123,7 +135,7 @@ async function deleteUser(userId, userName) {
 
 async function loadScreens() {
     try {
-        const response = await fetch('/admin/screens/data');
+        const response = await apiFetch('/admin/screens/data');
         const screens = await response.json();
         
         const grid = document.getElementById('screensGrid');
@@ -209,7 +221,7 @@ async function loadReceptionUsers() {
     const container = document.getElementById('receptionUsersList');
     
     try {
-        const response = await fetch('/admin/users-by-role/reception');
+        const response = await apiFetch('/admin/users-by-role/reception');
         const result = await response.json();
         
         if (!result.success) {
@@ -288,7 +300,7 @@ async function createScreen(event) {
     });
     
     try {
-        const response = await fetch('/admin/create-screen', {
+        const response = await apiFetch('/admin/create-screen', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -325,7 +337,7 @@ async function deleteScreen(screenId) {
     }
     
     try {
-        const response = await fetch(`/admin/delete-screen/${screenId}`, {
+        const response = await apiFetch(`/admin/delete-screen/${screenId}`, {
             method: 'POST'
         });
         
@@ -366,7 +378,7 @@ async function loadUsersByRole(role) {
     userSelectorContainer.style.display = 'block';
     
     try {
-        const response = await fetch(`/admin/users-by-role/${role}`);
+        const response = await apiFetch(`/admin/users-by-role/${role}`);
         const result = await response.json();
         
         if (!result.success) {
@@ -454,7 +466,7 @@ async function sendMessageEmail(event) {
     };
     
     try {
-        const response = await fetch('/admin/send-email-message', {
+        const response = await apiFetch('/admin/send-email-message', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
