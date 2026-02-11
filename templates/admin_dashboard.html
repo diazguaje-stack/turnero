@@ -1,0 +1,459 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard Administrador{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <h2>Panel de Administración</h2>
+    </div>
+
+    <div class="dashboard-tabs">
+        <button class="tab-btn active" onclick="switchTab('users')">Usuarios</button>
+        <button class="tab-btn" onclick="switchTab('screens')">Pantallas</button>
+        <button class="tab-btn" onclick="switchTab('messages')">Mensajes</button>
+    </div>
+
+    <!-- Tab: Usuarios -->
+    <div class="tab-content active" id="users-tab">
+        <div class="section-header">
+            <h3>Gestión de Usuarios</h3>
+            <button class="btn-primary" onclick="showCreateUserModal()">Crear Usuario</button>
+        </div>
+
+        <div class="users-grid" id="usersGrid">
+            <div class="loading">Cargando usuarios...</div>
+        </div>
+    </div>
+
+    <!-- Tab: Pantallas -->
+    <div class="tab-content" id="screens-tab">
+        <div class="section-header">
+            <h3>Gestión de Pantallas</h3>
+            <button class="btn-primary" onclick="showCreateScreenModal()">Crear Pantalla</button>
+        </div>
+
+        <div class="screens-grid" id="screensGrid">
+            <div class="loading">Cargando pantallas...</div>
+        </div>
+    </div>
+
+    <!-- Tab: Mensajes -->
+    <div class="tab-content" id="messages-tab">
+        <div class="section-header">
+            <h3>Enviar Mensaje por Correo</h3>
+        </div>
+
+        <div class="message-form-container">
+            <form id="messageForm" onsubmit="sendMessageEmail(event)">
+                <div class="form-group">
+                    <label>
+                        <i class="fas fa-user-tag"></i>
+                        Seleccionar Rol
+                    </label>
+                    <select id="roleSelector" name="role" onchange="loadUsersByRole(this.value)" required>
+                        <option value="">-- Selecciona un rol --</option>
+                        <option value="admin">Administrador</option>
+                        <option value="reception">Recepción</option>
+                        <option value="doctor">Doctor</option>
+                        <option value="registro">Registro</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="userSelectorContainer" style="display: none;">
+                    <label>
+                        <i class="fas fa-user"></i>
+                        Seleccionar Destinatario
+                    </label>
+                    <select id="userSelector" name="user_id" required disabled>
+                        <option value="">-- Primero selecciona un rol --</option>
+                    </select>
+                    <small id="userSelectorHelp" style="display: block; margin-top: 6px; color: #666; font-size: 13px;">
+                        Se mostrará el nombre, correo y consecutivo del usuario
+                    </small>
+                </div>
+
+                <div id="recipientPreview" class="recipient-preview" style="display: none;">
+                    <div class="preview-header">
+                        <i class="fas fa-info-circle"></i>
+                        Destinatario seleccionado:
+                    </div>
+                    <div class="preview-content">
+                        <p><strong>Nombre:</strong> <span id="previewName">-</span></p>
+                        <p><strong>Correo:</strong> <span id="previewEmail">-</span></p>
+                        <p><strong>Rol:</strong> <span id="previewRole">-</span></p>
+                        <p><strong>Consecutivo:</strong> <span id="previewConsecutive">-</span></p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <i class="fas fa-envelope"></i>
+                        Asunto
+                    </label>
+                    <input type="text" name="subject" placeholder="Asunto del mensaje" required>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <i class="fas fa-comment"></i>
+                        Mensaje
+                    </label>
+                    <textarea name="message" rows="6" placeholder="Escribe tu mensaje..." required></textarea>
+                </div>
+
+                <button type="submit" class="btn-primary" id="sendMessageBtn" disabled>
+                    <i class="fas fa-paper-plane"></i>
+                    Enviar Mensaje
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Crear Usuario -->
+<div class="modal" id="createUserModal">
+    <div class="modal-content">
+        <h2>Crear Usuario</h2>
+        <form id="createUserForm" onsubmit="createUser(event)">
+            <div class="form-group">
+                <label>Nombre</label>
+                <input type="text" name="name" required>
+            </div>
+            <div class="form-group">
+                <label>Correo</label>
+                <input type="email" name="email" required>
+            </div>
+            <div class="form-group">
+                <label>Contraseña</label>
+                <input type="password" name="password" required minlength="8">
+            </div>
+            <div class="form-group">
+                <label>Rol</label>
+                <select name="role" required>
+                    <option value="admin">Administrador</option>
+                    <option value="reception">Recepción</option>
+                    <option value="doctor">Doctor</option>
+                    <option value="registro">Registro</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="submit" class="btn-primary">Crear</button>
+                <button type="button" class="btn-secondary" onclick="hideModal('createUserModal')">Cancelar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Crear Pantalla -->
+<div class="modal" id="createScreenModal">
+    <div class="modal-content modal-wide">
+        <h2>Crear Pantalla</h2>
+        <form id="createScreenForm" onsubmit="createScreen(event)">
+            <div class="form-group">
+                <label>
+                    <i class="fas fa-tv"></i>
+                    Número de Pantalla
+                </label>
+                <input type="number" name="screen_number" id="screenNumber" min="1" max="10" required>
+                <small style="display: block; margin-top: 6px; color: #666; font-size: 13px;">
+                    Ingresa un número único para identificar esta pantalla (1-10)
+                </small>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <i class="fas fa-users"></i>
+                    Asignar Usuarios de Recepción
+                </label>
+                <small style="display: block; margin-bottom: 12px; color: #666; font-size: 13px;">
+                    Selecciona qué usuarios de recepción podrán usar esta pantalla
+                </small>
+                
+                <div id="receptionUsersList" class="reception-users-list">
+                    <div class="loading-small">Cargando usuarios de recepción...</div>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="submit" class="btn-primary">
+                    <i class="fas fa-save"></i>
+                    Crear Pantalla
+                </button>
+                <button type="button" class="btn-secondary" onclick="hideModal('createScreenModal')">Cancelar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ✅ NUEVO: Modal Vista Previa de Pantalla -->
+<div class="modal" id="screenPreviewModal">
+    <div class="modal-content modal-fullscreen">
+        <div class="modal-header-custom">
+            <h2>
+                <i class="fas fa-tv"></i>
+                Vista Previa - Pantalla <span id="previewScreenNumber"></span>
+            </h2>
+            <button type="button" class="btn-close" onclick="hideModal('screenPreviewModal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="screen-preview-container">
+            <iframe id="screenPreviewIframe" frameborder="0"></iframe>
+        </div>
+        
+        <div class="modal-footer-custom">
+            <button class="btn-secondary" onclick="hideModal('screenPreviewModal')">
+                <i class="fas fa-times"></i>
+                Cerrar Vista Previa
+            </button>
+            <a id="openScreenNewTab" href="#" target="_blank" class="btn-primary">
+                <i class="fas fa-external-link-alt"></i>
+                Abrir en Nueva Pestaña
+            </a>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Estilos existentes */
+.recipient-preview {
+    background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+    border-left: 4px solid #667eea;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 20px 0;
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.preview-header {
+    font-weight: 600;
+    color: #667eea;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.preview-content p {
+    margin: 6px 0;
+    color: #333;
+    font-size: 14px;
+}
+
+.preview-content strong {
+    color: #667eea;
+    min-width: 100px;
+    display: inline-block;
+}
+
+.message-form-container {
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.form-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.form-group label i {
+    color: #667eea;
+}
+
+button[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.modal-wide {
+    max-width: 600px;
+}
+
+.reception-users-list {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px;
+    background: #f9fafb;
+}
+
+.loading-small {
+    text-align: center;
+    padding: 20px;
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.user-checkbox-item {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    margin-bottom: 8px;
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.user-checkbox-item:hover {
+    border-color: #667eea;
+    background: #f0f4ff;
+}
+
+.user-checkbox-item.checked {
+    border-color: #667eea;
+    background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+}
+
+.user-checkbox-item input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin-right: 12px;
+    cursor: pointer;
+    accent-color: #667eea;
+}
+
+.user-info {
+    flex: 1;
+}
+
+.user-info .user-name {
+    font-weight: 600;
+    color: #1f2937;
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.user-info .user-details {
+    color: #6b7280;
+    font-size: 13px;
+}
+
+.user-badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(102, 126, 234, 0.1);
+    color: #667eea;
+}
+
+.no-users-message {
+    text-align: center;
+    padding: 30px;
+    color: #6b7280;
+}
+
+.no-users-message i {
+    font-size: 48px;
+    color: #d1d5db;
+    margin-bottom: 12px;
+    display: block;
+}
+
+/* ✅ ESTILOS PARA MODAL DE VISTA PREVIA */
+.modal-fullscreen {
+    max-width: 95vw;
+    width: 95vw;
+    height: 90vh;
+    max-height: 90vh;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header-custom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 2px solid #e5e7eb;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.modal-header-custom h2 {
+    margin: 0;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.btn-close {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.btn-close:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.1);
+}
+
+.screen-preview-container {
+    flex: 1;
+    overflow: hidden;
+    background: #0f172a;
+}
+
+#screenPreviewIframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+.modal-footer-custom {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 16px 24px;
+    border-top: 2px solid #e5e7eb;
+    background: #f9fafb;
+}
+
+.screen-actions-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.btn-preview {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.btn-preview:hover {
+    background: linear-gradient(135deg, #5568d3 0%, #653a8b 100%);
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+{% endblock %}

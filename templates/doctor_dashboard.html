@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard Doctor{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <h2>Panel del Doctor</h2>
+        <div class="doctor-status">
+            <label>Estado:</label>
+            <select id="doctorStatus" onchange="updateDoctorStatus(this.value)">
+                <option value="disponible">Disponible</option>
+                <option value="en pausa">En Pausa</option>
+                <option value="no disponible">No Disponible</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="patients-section">
+        <h3>Mis Pacientes</h3>
+        <div class="patients-list" id="doctorPatients">
+            <div class="loading">Cargando pacientes...</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/doctor.js') }}"></script>
+{% endblock %}
+                                                

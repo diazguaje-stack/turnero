@@ -1,0 +1,223 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background: #0f172a;
+    color: #fff;
+    overflow: hidden;
+}
+
+.screen-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    height: 100vh;
+}
+
+.screen-left {
+    background: #1e293b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.multimedia-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #0f172a;
+}
+
+.multimedia-container img,
+.multimedia-container video {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.placeholder {
+    text-align: center;
+    padding: 60px;
+}
+
+.placeholder h2 {
+    font-size: 48px;
+    font-weight: 800;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.placeholder p {
+    font-size: 24px;
+    color: #94a3b8;
+}
+
+.screen-right {
+    background: #0f172a;
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+}
+
+.screen-header {
+    margin-bottom: 32px;
+    text-align: center;
+}
+
+.screen-header h1 {
+    font-size: 42px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 12px;
+}
+
+.current-time {
+    color: #cbd5e1;
+}
+
+.current-time .time {
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.current-time .date {
+    font-size: 16px;
+    color: #94a3b8;
+    text-transform: capitalize;
+}
+
+.patients-table-container {
+    flex: 1;
+    overflow: hidden;
+}
+
+.patients-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 12px;
+}
+
+.patients-table thead th {
+    background: #1e293b;
+    color: #94a3b8;
+    padding: 16px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.patients-table tbody tr {
+    background: #1e293b;
+    transition: all 0.3s;
+    animation: slideIn 0.5s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.patients-table tbody tr:hover {
+    transform: translateX(8px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.patients-table td {
+    padding: 20px;
+    border-top: 1px solid #334155;
+    border-bottom: 1px solid #334155;
+}
+
+.patients-table td:first-child {
+    border-left: 4px solid #667eea;
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
+}
+
+.patients-table td:last-child {
+    border-right: 1px solid #334155;
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.patients-table .code {
+    font-size: 28px;
+    font-weight: 800;
+    color: #667eea;
+    font-family: 'Courier New', monospace;
+}
+
+.patients-table .name {
+    font-size: 18px;
+    font-weight: 600;
+    color: #f1f5f9;
+}
+
+.type-badge {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.type-I {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+}
+
+.type-C {
+    background: rgba(59, 130, 246, 0.2);
+    color: #3b82f6;
+}
+
+.no-data {
+    text-align: center;
+    color: #64748b;
+    padding: 60px !important;
+    font-size: 18px;
+}
+
+@media (max-width: 1200px) {
+    .screen-container {
+        grid-template-columns: 1fr;
+        grid-template-rows: 40vh 60vh;
+    }
+
+    .screen-header h1 {
+        font-size: 32px;
+    }
+
+    .current-time .time {
+        font-size: 28px;
+    }
+
+    .patients-table .code {
+        font-size: 22px;
+    }
+
+    .patients-table .name {
+        font-size: 16px;
+    }
+}
