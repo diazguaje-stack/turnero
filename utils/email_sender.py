@@ -5,6 +5,7 @@ from flask_mail import Message
 from extensions import mail
 from datetime import datetime
 import os
+import smtplib
 
 # Verificar si las credenciales de correo están configuradas
 def check_mail_config():
@@ -90,8 +91,31 @@ def send_password_reset_email(user_email, user_name, reset_url):
         print(f"✅ Correo de recuperación enviado a {user_email}")
         return True
         
+    except ImportError as e:
+        print(f"❌ Error de importación (Flask-Mail): {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"❌ Error de autenticación SMTP: usuario o contraseña incorrectos")
+        print(f"   Detalles: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    except smtplib.SMTPServerDisconnected as e:
+        print(f"❌ Error: SMTP desconectado inesperadamente")
+        print(f"   Detalles: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    except smtplib.SMTPException as e:
+        print(f"❌ Error SMTP general: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
     except OSError as e:
-        print(f"❌ Error de conexión SMTP (OSError): {e}")
+        print(f"❌ Error de conexión (OSError): {e}")
+        print(f"   Posibles causas: firewall, puerto bloqueado, servidor incorrecto")
         import traceback
         traceback.print_exc()
         return False

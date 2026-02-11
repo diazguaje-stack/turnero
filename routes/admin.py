@@ -530,6 +530,84 @@ def send_email_message():
 # DIAGNÓSTICO DE CONFIGURACIÓN DE CORREO
 # ============================================================
 
+@admin_bp.route('/test-email', methods=['GET', 'POST'])
+@login_required
+@role_required('admin')
+def test_email():
+    """Enviar correo de prueba para diagnosticar SMTP"""
+    import os
+    
+    if request.method == 'POST':
+        test_recipient = request.form.get('test_email', '').strip().lower()
+        
+        if not test_recipient:
+            return jsonify({
+                'success': False,
+                'error': 'Por favor ingresa un correo para enviar la prueba'
+            }), 400
+        
+        # Validar que sea un correo válido
+        if '@' not in test_recipient:
+            return jsonify({
+                'success': False,
+                'error': 'Correo inválido'
+            }), 400
+        
+        try:
+            from utils.email_sender import send_password_reset_email
+            from flask import url_for
+            
+            # Usar el correo del admin como remitente
+            admin_email = session.get('user_email', 'admin@turnero.com')
+            admin_name = session.get('user_name', 'Admin')
+            
+            # Crear URL de prueba
+            test_url = url_for('auth.login', _external=True)
+            
+            print(f"\n{'='*60}")
+            print(f"🧪 PRUEBA DE CORREO SMTP")
+            print(f"{'='*60}")
+            print(f"Correo destino: {test_recipient}")
+            print(f"URL: {test_url}")
+            
+            # Intentar enviar
+            result = send_password_reset_email(
+                user_email=test_recipient,
+                user_name='Usuario de Prueba',
+                reset_url=test_url
+            )
+            
+            if result:
+                print(f"✅ Correo de prueba enviado exitosamente")
+                print(f"{'='*60}\n")
+                return jsonify({
+                    'success': True,
+                    'message': f'✅ Correo de prueba enviado exitosamente a {test_recipient}. Revisa tu bandeja (y SPAM).'
+                })
+            else:
+                print(f"❌ Fallo al enviar correo de prueba")
+                print(f"{'='*60}\n")
+                return jsonify({
+                    'success': False,
+                    'error': 'Error al enviar correo. Revisa Render Logs para más detalles.'
+                }), 500
+                
+        except Exception as e:
+            print(f"❌ Excepción en test_email: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            print(f"{'='*60}\n")
+            
+            return jsonify({
+                'success': False,
+                'error': f'{type(e).__name__}: {str(e)}'
+            }), 500
+    
+    # GET: Mostrar formulario de prueba
+    return jsonify({
+        'message': 'POST a esta ruta con JSON: {"test_email": "tu-correo@gmail.com"}'
+    })
+
 @admin_bp.route('/mail-config')
 @login_required
 @role_required('admin')
