@@ -534,7 +534,7 @@ def send_email_message():
 @login_required
 @role_required('admin')
 def test_email():
-    """Enviar correo de prueba para diagnosticar SMTP"""
+    """Enviar correo de prueba para diagnosticar SMTP (SINCRÓNICO - sin async)"""
     import os
     
     if request.method == 'POST':
@@ -554,46 +554,70 @@ def test_email():
             }), 400
         
         try:
-            from utils.email_sender import send_password_reset_email
-            from flask import url_for
-            
-            # Usar el correo del admin como remitente
-            admin_email = session.get('user_email', 'admin@turnero.com')
-            admin_name = session.get('user_name', 'Admin')
-            
-            # Crear URL de prueba
-            test_url = url_for('auth.login', _external=True)
+            from flask_mail import Message
+            from extensions import mail
+            from datetime import datetime
             
             print(f"\n{'='*60}")
-            print(f"🧪 PRUEBA DE CORREO SMTP")
+            print(f"🧪 TEST EMAIL - SINCRÓNICO (SIN ASYNC)")
             print(f"{'='*60}")
-            print(f"Correo destino: {test_recipient}")
-            print(f"URL: {test_url}")
+            print(f"Destinatario: {test_recipient}")
             
-            # Intentar enviar
-            result = send_password_reset_email(
-                user_email=test_recipient,
-                user_name='Usuario de Prueba',
-                reset_url=test_url
+            # Crear mensaje de prueba
+            msg = Message(
+                subject='[TEST] Prueba de Correo - Turnero Médico',
+                recipients=[test_recipient],
+                html=f"""
+                <html>
+                <body style="font-family: Arial; padding: 20px;">
+                    <h1>🧪 Correo de Prueba</h1>
+                    <p>Este es un correo de prueba sincrónico (sin async).</p>
+                    <p>Si recibiste este correo, las credenciales de Gmail están correctas.</p>
+                    <hr>
+                    <p><small>Timestamp: {datetime.utcnow().isoformat()}</small></p>
+                </body>
+                </html>
+                """
             )
             
-            if result:
-                print(f"✅ Correo de prueba enviado exitosamente")
-                print(f"{'='*60}\n")
-                return jsonify({
-                    'success': True,
-                    'message': f'✅ Correo de prueba enviado exitosamente a {test_recipient}. Revisa tu bandeja (y SPAM).'
-                })
-            else:
-                print(f"❌ Fallo al enviar correo de prueba")
-                print(f"{'='*60}\n")
-                return jsonify({
-                    'success': False,
-                    'error': 'Error al enviar correo. Revisa Render Logs para más detalles.'
-                }), 500
+            print(f"📧 Intentando enviar con mail.send()...")
+            mail.send(msg)
+            
+            print(f"✅ Correo enviado exitosamente")
+            print(f"{'='*60}\n")
+            
+            return jsonify({
+                'success': True,
+                'message': f'✅ Correo de prueba enviado exitosamente a {test_recipient}. Revisa tu bandeja (y SPAM).'
+            })
                 
+        except smtplib.SMTPAuthenticationError as e:
+            print(f"❌ Error de autenticación SMTP")
+            print(f"   MAIL_USERNAME: {os.environ.get('MAIL_USERNAME')}")
+            print(f"   MAIL_PASSWORD_SET: {bool(os.environ.get('MAIL_PASSWORD'))}")
+            print(f"   Detalles: {e}")
+            import traceback
+            traceback.print_exc()
+            print(f"{'='*60}\n")
+            
+            return jsonify({
+                'success': False,
+                'error': f'❌ Error de autenticación SMTP. Verifica MAIL_USERNAME y MAIL_PASSWORD en Render Environment.'
+            }), 500
+            
+        except smtplib.SMTPException as e:
+            print(f"❌ Error SMTP: {e}")
+            import traceback
+            traceback.print_exc()
+            print(f"{'='*60}\n")
+            
+            return jsonify({
+                'success': False,
+                'error': f'❌ Error SMTP: {str(e)}'
+            }), 500
+            
         except Exception as e:
-            print(f"❌ Excepción en test_email: {type(e).__name__}: {e}")
+            print(f"❌ Error: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
             print(f"{'='*60}\n")

@@ -26,16 +26,32 @@ def check_mail_config():
 
 def send_email_async(msg, app):
     """Enviar correo de forma asíncrona (en background thread)"""
-    with app.app_context():
-        try:
+    try:
+        with app.app_context():
+            print(f"\n{'='*60}")
+            print(f"🧵 THREAD: Intentando enviar correo en background...")
+            print(f"{'='*60}")
             mail.send(msg)
-            print(f"✅ Correo enviado (async)")
+            print(f"✅ THREAD: Correo enviado exitosamente")
+            print(f"{'='*60}\n")
             return True
-        except Exception as e:
-            print(f"❌ Error en thread de correo: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"❌ THREAD: Error de autenticación SMTP")
+        print(f"   Usuario/contraseña pueden ser incorrectos o Gmail lo rechazó")
+        print(f"   Detalles: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    except smtplib.SMTPException as e:
+        print(f"❌ THREAD: Error SMTP: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    except Exception as e:
+        print(f"❌ THREAD: Error enviando correo: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def send_password_reset_email(user_email, user_name, reset_url):
     """Enviar correo de recuperación de contraseña (no-bloqueante)"""
