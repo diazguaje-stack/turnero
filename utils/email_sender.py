@@ -6,6 +6,7 @@ from extensions import mail
 from datetime import datetime
 import os
 import smtplib
+import threading
 
 # Verificar si las credenciales de correo están configuradas
 def check_mail_config():
@@ -23,8 +24,21 @@ def check_mail_config():
         return False
     return True
 
+def send_email_async(msg, app):
+    """Enviar correo de forma asíncrona (en background thread)"""
+    with app.app_context():
+        try:
+            mail.send(msg)
+            print(f"✅ Correo enviado (async)")
+            return True
+        except Exception as e:
+            print(f"❌ Error en thread de correo: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
 def send_password_reset_email(user_email, user_name, reset_url):
-    """Enviar correo de recuperación de contraseña"""
+    """Enviar correo de recuperación de contraseña (no-bloqueante)"""
     try:
         # Validar configuración de correo
         if not check_mail_config():
@@ -86,53 +100,29 @@ def send_password_reset_email(user_email, user_name, reset_url):
             """
         )
         
-        print(f"✅ Enviando correo a {user_email}...")
-        mail.send(msg)
-        print(f"✅ Correo de recuperación enviado a {user_email}")
+        # Obtener la app para ejecutar en contexto
+        from flask import current_app
+        app = current_app._get_current_object()
+        
+        print(f"✅ Enviando correo a {user_email} (async)...")
+        # Enviar en thread background para no bloquear la request
+        thread = threading.Thread(target=send_email_async, args=(msg, app))
+        thread.daemon = False  # Esperar a que termine antes de cerrar app
+        thread.start()
+        
+        # Retornar True inmediatamente (el correo se envía en background)
+        print(f"✅ Correo en cola para {user_email}")
         return True
         
-    except ImportError as e:
-        print(f"❌ Error de importación (Flask-Mail): {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"❌ Error de autenticación SMTP: usuario o contraseña incorrectos")
-        print(f"   Detalles: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    except smtplib.SMTPServerDisconnected as e:
-        print(f"❌ Error: SMTP desconectado inesperadamente")
-        print(f"   Detalles: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    except smtplib.SMTPException as e:
-        print(f"❌ Error SMTP general: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    except OSError as e:
-        print(f"❌ Error de conexión (OSError): {e}")
-        print(f"   Posibles causas: firewall, puerto bloqueado, servidor incorrecto")
-        import traceback
-        traceback.print_exc()
-        return False
-    except ConnectionError as e:
-        print(f"❌ Error de conexión (ConnectionError): {e}")
-        import traceback
-        traceback.print_exc()
-        return False
     except Exception as e:
-        print(f"❌ Error enviando correo a {user_email}: {type(e).__name__}: {e}")
+        print(f"❌ Error preparando correo para {user_email}: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 
 def send_test_password_reset_email(user_email, user_name, reset_url, is_registered=False):
-    """Enviar correo de prueba para reseteo de contraseña"""
+    """Enviar correo de prueba para reseteo de contraseña (no-bloqueante)"""
     try:
         msg = Message(
             subject='[PRUEBA] Recuperación de Contraseña - Turnero Médico',
@@ -187,19 +177,27 @@ def send_test_password_reset_email(user_email, user_name, reset_url, is_register
             """
         )
         
-        mail.send(msg)
-        print(f"✅ Correo de prueba enviado a {user_email}")
+        # Obtener la app para ejecutar en contexto
+        from flask import current_app
+        app = current_app._get_current_object()
+        
+        print(f"✅ Enviando correo de prueba a {user_email} (async)...")
+        thread = threading.Thread(target=send_email_async, args=(msg, app))
+        thread.daemon = False
+        thread.start()
+        
+        print(f"✅ Correo de prueba en cola para {user_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error enviando correo de prueba a {user_email}: {e}")
+        print(f"❌ Error preparando correo de prueba para {user_email}: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 
 def send_admin_message_email(recipient_email, recipient_name, sender_name, subject, message):
-    """Enviar mensaje desde admin a usuario"""
+    """Enviar mensaje desde admin a usuario (no-bloqueante)"""
     try:
         msg = Message(
             subject=f'[Turnero Médico] {subject}',
@@ -243,19 +241,26 @@ def send_admin_message_email(recipient_email, recipient_name, sender_name, subje
             """
         )
         
-        mail.send(msg)
-        print(f"✅ Mensaje enviado a {recipient_email}")
+        from flask import current_app
+        app = current_app._get_current_object()
+        
+        print(f"✅ Enviando mensaje a {recipient_email} (async)...")
+        thread = threading.Thread(target=send_email_async, args=(msg, app))
+        thread.daemon = False
+        thread.start()
+        
+        print(f"✅ Mensaje en cola para {recipient_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error enviando mensaje a {recipient_email}: {e}")
+        print(f"❌ Error preparando mensaje para {recipient_email}: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 
 def send_welcome_email(user_email, user_name, password, role):
-    """Enviar correo de bienvenida a nuevo usuario"""
+    """Enviar correo de bienvenida a nuevo usuario (no-bloqueante)"""
     try:
         role_names = {
             'admin': 'Administrador',
@@ -316,12 +321,19 @@ def send_welcome_email(user_email, user_name, password, role):
             """
         )
         
-        mail.send(msg)
-        print(f"✅ Correo de bienvenida enviado a {user_email}")
+        from flask import current_app
+        app = current_app._get_current_object()
+        
+        print(f"✅ Enviando correo de bienvenida a {user_email} (async)...")
+        thread = threading.Thread(target=send_email_async, args=(msg, app))
+        thread.daemon = False
+        thread.start()
+        
+        print(f"✅ Correo de bienvenida en cola para {user_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error enviando correo de bienvenida a {user_email}: {e}")
+        print(f"❌ Error preparando correo de bienvenida para {user_email}: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
         return False
