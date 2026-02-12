@@ -4,7 +4,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # Detectar entorno
-IS_PRODUCTION = os.environ.get('RENDER', False)
+# Considerar producción si la variable RENDER está presente y no vacía
+IS_PRODUCTION = bool(os.environ.get('RENDER'))
 
 # Configuración de base de datos híbrida
 if IS_PRODUCTION:
@@ -27,9 +28,21 @@ else:
     # SQLite para desarrollo local
     DATABASE_URL = 'sqlite:///turnero.db'
 
+# Configurar argumentos de conexión según entorno
+if IS_PRODUCTION:
+    # En producción (Render) forzamos SSL para PostgreSQL
+    # Algunos entornos requieren `sslmode=require` para evitar errores TLS
+    connect_args = {
+        # Pasar `sslmode` al driver (psycopg/psycopg2).
+        'sslmode': os.environ.get('PGSSLMODE', 'require')
+    }
+else:
+    # SQLite local: permitir check_same_thread
+    connect_args = {'check_same_thread': False}
+
 engine = create_engine(
     DATABASE_URL,
-    connect_args={'check_same_thread': False} if not IS_PRODUCTION else {},
+    connect_args=connect_args,
     echo=False
 )
 
