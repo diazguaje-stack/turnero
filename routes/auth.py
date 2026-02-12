@@ -56,8 +56,8 @@ def login():
             
             flash(f'¡Bienvenido {user.name}!', 'success')
             
-            # ✅ CORREGIDO: Simplificar redirección
-            return redirect(url_for('main.dashboard'))
+            # ✅ MARCAR NUEVA PESTAÑA: agregamos `new_tab` para inicializar sessionStorage en el cliente
+            return redirect(url_for('main.dashboard', new_tab=1))
                 
         except Exception as e:
             print(f"❌ Error en login: {e}")

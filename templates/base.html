@@ -41,6 +41,32 @@
         <h3>Notificaciones</h3>
         <div id="notificationsList"></div>
     </div>
+    
+    <script>
+    (function(){
+        // Forzar sesión por pestaña: si el servidor tiene sesión pero la pestaña
+        // no tiene la marca en sessionStorage, redirigimos a /login.
+        // Después del login redirigimos con ?new_tab=1 para inicializarla.
+        const KEY = 'turnero_tab_logged';
+        try {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('new_tab')) {
+                sessionStorage.setItem(KEY, Date.now().toString());
+                params.delete('new_tab');
+                const newSearch = params.toString();
+                const newUrl = window.location.pathname + (newSearch ? '?' + newSearch : '');
+                history.replaceState(null, '', newUrl);
+            } else {
+                if (!sessionStorage.getItem(KEY)) {
+                    window.location.href = "{{ url_for('auth.login') }}";
+                }
+            }
+        } catch (e) {
+            console.error('Error verificando sessionStorage por pestaña:', e);
+        }
+    })();
+    </script>
+
     {% endif %}
 
     <main class="main-content">

@@ -94,5 +94,9 @@
     </div>
 
 <script src="{{ url_for('static', filename='js/login.js') }}"></script>
+<script>
+// Limpiar marca por pestaña al mostrar la página de login
+try { sessionStorage.removeItem('turnero_tab_logged'); } catch (e) { console.error(e); }
+</script>
 </body>
 </html>
