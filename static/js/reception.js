@@ -5,44 +5,65 @@
 // ============================================================
 
 async function loadDoctors() {
+    const grid = document.getElementById('doctorsGrid');
     try {
-        const response = await fetch('/reception/doctors/data');
-        const doctors = await response.json();
-        
-        const grid = document.getElementById('doctorsGrid');
-        
-        if (doctors.length === 0) {
-            grid.innerHTML = '<div class="loading">No hay doctores registrados</div>';
-        } else {
-            grid.innerHTML = doctors.map(doctor => `
-                <div class="card">
-                    <div class="card-header">
-                        <div>
-                            <div class="card-title">${doctor.name}</div>
-                            <div style="color: #6b7280; font-size: 13px;">
-                                Tipo: ${doctor.type === 'I' ? 'Información (I)' : 'Consulta (C)'}
-                            </div>
-                        </div>
-                        <span class="card-badge ${doctor.is_active ? 'badge-active' : 'badge-inactive'}">
-                            ${doctor.is_active ? 'Activo' : 'Inactivo'}
-                        </span>
-                    </div>
-                    <div class="card-content">
-                        <p><strong>Estado:</strong> ${getStatusText(doctor.status)}</p>
-                        <p><strong>Pacientes:</strong> ${doctor.patient_count || 0}</p>
-                    </div>
-                    <div class="card-actions">
-                        <button class="btn-secondary ${doctor.is_active ? 'btn-danger' : 'btn-success'}" 
-                                onclick="toggleDoctor(${doctor.id})">
-                            ${doctor.is_active ? 'Deshabilitar' : 'Habilitar'}
-                        </button>
-                        <button class="btn-secondary btn-danger" onclick="deleteDoctor(${doctor.id}, '${doctor.name.replace(/'/g, "\\'")}')">
-                            Eliminar
-                        </button>
-                    </div>
-                </div>
-            `).join('');
+        const response = await fetch('/reception/doctors/data', {
+            method: 'GET',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+
+        if (!response.ok) {
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                const payload = await response.json();
+                console.error('Error cargando doctores (JSON):', payload);
+                showFlashMessage(payload.error || 'Error cargando doctores', 'danger');
+            } else {
+                const text = await response.text();
+                console.error('Error cargando doctores (HTML):', text.slice(0,300));
+                showFlashMessage('Sesión expirada o redirección inesperada. Serás redirigido al login.', 'danger');
+                setTimeout(() => { window.location.href = '/login'; }, 1200);
+            }
+            return;
         }
+
+        const doctors = await response.json();
+
+        if (!grid) return;
+
+        if (!Array.isArray(doctors) || doctors.length === 0) {
+            grid.innerHTML = '<div class="loading">No hay doctores registrados</div>';
+            return;
+        }
+
+        grid.innerHTML = doctors.map(doctor => `
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <div class="card-title">${doctor.name}</div>
+                        <div style="color: #6b7280; font-size: 13px;">
+                            Tipo: ${doctor.type === 'I' ? 'Información (I)' : 'Consulta (C)'}
+                        </div>
+                    </div>
+                    <span class="card-badge ${doctor.is_active ? 'badge-active' : 'badge-inactive'}">
+                        ${doctor.is_active ? 'Activo' : 'Inactivo'}
+                    </span>
+                </div>
+                <div class="card-content">
+                    <p><strong>Estado:</strong> ${getStatusText(doctor.status)}</p>
+                    <p><strong>Pacientes:</strong> ${doctor.patient_count || 0}</p>
+                </div>
+                <div class="card-actions">
+                    <button class="btn-secondary ${doctor.is_active ? 'btn-danger' : 'btn-success'}" onclick="toggleDoctor(${doctor.id})">
+                        ${doctor.is_active ? 'Deshabilitar' : 'Habilitar'}
+                    </button>
+                    <button class="btn-secondary btn-danger" onclick="deleteDoctor(${doctor.id}, '${doctor.name.replace(/'/g, "\\'")}')">
+                        Eliminar
+                    </button>
+                </div>
+            </div>
+        `).join('');
+
     } catch (error) {
         console.error('Error cargando doctores:', error);
         showFlashMessage('Error cargando doctores', 'danger');
@@ -366,7 +387,6 @@ function showPatientMenu(event, patientId, patientCode, patientName, isCalled) {
     
     // Crear menú contextual
     const menu = document.createElement('div');
-    menu.className = 'context-menu';
     menu.style.left = event.pageX + 'px';
     menu.style.top = event.pageY + 'px';
     
