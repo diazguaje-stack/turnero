@@ -11,11 +11,11 @@
 <div class="dashboard-container">
     <div class="dashboard-header">
         <h2>Panel de Recepción</h2>
-        {% if session.assigned_screen %}
+        {% if session.get('assigned_screen') %}
         <div class="screen-info-banner">
             <i class="fas fa-tv"></i>
-            <span>Pantalla asignada: <strong>{{ session.assigned_screen }}</strong></span>
-            <a href="/screen/{{ session.assigned_screen }}" target="_blank" class="btn-view-screen">
+            <span>Pantalla asignada: <strong>{{ session.get('assigned_screen') }}</strong></span>
+            <a href="/screen/{{ session.get('assigned_screen') }}" target="_blank" class="btn-view-screen">
                 <i class="fas fa-external-link-alt"></i>
                 Abrir Pantalla
             </a>
@@ -41,7 +41,7 @@
             <i class="fas fa-photo-video"></i>
             Multimedia
         </button>
-        {% if session.assigned_screen %}
+        {% if session.get('assigned_screen') %}
         <button class="tab-btn" onclick="switchTab('screen')">
             <i class="fas fa-tv"></i>
             Ver Pantalla
@@ -110,15 +110,15 @@
     </div>
 
     <!-- Tab: Ver Pantalla -->
-    {% if session.assigned_screen %}
+    {% if session.get('assigned_screen') %}
     <div class="tab-content" id="screen-tab">
         <div class="section-header">
             <h3>
                 <i class="fas fa-tv"></i>
-                Vista de Pantalla {{ session.assigned_screen }}
+                Vista de Pantalla {{ session.get('assigned_screen') }}
             </h3>
             <div class="screen-actions">
-                <a href="/screen/{{ session.assigned_screen }}" target="_blank" class="btn-primary">
+                <a href="/screen/{{ session.get('assigned_screen') }}" target="_blank" class="btn-primary">
                     <i class="fas fa-external-link-alt"></i>
                     Abrir en Nueva Ventana
                 </a>
@@ -132,7 +132,7 @@
         <div class="screen-preview-wrapper">
             <iframe 
                 id="screenPreviewFrame" 
-                src="/screen/{{ session.assigned_screen }}" 
+                src="/screen/{{ session.get('assigned_screen') }}" 
                 frameborder="0"
                 style="width: 100%; height: 70vh; border: 2px solid #e5e7eb; border-radius: 8px;"
             ></iframe>

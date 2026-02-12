@@ -9,12 +9,12 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-    {% if session.user_id %}
+    {% if session.get('user_id') %}
     <header class="main-header">
         <div class="header-content">
             <div class="header-left">
                 <h1 class="logo">Turnero Médico</h1>
-                <span class="role-badge">{{ session.user_role|capitalize }} {{ session.user_consecutive }}</span>
+                <span class="role-badge">{{ session.get('user_role')|capitalize }} {{ session.get('user_consecutive') }}</span>
             </div>
             <div class="header-right">
                 <button class="notification-btn" onclick="toggleNotifications()">
@@ -26,7 +26,7 @@
                 </button>
                 <div class="avatar-menu">
                     <button class="avatar-btn" onclick="toggleAvatarMenu()">
-                        <div class="avatar-circle">{{ session.user_name[0]|upper }}</div>
+                        <div class="avatar-circle">{{ session.get('user_name','')[:1]|upper }}</div>
                     </button>
                     <div class="avatar-dropdown" id="avatarDropdown">
                         <button onclick="showChangePassword()">Cambiar Contraseña</button>
