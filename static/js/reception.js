@@ -300,9 +300,17 @@ async function loadPatients() {
                         ${group.patients.length} paciente${group.patients.length !== 1 ? 's' : ''}
                     </span>
                 </div>
-                <div class="patients-grid-codes">
-                    ${group.patients.map(patient => renderPatientCard(patient)).join('')}
-                </div>
+                        <div class="patients-row">
+                            ${group.patients.map(patient => `
+                                <div class="patient-item">
+                                    <div class="patient-name">${patient.name || ''}</div>
+                                    <button class="patient-code-btn ${patient.is_called ? 'called' : ''}"
+                                            onclick="deletePatient(${patient.id}, '${patient.code}', '${(patient.name||'').replace(/'/g, "\\'")}')">
+                                        <div class="code">${patient.code}</div>
+                                    </button>
+                                </div>
+                            `).join('')}
+                        </div>
             </div>
         `).join('');
         
@@ -473,6 +481,43 @@ async function deletePatientFromMenu(patientId, patientCode, patientName) {
         }
     } catch (error) {
         console.error('Error:', error);
+        showFlashMessage('Error de conexión', 'danger');
+    }
+}
+
+// Eliminar paciente (botón directo)
+async function deletePatient(patientId, patientCode, patientName) {
+    if (!confirm(`¿Eliminar al paciente?\n\nCódigo: ${patientCode}\nNombre: ${patientName}\n\nEsta acción NO se puede deshacer.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/reception/delete-patient/${patientId}`, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+
+        if (!response.ok) {
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                const payload = await response.json();
+                showFlashMessage(payload.error || 'Error eliminando paciente', 'danger');
+            } else {
+                showFlashMessage('Sesión expirada o redirección inesperada. Serás redirigido al login.', 'danger');
+                setTimeout(() => { window.location.href = '/login'; }, 1000);
+            }
+            return;
+        }
+
+        const result = await response.json();
+        if (result.success) {
+            showFlashMessage(`Paciente ${patientCode} eliminado`, 'success');
+            loadPatients();
+        } else {
+            showFlashMessage(result.error || 'Error eliminando paciente', 'danger');
+        }
+    } catch (error) {
+        console.error('Error eliminando paciente:', error);
         showFlashMessage('Error de conexión', 'danger');
     }
 }
