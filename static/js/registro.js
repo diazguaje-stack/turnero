@@ -128,13 +128,35 @@ async function registerPatient(event) {
         
         const response = await fetch('/registro/create-patient', {
             method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            },
             body: formData
         });
-        
+
+        // Manejar respuestas no OK (por ejemplo redirección a login que devuelve HTML)
+        if (!response.ok) {
+            // Intentar parsear JSON con detalle de error
+            let payload;
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                payload = await response.json();
+                showFlashMessage(payload.error || 'Error al registrar paciente', 'danger');
+            } else {
+                // Probablemente se devolvió HTML (p.ej. página de login)
+                const text = await response.text();
+                console.error('Respuesta inesperada (HTML):', text.slice(0, 300));
+                showFlashMessage('Sesión expirada o redirección inesperada. Serás redirigido al login.', 'danger');
+                // Forzar redirección al login
+                setTimeout(() => { window.location.href = '/login'; }, 1200);
+            }
+            return;
+        }
+
         const result = await response.json();
-        
+
         console.log('Respuesta del servidor:', result);
-        
+
         if (result.success) {
             showFlashMessage(`✅ Paciente registrado exitosamente con código: ${result.code}`, 'success');
             hideModal('registerPatientModal');
