@@ -1,4 +1,8 @@
-# app.py - Backend Flask con PostgreSQL
+"""
+app.py - Backend Flask con PostgreSQL
+Sistema de autenticacion y gestion de usuarios
+"""
+
 from flask import Flask, request, jsonify, render_template, session
 from flask_cors import CORS
 from datetime import datetime, timedelta
@@ -7,9 +11,10 @@ from functools import wraps
 from models import db, Usuario, init_db
 from config import config
 
+# Crear aplicacion Flask
 app = Flask(__name__)
 
-# Configuración del entorno
+# Configuracion del entorno
 env = os.environ.get('FLASK_ENV', 'production')
 app.config.from_object(config[env])
 
@@ -19,18 +24,24 @@ init_db(app)
 # Habilitar CORS
 CORS(app, supports_credentials=True, origins=['*'])
 
+
 # Decorador para rutas protegidas
 def login_required(f):
+    """Decorador para proteger rutas que requieren autenticacion"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'usuario' not in session:
-            return jsonify({'success': False, 'message': 'No autorizado'}), 401
+            return jsonify({
+                'success': False,
+                'message': 'No autorizado'
+            }), 401
         return f(*args, **kwargs)
     return decorated_function
 
-# =========================
+
+# ===================================
 # RUTAS DE AUTENTICACION
-# =========================
+# ===================================
 
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -70,12 +81,12 @@ def login():
                 'message': 'Autenticacion exitosa',
                 'timestamp': datetime.now().isoformat()
             }), 200
-        else:
-            print(f"[{datetime.now()}] Login fallido: {usuario}")
-            return jsonify({
-                'success': False,
-                'message': 'Credenciales incorrectas'
-            }), 401
+
+        print(f"[{datetime.now()}] Login fallido: {usuario}")
+        return jsonify({
+            'success': False,
+            'message': 'Credenciales incorrectas'
+        }), 401
 
     except Exception as e:
         print(f"[{datetime.now()}] Error en login: {str(e)}")
@@ -110,13 +121,17 @@ def verify_session():
             'role': session['role'],
             'login_time': session.get('login_time')
         }), 200
-    else:
-        return jsonify({
-            'success': False,
-            'authenticated': False,
-            'message': 'No hay sesion activa'
-        }), 401
+    
+    return jsonify({
+        'success': False,
+        'authenticated': False,
+        'message': 'No hay sesion activa'
+    }), 401
 
+
+# ===================================
+# RUTAS DE GESTION DE USUARIOS
+# ===================================
 
 @app.route('/api/users', methods=['GET'])
 @login_required
@@ -235,9 +250,9 @@ def delete_user(user_id):
         }), 500
 
 
-# =========================
+# ===================================
 # RUTAS DE PAGINAS HTML
-# =========================
+# ===================================
 
 @app.route('/')
 def index():
@@ -263,14 +278,13 @@ def recepcion():
     return render_template('recepcion.html')
 
 
-# =========================
+# ===================================
 # RUTAS DE UTILIDAD
-# =========================
+# ===================================
 
 @app.route('/health')
 def health():
     """Health check para Render"""
-    # Verificar conexion a base de datos
     try:
         db.session.execute('SELECT 1')
         db_status = 'connected'
@@ -286,12 +300,13 @@ def health():
     }), 200
 
 
-# =========================
+# ===================================
 # MANEJO DE ERRORES
-# =========================
+# ===================================
 
 @app.errorhandler(404)
 def not_found(error):
+    """Manejar errores 404"""
     return jsonify({
         'success': False,
         'error': 'Recurso no encontrado'
@@ -300,23 +315,24 @@ def not_found(error):
 
 @app.errorhandler(500)
 def internal_error(error):
+    """Manejar errores 500"""
     return jsonify({
         'success': False,
         'error': 'Error interno del servidor'
     }), 500
 
 
-# =========================
+# ===================================
 # INICIALIZACION
-# =========================
+# ===================================
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
     
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Servidor Flask iniciando...")
-    print("="*60)
+    print("=" * 60)
     print(f"Puerto: {port}")
     print(f"Entorno: {os.environ.get('FLASK_ENV', 'production')}")
     print(f"Debug: {debug}")
@@ -325,6 +341,6 @@ if __name__ == '__main__':
     print("\nCredenciales por defecto:")
     print("   Usuario: admin")
     print("   Contrasena: admin123")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
     
     app.run(host='0.0.0.0', port=port, debug=debug)
