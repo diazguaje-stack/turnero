@@ -4,6 +4,8 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 import uuid
+import random
+import string
 
 db = SQLAlchemy()
 
@@ -31,13 +33,13 @@ class Usuario(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_by = db.Column(db.String(50))
     
-    # Métodos
+    # Metodos
     def set_password(self, password):
-        """Hashea la contraseña antes de guardarla"""
+        """Hashea la contrasena antes de guardarla"""
         self.password_hash = generate_password_hash(password)
     
     def check_password(self, password):
-        """Verifica si la contraseña es correcta"""
+        """Verifica si la contrasena es correcta"""
         return check_password_hash(self.password_hash, password)
     
     def to_dict(self):
@@ -59,7 +61,55 @@ class Usuario(db.Model):
 
 
 # ==========================================
-# MODELO: Paciente (Ejemplo adicional)
+# MODELO: Pantalla
+# ==========================================
+
+class Pantalla(db.Model):
+    """Modelo de Pantalla/Display para sistema de turnos"""
+    
+    __tablename__ = 'pantallas'
+    
+    # Columnas
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    numero = db.Column(db.Integer, unique=True, nullable=False, index=True)  # 1-6
+    nombre = db.Column(db.String(100))  # Ej: "Pantalla Sala Espera 1"
+    device_id = db.Column(db.String(100), unique=True, index=True)  # ID unico del dispositivo
+    codigo_vinculacion = db.Column(db.String(6))  # Codigo de 6 digitos para vincular
+    estado = db.Column(db.String(20), default='disponible')  # disponible, pendiente, vinculada
+    ultima_conexion = db.Column(db.DateTime)
+    vinculada_at = db.Column(db.DateTime)
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = db.Column(db.String(50))
+    
+    # Metodos
+    @staticmethod
+    def generar_codigo():
+        """Genera un codigo de 6 digitos aleatorio"""
+        return ''.join(random.choices(string.digits, k=6))
+    
+    def to_dict(self):
+        """Convierte la pantalla a diccionario"""
+        return {
+            'id': self.id,
+            'numero': self.numero,
+            'nombre': self.nombre,
+            'device_id': self.device_id,
+            'codigo_vinculacion': self.codigo_vinculacion,
+            'estado': self.estado,
+            'ultima_conexion': self.ultima_conexion.isoformat() if self.ultima_conexion else None,
+            'vinculada_at': self.vinculada_at.isoformat() if self.vinculada_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+    
+    def __repr__(self):
+        return f'<Pantalla {self.numero} - {self.estado}>'
+
+
+# ==========================================
+# MODELO: Paciente
 # ==========================================
 
 class Paciente(db.Model):
@@ -81,7 +131,7 @@ class Paciente(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relación con turnos
+    # Relacion con turnos
     turnos = db.relationship('Turno', backref='paciente', lazy='dynamic')
     
     def to_dict(self):
@@ -103,11 +153,11 @@ class Paciente(db.Model):
 
 
 # ==========================================
-# MODELO: Turno (Ejemplo adicional)
+# MODELO: Turno
 # ==========================================
 
 class Turno(db.Model):
-    """Modelo de Turno/Cita Médica"""
+    """Modelo de Turno/Cita Medica"""
     
     __tablename__ = 'turnos'
     
@@ -166,25 +216,40 @@ def init_db(app):
                 admin.set_password('admin123')
                 db.session.add(admin)
                 db.session.commit()
-                print('✅ Usuario administrador creado')
+                print('Usuario administrador creado')
             else:
-                print('ℹ️  Usuario administrador ya existe')
+                print('Usuario administrador ya existe')
+            
+            # Crear pantallas por defecto (1-6)
+            for i in range(1, 7):
+                pantalla = Pantalla.query.filter_by(numero=i).first()
+                if not pantalla:
+                    pantalla = Pantalla(
+                        numero=i,
+                        nombre=f'Pantalla {i}',
+                        estado='disponible',
+                        created_by='sistema'
+                    )
+                    db.session.add(pantalla)
+            
+            db.session.commit()
+            print('Pantallas inicializadas')
                 
         except Exception as e:
             error_msg = str(e).lower()
             
             # Si hay error de columnas, recrear las tablas
             if 'does not exist' in error_msg or 'column' in error_msg:
-                print('⚠️  Detectado error de esquema - Recreando tablas...')
+                print('Detectado error de esquema - Recreando tablas...')
                 
                 try:
                     # Eliminar todas las tablas
                     db.drop_all()
-                    print('🗑️  Tablas antiguas eliminadas')
+                    print('Tablas antiguas eliminadas')
                     
                     # Crear todas las tablas nuevamente
                     db.create_all()
-                    print('✅ Tablas recreadas correctamente')
+                    print('Tablas recreadas correctamente')
                     
                     # Crear usuario administrador
                     admin = Usuario(
@@ -195,12 +260,23 @@ def init_db(app):
                     )
                     admin.set_password('admin123')
                     db.session.add(admin)
+                    
+                    # Crear pantallas
+                    for i in range(1, 7):
+                        pantalla = Pantalla(
+                            numero=i,
+                            nombre=f'Pantalla {i}',
+                            estado='disponible',
+                            created_by='sistema'
+                        )
+                        db.session.add(pantalla)
+                    
                     db.session.commit()
-                    print('✅ Usuario administrador creado')
+                    print('Usuario administrador y pantallas creados')
                     
                 except Exception as recreate_error:
-                    print(f'❌ Error al recrear tablas: {str(recreate_error)}')
+                    print(f'Error al recrear tablas: {str(recreate_error)}')
                     raise
             else:
-                print(f'❌ Error en base de datos: {str(e)}')
+                print(f'Error en base de datos: {str(e)}')
                 raise

@@ -235,6 +235,27 @@
             </div>
         </div>
     </div>
+        
+    <!-- COMPONENTE DE PANTALLAS PARA INCLUIR EN administrador.html -->
+    <!-- Agregar este código dentro de administrador.html, después de la sección de usuarios -->
+
+    <!-- ===================================== -->
+    <!-- SECCION: GESTION DE PANTALLAS -->
+    <!-- ===================================== -->
+
+    <section id="pantallasSection" class="content-section" style="display: none;">
+        <div class="section-header">
+            <h2>📺 Gestión de Pantallas</h2>
+            <p>Administra las pantallas de turnos del sistema</p>
+        </div>
+
+        <div id="pantallasMessageContainer"></div>
+
+        <div id="pantallasGrid" class="pantallas-grid">
+            <!-- Las pantallas se cargarán aquí dinámicamente -->
+            <div class="loading-pantallas">Cargando pantallas...</div>
+        </div>
+    </section>
 
     <!-- Toast Notification -->
     <div id="toast" class="toast"></div>
@@ -242,3 +263,4 @@
     <script src="{{ url_for('static', filename='js/administrador.js') }}"></script>
 </body>
 </html>
+

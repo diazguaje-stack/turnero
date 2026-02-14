@@ -418,3 +418,384 @@ function showToast(message, type = 'success') {
 }
 
 console.log('✅ Administrador.js cargado correctamente');
+// ===================================
+// CODIGO PARA AGREGAR A administrador.js
+// ===================================
+
+// API Endpoints para pantallas
+const PANTALLAS_API = {
+    getPantallas: `${API_URL}/api/pantallas`,
+    vincular: (id) => `${API_URL}/api/pantallas/${id}/vincular`,
+    desvincular: (id) => `${API_URL}/api/pantallas/${id}/desvincular`
+};
+
+let pantallasList = [];
+let pantallasInterval = null;
+
+/**
+ * Inicializar seccion de pantallas
+ */
+function inicializarPantallas() {
+    cargarPantallas();
+    
+    // Actualizar cada 5 segundos cuando la seccion este visible
+    pantallasInterval = setInterval(() => {
+        const section = document.getElementById('pantallasSection');
+        if (section && section.style.display !== 'none') {
+            cargarPantallas();
+        }
+    }, 5000);
+}
+
+/**
+ * Cargar todas las pantallas
+ */
+async function cargarPantallas() {
+    try {
+        const response = await fetch(PANTALLAS_API.getPantallas, {
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            throw new Error('Error al cargar pantallas');
+        }
+
+        const data = await response.json();
+        pantallasList = data.pantallas || [];
+        renderizarPantallas();
+
+    } catch (error) {
+        console.error('Error al cargar pantallas:', error);
+        mostrarMensajePantallas('Error al cargar las pantallas', 'error');
+    }
+}
+
+/**
+ * Renderizar pantallas en el grid
+ */
+function renderizarPantallas() {
+    const grid = document.getElementById('pantallasGrid');
+    
+    if (!grid) return;
+
+    if (!pantallasList || pantallasList.length === 0) {
+        grid.innerHTML = '<div class="loading-pantallas">No hay pantallas configuradas</div>';
+        return;
+    }
+
+    grid.innerHTML = pantallasList.map(pantalla => `
+        <div class="pantalla-card ${pantalla.estado}">
+            <div class="pantalla-numero">${pantalla.numero}</div>
+            
+            <div class="pantalla-estado">
+                <div class="estado-badge ${pantalla.estado}">
+                    ${getEstadoTexto(pantalla.estado)}
+                </div>
+                <div class="pantalla-nombre">
+                    ${pantalla.nombre || `Pantalla ${pantalla.numero}`}
+                </div>
+            </div>
+
+            <div class="pantalla-info">
+                ${renderInfoPantalla(pantalla)}
+            </div>
+
+            ${renderAccionesPantalla(pantalla)}
+        </div>
+    `).join('');
+
+    // Agregar event listeners
+    agregarEventListenersPantallas();
+}
+
+/**
+ * Renderizar informacion segun estado
+ */
+function renderInfoPantalla(pantalla) {
+    if (pantalla.estado === 'disponible') {
+        return `
+            <div style="text-align: center; color: #6b7280; padding: 20px 0;">
+                <p>⚪ Esperando dispositivo...</p>
+                <p style="font-size: 12px; margin-top: 8px;">
+                    Abre <strong>/screen</strong> en un dispositivo
+                </p>
+            </div>
+        `;
+    }
+
+    if (pantalla.estado === 'pendiente') {
+        return `
+            <div class="instrucciones-vinculacion">
+                📱 Dispositivo conectado - Ingresa el código
+            </div>
+            <div class="codigo-grande">${pantalla.codigo_vinculacion || '------'}</div>
+            <div class="codigo-input-group">
+                <input 
+                    type="text" 
+                    class="codigo-input" 
+                    id="codigo-${pantalla.id}"
+                    placeholder="Ingresa código"
+                    maxlength="6"
+                    pattern="[0-9]*"
+                >
+            </div>
+            ${pantalla.device_id ? `
+                <div class="device-id-small">
+                    Device: ${pantalla.device_id.substring(0, 30)}...
+                </div>
+            ` : ''}
+        `;
+    }
+
+    if (pantalla.estado === 'vinculada') {
+        return `
+            <div class="info-item">
+                <span class="info-label">Vinculada:</span>
+                <span class="info-value">${formatFecha(pantalla.vinculada_at)}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Última conexión:</span>
+                <span class="info-value">${formatFecha(pantalla.ultima_conexion)}</span>
+            </div>
+            ${pantalla.device_id ? `
+                <div class="device-id-small" style="margin-top: 12px;">
+                    Device ID: ${pantalla.device_id.substring(0, 40)}...
+                </div>
+            ` : ''}
+            <a href="/screen" target="_blank" class="link-pantalla">
+                🔗 Abrir pantalla completa
+            </a>
+        `;
+    }
+
+    return '';
+}
+
+/**
+ * Renderizar acciones segun estado
+ */
+function renderAccionesPantalla(pantalla) {
+    if (pantalla.estado === 'pendiente') {
+        return `
+            <div class="pantalla-actions">
+                <button 
+                    class="btn btn-primary btn-vincular" 
+                    data-id="${pantalla.id}"
+                >
+                    ✓ Vincular
+                </button>
+                <button 
+                    class="btn btn-secondary btn-cancelar" 
+                    data-id="${pantalla.id}"
+                >
+                    ✗ Cancelar
+                </button>
+            </div>
+        `;
+    }
+
+    if (pantalla.estado === 'vinculada') {
+        return `
+            <div class="pantalla-actions">
+                <button 
+                    class="btn btn-danger btn-desvincular" 
+                    data-id="${pantalla.id}"
+                    data-numero="${pantalla.numero}"
+                >
+                    🔓 Desvincular
+                </button>
+            </div>
+        `;
+    }
+
+    return '';
+}
+
+/**
+ * Agregar event listeners a los botones
+ */
+function agregarEventListenersPantallas() {
+    // Botones de vincular
+    document.querySelectorAll('.btn-vincular').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const pantallaId = e.target.dataset.id;
+            vincularPantallaAdmin(pantallaId);
+        });
+    });
+
+    // Botones de cancelar
+    document.querySelectorAll('.btn-cancelar').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const pantallaId = e.target.dataset.id;
+            desvincularPantallaAdmin(pantallaId);
+        });
+    });
+
+    // Botones de desvincular
+    document.querySelectorAll('.btn-desvincular').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const pantallaId = e.target.dataset.id;
+            const numero = e.target.dataset.numero;
+            confirmarDesvincularPantalla(pantallaId, numero);
+        });
+    });
+
+    // Inputs de código - validación y enter
+    document.querySelectorAll('.codigo-input').forEach(input => {
+        // Solo números
+        input.addEventListener('input', (e) => {
+            e.target.value = e.target.value.replace(/[^0-9]/g, '').substring(0, 6);
+        });
+
+        // Enter para vincular
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const pantallaId = input.id.replace('codigo-', '');
+                vincularPantallaAdmin(pantallaId);
+            }
+        });
+    });
+}
+
+/**
+ * Vincular pantalla desde admin
+ */
+async function vincularPantallaAdmin(pantallaId) {
+    const input = document.getElementById(`codigo-${pantallaId}`);
+    const codigo = input ? input.value.trim() : '';
+
+    if (!codigo || codigo.length !== 6) {
+        mostrarMensajePantallas('Por favor ingresa el código de 6 dígitos', 'error');
+        if (input) input.focus();
+        return;
+    }
+
+    try {
+        const response = await fetch(PANTALLAS_API.vincular(pantallaId), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({ codigo })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            mostrarMensajePantallas('✅ Pantalla vinculada exitosamente', 'success');
+            cargarPantallas();
+        } else {
+            mostrarMensajePantallas(data.message || 'Código incorrecto', 'error');
+        }
+
+    } catch (error) {
+        console.error('Error al vincular:', error);
+        mostrarMensajePantallas('Error al vincular la pantalla', 'error');
+    }
+}
+
+/**
+ * Confirmar desvinculación
+ */
+function confirmarDesvincularPantalla(pantallaId, numero) {
+    if (confirm(`¿Estás seguro de desvincular la Pantalla ${numero}?\n\nEl dispositivo perderá acceso.`)) {
+        desvincularPantallaAdmin(pantallaId);
+    }
+}
+
+/**
+ * Desvincular pantalla
+ */
+async function desvincularPantallaAdmin(pantallaId) {
+    try {
+        const response = await fetch(PANTALLAS_API.desvincular(pantallaId), {
+            method: 'POST',
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            mostrarMensajePantallas('✅ Pantalla desvinculada exitosamente', 'success');
+            cargarPantallas();
+        } else {
+            mostrarMensajePantallas(data.message || 'Error al desvincular', 'error');
+        }
+
+    } catch (error) {
+        console.error('Error al desvincular:', error);
+        mostrarMensajePantallas('Error al desvincular la pantalla', 'error');
+    }
+}
+
+/**
+ * Obtener texto del estado
+ */
+function getEstadoTexto(estado) {
+    const estados = {
+        'disponible': '⚪ Disponible',
+        'pendiente': '🟡 Pendiente',
+        'vinculada': '🟢 Vinculada'
+    };
+    return estados[estado] || estado;
+}
+
+/**
+ * Formatear fecha
+ */
+function formatFecha(fechaISO) {
+    if (!fechaISO) return 'N/A';
+    try {
+        const fecha = new Date(fechaISO);
+        const ahora = new Date();
+        const diff = Math.floor((ahora - fecha) / 1000); // segundos
+
+        if (diff < 60) return 'Hace un momento';
+        if (diff < 3600) return `Hace ${Math.floor(diff / 60)} min`;
+        if (diff < 86400) return `Hace ${Math.floor(diff / 3600)} hrs`;
+        
+        return fecha.toLocaleDateString('es-ES', {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch (e) {
+        return 'N/A';
+    }
+}
+
+/**
+ * Mostrar mensaje en la sección de pantallas
+ */
+function mostrarMensajePantallas(mensaje, tipo) {
+    const container = document.getElementById('pantallasMessageContainer');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="pantallas-message ${tipo}">
+            ${mensaje}
+        </div>
+    `;
+
+    setTimeout(() => {
+        container.innerHTML = '';
+    }, tipo === 'error' ? 5000 : 3000);
+}
+
+/**
+ * Limpiar intervalo al salir de la sección
+ */
+function limpiarIntervaloPantallas() {
+    if (pantallasInterval) {
+        clearInterval(pantallasInterval);
+        pantallasInterval = null;
+    }
+}
+
+// Exportar funciones globales
+window.inicializarPantallas = inicializarPantallas;
+window.vincularPantallaAdmin = vincularPantallaAdmin;
+window.desvincularPantallaAdmin = desvincularPantallaAdmin;
+window.limpiarIntervaloPantallas = limpiarIntervaloPantallas;

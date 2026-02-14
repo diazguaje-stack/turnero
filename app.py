@@ -5,11 +5,12 @@ Sistema de autenticacion y gestion de usuarios
 
 from flask import Flask, request, jsonify, render_template, session
 from flask_cors import CORS
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 from functools import wraps
-from models import db, Usuario, init_db
+from models import db, Usuario, init_db, Pantalla
 from config import config
+
 
 # Crear aplicacion Flask
 app = Flask(__name__)
@@ -23,6 +24,232 @@ init_db(app)
 
 # Habilitar CORS
 CORS(app, supports_credentials=True, origins=['*'])
+
+
+# Decorador para rutas protegidas (ya deberia estar en app.py)
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'usuario' not in session:
+            return jsonify({'success': False, 'message': 'No autorizado'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# ===================================
+# RUTAS DE GESTION DE PANTALLAS (ADMIN)
+# ===================================
+
+@app.route('/api/pantallas', methods=['GET'])
+@login_required
+def get_pantallas():
+    """Obtener todas las pantallas"""
+    try:
+        pantallas = Pantalla.query.order_by(Pantalla.numero).all()
+        return jsonify({
+            'success': True,
+            'pantallas': [p.to_dict() for p in pantallas]
+        }), 200
+    except Exception as e:
+        print(f"Error al obtener pantallas: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Error al obtener pantallas'
+        }), 500
+
+
+@app.route('/api/pantallas/<pantalla_id>/vincular', methods=['POST'])
+@login_required
+def vincular_pantalla(pantalla_id):
+    """Vincular una pantalla con el codigo proporcionado"""
+    try:
+        data = request.get_json()
+        codigo = data.get('codigo', '').strip()
+        
+        if not codigo or len(codigo) != 6:
+            return jsonify({
+                'success': False,
+                'message': 'Codigo invalido'
+            }), 400
+        
+        # Buscar pantalla con estado pendiente y el codigo
+        pantalla = Pantalla.query.filter_by(
+            id=pantalla_id,
+            codigo_vinculacion=codigo,
+            estado='pendiente'
+        ).first()
+        
+        if not pantalla:
+            return jsonify({
+                'success': False,
+                'message': 'Codigo incorrecto o pantalla no disponible'
+            }), 404
+        
+        # Vincular la pantalla
+        pantalla.estado = 'vinculada'
+        pantalla.vinculada_at = datetime.utcnow()
+        db.session.commit()
+        
+        print(f"Pantalla {pantalla.numero} vinculada exitosamente")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Pantalla vinculada exitosamente',
+            'pantalla': pantalla.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error al vincular pantalla: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Error al vincular pantalla'
+        }), 500
+
+
+@app.route('/api/pantallas/<pantalla_id>/desvincular', methods=['POST'])
+@login_required
+def desvincular_pantalla(pantalla_id):
+    """Desvincular una pantalla"""
+    try:
+        pantalla = Pantalla.query.get(pantalla_id)
+        
+        if not pantalla:
+            return jsonify({
+                'success': False,
+                'message': 'Pantalla no encontrada'
+            }), 404
+        
+        # Desvincular
+        pantalla.device_id = None
+        pantalla.codigo_vinculacion = None
+        pantalla.estado = 'disponible'
+        pantalla.vinculada_at = None
+        db.session.commit()
+        
+        print(f"Pantalla {pantalla.numero} desvinculada")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Pantalla desvinculada exitosamente',
+            'pantalla': pantalla.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error al desvincular pantalla: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Error al desvincular pantalla'
+        }), 500
+
+
+# ===================================
+# RUTAS DE PANTALLA (PUBLICAS)
+# ===================================
+
+@app.route('/api/screen/init', methods=['POST'])
+def screen_init():
+    """Inicializar una pantalla desde el dispositivo"""
+    try:
+        data = request.get_json()
+        device_fingerprint = data.get('device_fingerprint')
+        
+        if not device_fingerprint:
+            return jsonify({
+                'success': False,
+                'message': 'Device fingerprint requerido'
+            }), 400
+        
+        # Verificar si este dispositivo ya esta vinculado
+        pantalla_existente = Pantalla.query.filter_by(
+            device_id=device_fingerprint
+        ).first()
+        
+        if pantalla_existente:
+            # Dispositivo ya vinculado
+            return jsonify({
+                'success': True,
+                'status': 'vinculada',
+                'pantalla': pantalla_existente.to_dict()
+            }), 200
+        
+        # Buscar una pantalla disponible
+        pantalla_disponible = Pantalla.query.filter_by(
+            estado='disponible'
+        ).first()
+        
+        if not pantalla_disponible:
+            return jsonify({
+                'success': False,
+                'message': 'No hay pantallas disponibles'
+            }), 404
+        
+        # Generar codigo de vinculacion
+        codigo = Pantalla.generar_codigo()
+        pantalla_disponible.codigo_vinculacion = codigo
+        pantalla_disponible.device_id = device_fingerprint
+        pantalla_disponible.estado = 'pendiente'
+        pantalla_disponible.ultima_conexion = datetime.utcnow()
+        db.session.commit()
+        
+        print(f"Pantalla {pantalla_disponible.numero} en estado pendiente - Codigo: {codigo}")
+        
+        return jsonify({
+            'success': True,
+            'status': 'pendiente',
+            'pantalla': pantalla_disponible.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error al inicializar pantalla: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Error al inicializar pantalla'
+        }), 500
+
+
+@app.route('/api/screen/status', methods=['POST'])
+def screen_status():
+    """Verificar estado de vinculacion de una pantalla"""
+    try:
+        data = request.get_json()
+        device_fingerprint = data.get('device_fingerprint')
+        
+        if not device_fingerprint:
+            return jsonify({
+                'success': False,
+                'message': 'Device fingerprint requerido'
+            }), 400
+        
+        pantalla = Pantalla.query.filter_by(
+            device_id=device_fingerprint
+        ).first()
+        
+        if not pantalla:
+            return jsonify({
+                'success': False,
+                'status': 'no_vinculada',
+                'message': 'Dispositivo no vinculado'
+            }), 404
+        
+        # Actualizar ultima conexion
+        pantalla.ultima_conexion = datetime.utcnow()
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'status': pantalla.estado,
+            'pantalla': pantalla.to_dict()
+        }), 200
+        
+    except Exception as e:
+        print(f"Error al verificar estado: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Error al verificar estado'
+        }), 500
 
 
 # Decorador para rutas protegidas
@@ -344,3 +571,4 @@ if __name__ == '__main__':
     print("=" * 60 + "\n")
     
     app.run(host='0.0.0.0', port=port, debug=debug)
+
