@@ -17,7 +17,7 @@ class Usuario(db.Model):
     __tablename__ = 'usuarios'
     
     # Columnas
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     usuario = db.Column(db.String(50), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     rol = db.Column(db.String(20), nullable=False)
@@ -67,7 +67,7 @@ class Paciente(db.Model):
     
     __tablename__ = 'pacientes'
     
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     nombre = db.Column(db.String(100), nullable=False)
     apellido = db.Column(db.String(100), nullable=False)
     documento = db.Column(db.String(20), unique=True, nullable=False, index=True)
@@ -112,8 +112,8 @@ class Turno(db.Model):
     __tablename__ = 'turnos'
     
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    paciente_id = db.Column(db.Integer, db.ForeignKey('pacientes.id'), nullable=False)
-    medico_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
+    paciente_id = db.Column(db.String(36), db.ForeignKey('pacientes.id'), nullable=False)
+    medico_id = db.Column(db.String(36), db.ForeignKey('usuarios.id'))
     fecha = db.Column(db.Date, nullable=False)
     hora = db.Column(db.Time, nullable=False)
     motivo = db.Column(db.String(200))
@@ -150,19 +150,57 @@ def init_db(app):
     db.init_app(app)
     
     with app.app_context():
-        # Crear todas las tablas
-        db.create_all()
-        
-        # Crear usuario administrador por defecto si no existe
-        admin = Usuario.query.filter_by(usuario='admin').first()
-        if not admin:
-            admin = Usuario(
-                usuario='admin',
-                rol='administrador',
-                nombre_completo='Administrador del Sistema',
-                created_by='sistema'
-            )
-            admin.set_password('admin123')
-            db.session.add(admin)
-            db.session.commit()
-            print('✅ Usuario administrador creado')
+        try:
+            # Intentar crear todas las tablas
+            db.create_all()
+            
+            # Verificar si el usuario admin existe
+            admin = Usuario.query.filter_by(usuario='admin').first()
+            if not admin:
+                admin = Usuario(
+                    usuario='admin',
+                    rol='administrador',
+                    nombre_completo='Administrador del Sistema',
+                    created_by='sistema'
+                )
+                admin.set_password('admin123')
+                db.session.add(admin)
+                db.session.commit()
+                print('✅ Usuario administrador creado')
+            else:
+                print('ℹ️  Usuario administrador ya existe')
+                
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            # Si hay error de columnas, recrear las tablas
+            if 'does not exist' in error_msg or 'column' in error_msg:
+                print('⚠️  Detectado error de esquema - Recreando tablas...')
+                
+                try:
+                    # Eliminar todas las tablas
+                    db.drop_all()
+                    print('🗑️  Tablas antiguas eliminadas')
+                    
+                    # Crear todas las tablas nuevamente
+                    db.create_all()
+                    print('✅ Tablas recreadas correctamente')
+                    
+                    # Crear usuario administrador
+                    admin = Usuario(
+                        usuario='admin',
+                        rol='administrador',
+                        nombre_completo='Administrador del Sistema',
+                        created_by='sistema'
+                    )
+                    admin.set_password('admin123')
+                    db.session.add(admin)
+                    db.session.commit()
+                    print('✅ Usuario administrador creado')
+                    
+                except Exception as recreate_error:
+                    print(f'❌ Error al recrear tablas: {str(recreate_error)}')
+                    raise
+            else:
+                print(f'❌ Error en base de datos: {str(e)}')
+                raise
