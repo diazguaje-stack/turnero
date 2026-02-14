@@ -1,74 +1,31 @@
-# app.py - Backend Flask con estructura de templates y static
+# app.py - Backend Flask con PostgreSQL
 from flask import Flask, request, jsonify, render_template, session
 from flask_cors import CORS
 from datetime import datetime, timedelta
 import os
-import json
 from functools import wraps
+from models import db, Usuario, init_db
+from config import config
 
 app = Flask(__name__)
 
-# Configuración
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'tu_clave_secreta_muy_segura_12345')
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
+# Configuración del entorno
+env = os.environ.get('FLASK_ENV', 'production')
+app.config.from_object(config[env])
+
+# Inicializar base de datos
+init_db(app)
 
 # Habilitar CORS
 CORS(app, supports_credentials=True, origins=['*'])
-
-# Credenciales por defecto (en producción usar base de datos)
-USERS = {
-    'admin': {
-        'usuario': 'admin',
-        'password': 'admin123',
-        'role': 'administrador',
-        'nombre_completo': 'Administrador del Sistema'
-    },
-    'recepcion': {
-        'usuario': 'recepcion',
-        'password': 'recep123',
-        'role': 'recepcion',
-        'nombre_completo': 'Usuario Recepción'
-    }
-}
-
-# Archivo para persistir usuarios
-USERS_FILE = 'users_db.json'
-
-def load_users():
-    """Cargar usuarios desde archivo JSON"""
-    global USERS
-    try:
-        if os.path.exists(USERS_FILE):
-            with open(USERS_FILE, 'r', encoding='utf-8') as f:
-                loaded_users = json.load(f)
-                # Fusionar usuarios cargados con usuarios por defecto
-                USERS.update(loaded_users)
-                print(f"✅ {len(loaded_users)} usuarios cargados desde {USERS_FILE}")
-    except Exception as e:
-        print(f"⚠️ Error al cargar usuarios: {e}")
-
-def save_users():
-    """Guardar usuarios en archivo JSON"""
-    try:
-        with open(USERS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(USERS, f, ensure_ascii=False, indent=2)
-        print(f"✅ Usuarios guardados en {USERS_FILE}")
-    except Exception as e:
-        print(f"⚠️ Error al guardar usuarios: {e}")
-
-# Cargar usuarios al iniciar
-load_users()
 
 # Decorador para rutas protegidas
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Verificar si hay sesión activa
         if 'usuario' not in session:
             return jsonify({'success': False, 'message': 'No autorizado'}), 401
-        
         return f(*args, **kwargs)
-    
     return decorated_function
 
 # =========================
@@ -82,9 +39,8 @@ def login():
         data = request.get_json()
         usuario = data.get('usuario', '').strip()
         password = data.get('password', '')
-        role = data.get('role', '')
 
-        print(f"[{datetime.now()}] Intento de login: {usuario} - Role: {role}")
+        print(f"[{datetime.now()}] Intento de login: {usuario}")
 
         # Validar campos requeridos
         if not usuario or not password:
@@ -93,23 +49,24 @@ def login():
                 'message': 'Usuario y contraseña son requeridos'
             }), 400
 
-        # Verificar credenciales
-        if usuario in USERS and USERS[usuario]['password'] == password:
-            user_data = USERS[usuario]
-            
+        # Buscar usuario en la base de datos
+        user = Usuario.query.filter_by(usuario=usuario, activo=True).first()
+
+        if user and user.check_password(password):
             # Guardar en sesión
             session.permanent = True
             session['usuario'] = usuario
-            session['role'] = user_data['role']
+            session['role'] = user.rol
+            session['user_id'] = user.id
             session['login_time'] = datetime.now().isoformat()
 
             print(f"[{datetime.now()}] Login exitoso: {usuario}")
 
             return jsonify({
                 'success': True,
-                'role': user_data['role'],
+                'role': user.rol,
                 'usuario': usuario,
-                'nombre_completo': user_data['nombre_completo'],
+                'nombre_completo': user.nombre_completo,
                 'message': 'Autenticación exitosa',
                 'timestamp': datetime.now().isoformat()
             }), 200
@@ -162,26 +119,27 @@ def verify_session():
 
 
 @app.route('/api/users', methods=['GET'])
+@login_required
 def get_users():
     """Obtener lista de todos los usuarios"""
-    users_list = []
-    for username, data in USERS.items():
-        users_list.append({
-            'id': data.get('id', username.upper()[:6]),
-            'usuario': data['usuario'],
-            'rol': data['role'],
-            'nombre_completo': data.get('nombre_completo', ''),
-            'created_at': data.get('created_at', datetime.now().isoformat()),
-            'created_by': data.get('created_by', 'sistema')
-        })
-    
-    return jsonify({
-        'success': True,
-        'users': users_list
-    }), 200
+    try:
+        users = Usuario.query.all()
+        users_list = [user.to_dict() for user in users]
+        
+        return jsonify({
+            'success': True,
+            'users': users_list
+        }), 200
+    except Exception as e:
+        print(f"Error al obtener usuarios: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Error al obtener usuarios'
+        }), 500
 
 
 @app.route('/api/users/create', methods=['POST'])
+@login_required
 def create_user():
     """Crear un nuevo usuario"""
     try:
@@ -189,7 +147,6 @@ def create_user():
         usuario = data.get('usuario', '').strip()
         password = data.get('password', '')
         rol = data.get('rol', '')
-        user_id = data.get('id', '')
 
         # Validaciones
         if not usuario or not password or not rol:
@@ -199,39 +156,38 @@ def create_user():
             }), 400
 
         # Verificar si el usuario ya existe
-        if usuario in USERS:
+        existing_user = Usuario.query.filter_by(usuario=usuario).first()
+        if existing_user:
             return jsonify({
                 'success': False,
                 'message': 'El usuario ya existe'
             }), 400
 
         # Crear nuevo usuario
-        USERS[usuario] = {
-            'id': user_id,
-            'usuario': usuario,
-            'password': password,
-            'role': rol,
-            'nombre_completo': data.get('nombre_completo', usuario),
-            'created_at': datetime.now().isoformat(),
-            'created_by': session.get('usuario', 'admin')
-        }
+        new_user = Usuario(
+            usuario=usuario,
+            rol=rol,
+            nombre_completo=data.get('nombre_completo', usuario),
+            email=data.get('email'),
+            telefono=data.get('telefono'),
+            created_by=session.get('usuario', 'admin')
+        )
+        new_user.set_password(password)
 
-        # Guardar en archivo
-        save_users()
+        # Guardar en base de datos
+        db.session.add(new_user)
+        db.session.commit()
 
         print(f"[{datetime.now()}] Usuario creado: {usuario} - Rol: {rol}")
 
         return jsonify({
             'success': True,
             'message': f'Usuario {usuario} creado exitosamente',
-            'user': {
-                'id': user_id,
-                'usuario': usuario,
-                'rol': rol
-            }
+            'user': new_user.to_dict()
         }), 201
 
     except Exception as e:
+        db.session.rollback()
         print(f"[{datetime.now()}] Error al crear usuario: {str(e)}")
         return jsonify({
             'success': False,
@@ -240,41 +196,38 @@ def create_user():
 
 
 @app.route('/api/users/<user_id>', methods=['DELETE'])
+@login_required
 def delete_user(user_id):
     """Eliminar un usuario"""
     try:
-        # Buscar usuario por ID
-        user_to_delete = None
-        for username, data in USERS.items():
-            if data.get('id', '') == user_id:
-                user_to_delete = username
-                break
+        user = Usuario.query.get(user_id)
 
-        if not user_to_delete:
+        if not user:
             return jsonify({
                 'success': False,
                 'message': 'Usuario no encontrado'
             }), 404
 
         # No permitir eliminar el usuario admin principal
-        if user_to_delete == 'admin':
+        if user.usuario == 'admin':
             return jsonify({
                 'success': False,
                 'message': 'No se puede eliminar el usuario administrador principal'
             }), 403
 
         # Eliminar usuario
-        del USERS[user_to_delete]
-        save_users()
+        db.session.delete(user)
+        db.session.commit()
 
-        print(f"[{datetime.now()}] Usuario eliminado: {user_to_delete}")
+        print(f"[{datetime.now()}] Usuario eliminado: {user.usuario}")
 
         return jsonify({
             'success': True,
-            'message': f'Usuario {user_to_delete} eliminado exitosamente'
+            'message': f'Usuario {user.usuario} eliminado exitosamente'
         }), 200
 
     except Exception as e:
+        db.session.rollback()
         print(f"[{datetime.now()}] Error al eliminar usuario: {str(e)}")
         return jsonify({
             'success': False,
@@ -293,24 +246,20 @@ def index():
 
 
 @app.route('/administrador')
-# @login_required  # Temporalmente deshabilitado para desarrollo
 def administrador():
-    """Página de administrador (protegida)"""
-    # if session.get('role') != 'administrador':
-    #     return jsonify({'message': 'Acceso denegado'}), 403
-    
+    """Página de administrador"""
     return render_template('administrador.html')
 
 
 @app.route('/registro')
 def registro():
-    """Página de registro (pública)"""
+    """Página de registro"""
     return render_template('registro.html')
 
 
 @app.route('/recepcion')
 def recepcion():
-    """Página de recepción (pública)"""
+    """Página de recepción"""
     return render_template('recepcion.html')
 
 
@@ -321,9 +270,17 @@ def recepcion():
 @app.route('/health')
 def health():
     """Health check para Render"""
+    # Verificar conexión a base de datos
+    try:
+        db.session.execute('SELECT 1')
+        db_status = 'connected'
+    except Exception as e:
+        db_status = f'error: {str(e)}'
+    
     return jsonify({
         'status': 'OK',
         'service': 'Sistema de Login Flask',
+        'database': db_status,
         'timestamp': datetime.now().isoformat(),
         'environment': os.environ.get('FLASK_ENV', 'production')
     }), 200
@@ -363,15 +320,11 @@ if __name__ == '__main__':
     print(f"📍 Puerto: {port}")
     print(f"🌍 Entorno: {os.environ.get('FLASK_ENV', 'production')}")
     print(f"🔧 Debug: {debug}")
+    print(f"🗄️  Base de datos: PostgreSQL")
     print(f"🔗 URL Local: http://localhost:{port}")
-    print(f"📁 Templates: templates/")
-    print(f"📁 Static: static/css/ static/js/")
-    print("\n👤 Credenciales de Administrador:")
+    print("\n💤 Credenciales por defecto:")
     print("   Usuario: admin")
     print("   Contraseña: admin123")
-    print("\n👤 Credenciales de Recepción:")
-    print("   Usuario: recepcion")
-    print("   Contraseña: recep123")
     print("="*60 + "\n")
     
     app.run(host='0.0.0.0', port=port, debug=debug)
