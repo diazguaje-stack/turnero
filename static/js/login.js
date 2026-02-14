@@ -120,34 +120,8 @@ function hideError() {
     }
 }
 
-/**
- * Verificar si hay sesion activa al cargar la pagina
- */
-async function checkExistingSession() {
-    try {
-        const response = await fetch(API_ENDPOINTS.verifySession, {
-            method: 'GET',
-            credentials: 'include'
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok && data.authenticated) {
-            // Ya hay sesion activa, redirigir
-            console.log('Sesion activa detectada');
-            redirectToPanel(data.role);
-        }
-    } catch (error) {
-        // No hay sesion activa o error, continuar normal
-        console.log('No hay sesion activa');
-    }
-}
-
-// Verificar sesion al cargar la pagina
+// Focus en el campo de usuario al cargar
 document.addEventListener('DOMContentLoaded', () => {
-    checkExistingSession();
-    
-    // Focus en el campo de usuario
     if (usuarioInput) {
         usuarioInput.focus();
     }
