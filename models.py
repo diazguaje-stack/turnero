@@ -17,7 +17,7 @@ class Usuario(db.Model):
     __tablename__ = 'usuarios'
     
     # Columnas
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     usuario = db.Column(db.String(50), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     rol = db.Column(db.String(20), nullable=False)
@@ -113,7 +113,7 @@ class Turno(db.Model):
     
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     paciente_id = db.Column(db.Integer, db.ForeignKey('pacientes.id'), nullable=False)
-    medico_id = db.Column(db.String(36), db.ForeignKey('usuarios.id'))
+    medico_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
     fecha = db.Column(db.Date, nullable=False)
     hora = db.Column(db.Time, nullable=False)
     motivo = db.Column(db.String(200))
