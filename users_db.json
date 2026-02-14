@@ -1,0 +1,23 @@
+{
+  "admin": {
+    "usuario": "admin",
+    "password": "admin123",
+    "role": "administrador",
+    "nombre_completo": "Administrador del Sistema"
+  },
+  "recepcion": {
+    "usuario": "recepcion",
+    "password": "recep123",
+    "role": "recepcion",
+    "nombre_completo": "Usuario Recepción"
+  },
+  "andresgeovannydg@ufps.edu.co": {
+    "id": "MCB7C6",
+    "usuario": "andresgeovannydg@ufps.edu.co",
+    "password": "Elcharlatang",
+    "role": "administrador",
+    "nombre_completo": "andresgeovannydg@ufps.edu.co",
+    "created_at": "2026-02-14T11:09:37.320272",
+    "created_by": "admin"
+  }
+}

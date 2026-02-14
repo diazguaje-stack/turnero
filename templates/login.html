@@ -3,100 +3,79 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Turnero Médico</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Font Awesome para el icono del ojo -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        /* Estilos adicionales para el icono de ojo */
-        .password-wrapper {
-            position: relative;
-            display: flex;
-            align-items: center;
-        }
-        
-        .password-wrapper input {
-            width: 100%;
-            padding-right: 45px;
-        }
-        
-        .toggle-password {
-            position: absolute;
-            right: 12px;
-            background: none;
-            border: none;
-            cursor: pointer;
-            color: #666;
-            font-size: 18px;
-            padding: 8px;
-            transition: color 0.3s ease;
-        }
-        
-        .toggle-password:hover {
-            color: #333;
-        }
-        
-        .toggle-password:focus {
-            outline: 2px solid #667eea;
-            outline-offset: 2px;
-            border-radius: 4px;
-        }
-    </style>
+    <title>Sistema de Login - Flask</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
 </head>
-<body class="login-page">
-    <div class="login-container">
-        <div class="login-card">
-            <div class="login-header">
-                <h1>Turnero Médico</h1>
-                <p>Bienvenido al sistema de gestión de turnos</p>
-            </div>
-
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        <div class="flash-message flash-{{ category }}">
-                            {{ message }}
-                        </div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-
-            <form method="POST" action="{{ url_for('auth.login') }}" class="login-form">
-                <div class="form-group">
-                    <label for="email">Correo Electrónico</label>
-                    <input type="email" id="email" name="email" placeholder="tu@correo.com" required autofocus>
-                </div>
-
-                <div class="form-group">
-                    <label for="password">Contraseña</label>
-                    <div class="password-wrapper">
-                        <input type="password" id="password" name="password" placeholder="••••••••" required>
-                        <button type="button" class="toggle-password" id="togglePassword" aria-label="Mostrar contraseña">
-                            <i class="fas fa-eye" id="eyeIcon"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <button type="submit" class="btn-primary btn-block">Iniciar Sesión</button>
-
-                <div class="login-footer">
-                    <a href="{{ url_for('auth.forgot_password') }}" class="forgot-link">¿Has olvidado la contraseña?</a>
-                </div>
-            </form>
-
-            <div class="login-info">
-                <p><strong>Usuario por defecto:</strong></p>
-                <p>Email: admin@turnero.com</p>
-                <p>Password: admin123</p>
-            </div>
+<body>
+    <div class="container">
+        <div class="logo">
+            <h1>🔐 Sistema de Acceso</h1>
+            <p>Ingresa tus credenciales</p>
+            <span class="badge">🐍 Powered by Flask</span>
         </div>
+
+        <div id="errorMessage" class="error-message"></div>
+        <div id="successMessage" class="success-message"></div>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="usuario">Usuario</label>
+                <input 
+                    type="text" 
+                    id="usuario" 
+                    name="usuario" 
+                    placeholder="Ingresa tu usuario"
+                    required
+                    autocomplete="username"
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="password">Contraseña</label>
+                <div class="input-wrapper">
+                    <input 
+                        type="password" 
+                        id="password" 
+                        name="password" 
+                        placeholder="Ingresa tu contraseña"
+                        required
+                        autocomplete="current-password"
+                    >
+                    <button type="button" class="toggle-password" id="togglePassword">
+                        <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="remember-me">
+                <input type="checkbox" id="rememberMe" name="rememberMe">
+                <label for="rememberMe">Recordar mis credenciales</label>
+            </div>
+
+            <div class="button-group">
+                <button type="submit" class="btn btn-admin" id="btnAdmin" data-role="administrador">
+                    👤 Administrador
+                </button>
+            </div>
+
+            <div class="divider">
+                <span>O accede como</span>
+            </div>
+
+            <div class="button-group">
+                <button type="button" class="btn btn-registro" data-role="registro">
+                    📝 Registro
+                </button>
+                <button type="button" class="btn btn-recepcion" data-role="recepcion">
+                    🏥 Recepción
+                </button>
+            </div>
+        </form>
     </div>
 
-<script src="{{ url_for('static', filename='js/login.js') }}"></script>
-<script>
-// Limpiar marca por pestaña al mostrar la página de login
-try { sessionStorage.removeItem('turnero_tab_logged'); } catch (e) { console.error(e); }
-</script>
+    <script src="{{ url_for('static', filename='js/login.js') }}"></script>
 </body>
 </html>

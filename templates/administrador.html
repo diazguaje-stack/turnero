@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Administrador</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/administrador.css') }}">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="header-left">
+                <h1 class="header-title">Panel de Administrador</h1>
+                <span class="header-subtitle" id="username">Cargando...</span>
+            </div>
+            <button class="btn-logout" onclick="logout()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+                Cerrar Sesión
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-section="usuarios">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                    Usuarios
+                </button>
+                <button class="nav-item" data-section="estadisticas">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="20" x2="12" y2="10"></line>
+                        <line x1="18" y1="20" x2="18" y2="4"></line>
+                        <line x1="6" y1="20" x2="6" y2="16"></line>
+                    </svg>
+                    Estadísticas
+                </button>
+            </nav>
+        </aside>
+
+        <!-- Content Area -->
+        <main class="content">
+            <!-- Section: Usuarios -->
+            <section id="section-usuarios" class="section active">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">Gestión de Usuarios</h2>
+                        <p class="section-description">Administra y crea usuarios del sistema</p>
+                    </div>
+                    <button class="btn-primary" onclick="openCreateUserModal()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Crear Usuario
+                    </button>
+                </div>
+
+                <!-- Users Grid -->
+                <div id="usersGrid" class="users-grid">
+                    <!-- Los usuarios se cargarán aquí dinámicamente -->
+                </div>
+
+                <!-- Empty State -->
+                <div id="emptyState" class="empty-state" style="display: none;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <line x1="19" y1="8" x2="19" y2="14"></line>
+                        <line x1="22" y1="11" x2="16" y2="11"></line>
+                    </svg>
+                    <h3>No hay usuarios creados</h3>
+                    <p>Comienza creando tu primer usuario</p>
+                </div>
+            </section>
+
+            <!-- Section: Estadísticas -->
+            <section id="section-estadisticas" class="section">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">Estadísticas del Sistema</h2>
+                        <p class="section-description">Métricas y datos generales</p>
+                    </div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="9" cy="7" r="4"></circle>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                            </svg>
+                        </div>
+                        <div class="stat-content">
+                            <h3 id="totalUsers">0</h3>
+                            <p>Usuarios Totales</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                        </div>
+                        <div class="stat-content">
+                            <h3>100%</h3>
+                            <p>Disponibilidad</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                            </svg>
+                        </div>
+                        <div class="stat-content">
+                            <h3>Online</h3>
+                            <p>Estado del Sistema</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal: Crear Usuario -->
+    <div id="createUserModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Crear Nuevo Usuario</h3>
+                <button class="modal-close" onclick="closeCreateUserModal()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <form id="createUserForm" class="modal-form">
+                <div class="form-group">
+                    <label for="newUsername">Usuario</label>
+                    <input type="text" id="newUsername" required placeholder="Ingresa el nombre de usuario">
+                </div>
+                <div class="form-group">
+                    <label for="newPassword">Contraseña</label>
+                    <div class="input-with-icon">
+                        <input type="password" id="newPassword" required placeholder="Ingresa la contraseña">
+                        <button type="button" class="toggle-password-btn" onclick="togglePasswordVisibility('newPassword')">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="newRole">Rol</label>
+                    <select id="newRole" required>
+                        <option value="">Selecciona un rol</option>
+                        <option value="administrador">Administrador</option>
+                        <option value="recepcion">Recepción</option>
+                        <option value="medico">Médico</option>
+                        <option value="enfermero">Enfermero</option>
+                    </select>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" onclick="closeCreateUserModal()">Cancelar</button>
+                    <button type="submit" class="btn-primary">Crear Usuario</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Detalles del Usuario -->
+    <div id="userDetailsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Detalles del Usuario</h3>
+                <button class="modal-close" onclick="closeUserDetailsModal()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="user-details">
+                <div class="detail-item">
+                    <span class="detail-label">ID Interna</span>
+                    <span class="detail-value" id="detailId">-</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Usuario</span>
+                    <span class="detail-value" id="detailUsername">-</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Contraseña</span>
+                    <div class="detail-password">
+                        <span class="detail-value" id="detailPassword">••••••••</span>
+                        <button class="btn-icon" onclick="toggleDetailPassword()">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Rol</span>
+                    <span class="detail-value detail-role" id="detailRole">-</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Fecha de Creación</span>
+                    <span class="detail-value" id="detailCreated">-</span>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-danger" onclick="deleteUser()">Eliminar Usuario</button>
+                <button type="button" class="btn-secondary" onclick="closeUserDetailsModal()">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <script src="{{ url_for('static', filename='js/administrador.js') }}"></script>
+</body>
+</html>
