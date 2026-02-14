@@ -29,7 +29,7 @@ def login_required(f):
     return decorated_function
 
 # =========================
-# RUTAS DE AUTENTICACIÓN
+# RUTAS DE AUTENTICACION
 # =========================
 
 @app.route('/api/login', methods=['POST'])
@@ -46,14 +46,14 @@ def login():
         if not usuario or not password:
             return jsonify({
                 'success': False,
-                'message': 'Usuario y contraseña son requeridos'
+                'message': 'Usuario y contrasena son requeridos'
             }), 400
 
         # Buscar usuario en la base de datos
         user = Usuario.query.filter_by(usuario=usuario, activo=True).first()
 
         if user and user.check_password(password):
-            # Guardar en sesión
+            # Guardar en sesion
             session.permanent = True
             session['usuario'] = usuario
             session['role'] = user.rol
@@ -67,7 +67,7 @@ def login():
                 'role': user.rol,
                 'usuario': usuario,
                 'nombre_completo': user.nombre_completo,
-                'message': 'Autenticación exitosa',
+                'message': 'Autenticacion exitosa',
                 'timestamp': datetime.now().isoformat()
             }), 200
         else:
@@ -87,7 +87,7 @@ def login():
 
 @app.route('/api/logout', methods=['POST'])
 def logout():
-    """Endpoint para cerrar sesión"""
+    """Endpoint para cerrar sesion"""
     usuario = session.get('usuario', 'Desconocido')
     session.clear()
     
@@ -95,13 +95,13 @@ def logout():
     
     return jsonify({
         'success': True,
-        'message': 'Sesión cerrada exitosamente'
+        'message': 'Sesion cerrada exitosamente'
     }), 200
 
 
 @app.route('/api/verify-session', methods=['GET'])
 def verify_session():
-    """Verificar si hay una sesión activa válida"""
+    """Verificar si hay una sesion activa valida"""
     if 'usuario' in session:
         return jsonify({
             'success': True,
@@ -114,7 +114,7 @@ def verify_session():
         return jsonify({
             'success': False,
             'authenticated': False,
-            'message': 'No hay sesión activa'
+            'message': 'No hay sesion activa'
         }), 401
 
 
@@ -236,30 +236,30 @@ def delete_user(user_id):
 
 
 # =========================
-# RUTAS DE PÁGINAS HTML
+# RUTAS DE PAGINAS HTML
 # =========================
 
 @app.route('/')
 def index():
-    """Página principal - Login"""
+    """Pagina principal - Login"""
     return render_template('login.html')
 
 
 @app.route('/administrador')
 def administrador():
-    """Página de administrador"""
+    """Pagina de administrador"""
     return render_template('administrador.html')
 
 
 @app.route('/registro')
 def registro():
-    """Página de registro"""
+    """Pagina de registro"""
     return render_template('registro.html')
 
 
 @app.route('/recepcion')
 def recepcion():
-    """Página de recepción"""
+    """Pagina de recepcion"""
     return render_template('recepcion.html')
 
 
@@ -270,7 +270,7 @@ def recepcion():
 @app.route('/health')
 def health():
     """Health check para Render"""
-    # Verificar conexión a base de datos
+    # Verificar conexion a base de datos
     try:
         db.session.execute('SELECT 1')
         db_status = 'connected'
@@ -307,7 +307,7 @@ def internal_error(error):
 
 
 # =========================
-# INICIALIZACIÓN
+# INICIALIZACION
 # =========================
 
 if __name__ == '__main__':
@@ -315,16 +315,16 @@ if __name__ == '__main__':
     debug = os.environ.get('FLASK_ENV') == 'development'
     
     print("\n" + "="*60)
-    print("🚀 Servidor Flask iniciando...")
+    print("Servidor Flask iniciando...")
     print("="*60)
-    print(f"📍 Puerto: {port}")
-    print(f"🌍 Entorno: {os.environ.get('FLASK_ENV', 'production')}")
-    print(f"🔧 Debug: {debug}")
-    print(f"🗄️  Base de datos: PostgreSQL")
-    print(f"🔗 URL Local: http://localhost:{port}")
-    print("\n💤 Credenciales por defecto:")
+    print(f"Puerto: {port}")
+    print(f"Entorno: {os.environ.get('FLASK_ENV', 'production')}")
+    print(f"Debug: {debug}")
+    print(f"Base de datos: PostgreSQL")
+    print(f"URL Local: http://localhost:{port}")
+    print("\nCredenciales por defecto:")
     print("   Usuario: admin")
-    print("   Contraseña: admin123")
+    print("   Contrasena: admin123")
     print("="*60 + "\n")
     
     app.run(host='0.0.0.0', port=port, debug=debug)
