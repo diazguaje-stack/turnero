@@ -39,6 +39,14 @@
                     </svg>
                     Usuarios
                 </button>
+                <button class="nav-item" data-section="pantallas">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                    </svg>
+                    Pantallas
+                </button>
                 <button class="nav-item" data-section="estadisticas">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="12" y1="20" x2="12" y2="10"></line>
@@ -68,12 +76,8 @@
                     </button>
                 </div>
 
-                <!-- Users Grid -->
-                <div id="usersGrid" class="users-grid">
-                    <!-- Los usuarios se cargarán aquí dinámicamente -->
-                </div>
+                <div id="usersGrid" class="users-grid"></div>
 
-                <!-- Empty State -->
                 <div id="emptyState" class="empty-state" style="display: none;">
                     <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -83,6 +87,24 @@
                     </svg>
                     <h3>No hay usuarios creados</h3>
                     <p>Comienza creando tu primer usuario</p>
+                </div>
+            </section>
+
+            <!-- Section: Pantallas -->
+            <section id="section-pantallas" class="section">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">📺 Gestión de Pantallas</h2>
+                        <p class="section-description">Administra las pantallas de turnos del sistema</p>
+                    </div>
+                </div>
+
+                <div id="pantallasMessageContainer"></div>
+
+                <div id="pantallasGrid" class="pantallas-grid">
+                    <div style="text-align: center; padding: 40px; color: #6b7280;">
+                        Cargando pantallas...
+                    </div>
                 </div>
             </section>
 
@@ -140,7 +162,7 @@
         </main>
     </div>
 
-    <!-- Modal: Crear Usuario -->
+    <!-- Modales existentes... -->
     <div id="createUserModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -187,7 +209,6 @@
         </div>
     </div>
 
-    <!-- Modal: Detalles del Usuario -->
     <div id="userDetailsModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -235,32 +256,9 @@
             </div>
         </div>
     </div>
-        
-    <!-- COMPONENTE DE PANTALLAS PARA INCLUIR EN administrador.html -->
-    <!-- Agregar este código dentro de administrador.html, después de la sección de usuarios -->
 
-    <!-- ===================================== -->
-    <!-- SECCION: GESTION DE PANTALLAS -->
-    <!-- ===================================== -->
-
-    <section id="pantallasSection" class="content-section" style="display: none;">
-        <div class="section-header">
-            <h2>📺 Gestión de Pantallas</h2>
-            <p>Administra las pantallas de turnos del sistema</p>
-        </div>
-
-        <div id="pantallasMessageContainer"></div>
-
-        <div id="pantallasGrid" class="pantallas-grid">
-            <!-- Las pantallas se cargarán aquí dinámicamente -->
-            <div class="loading-pantallas">Cargando pantallas...</div>
-        </div>
-    </section>
-
-    <!-- Toast Notification -->
     <div id="toast" class="toast"></div>
 
     <script src="{{ url_for('static', filename='js/administrador.js') }}"></script>
 </body>
 </html>
-
