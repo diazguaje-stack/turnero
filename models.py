@@ -82,7 +82,7 @@ class Pantalla(db.Model):
     ultima_conexion = db.Column(db.DateTime)
     vinculada_at = db.Column(db.DateTime)
     
-    # NUEVO: Recepcionista asignado a esta pantalla
+    # Recepcionista asignado a esta pantalla
     recepcionista_id = db.Column(db.String(36), db.ForeignKey('usuarios.id'), nullable=True)
     
     # Timestamps
@@ -208,62 +208,27 @@ class Turno(db.Model):
 # ==========================================
 
 def init_db(app):
-    """Inicializar la base de datos"""
+    """Inicializar la base de datos - VERSIÓN MEJORADA PARA PRODUCCIÓN"""
     db.init_app(app)
     
     with app.app_context():
         try:
-            # Intentar crear todas las tablas
+            print('🔄 Verificando conexión a la base de datos...')
+            
+            # Test de conexión
+            db.session.execute(db.text('SELECT 1'))
+            print('✅ Conexión a base de datos exitosa')
+            
+            # Crear todas las tablas si no existen
+            print('🔄 Creando tablas si no existen...')
             db.create_all()
+            print('✅ Tablas verificadas/creadas')
             
-            # Verificar si el usuario admin existe
-            admin = Usuario.query.filter_by(usuario='admin').first()
-            if not admin:
-                admin = Usuario(
-                    usuario='admin',
-                    rol='administrador',
-                    nombre_completo='Administrador del Sistema',
-                    created_by='sistema'
-                )
-                admin.set_password('admin123')
-                db.session.add(admin)
-                db.session.commit()
-                print('Usuario administrador creado')
-            else:
-                print('Usuario administrador ya existe')
-            
-            # Crear pantallas por defecto (1-6)
-            for i in range(1, 7):
-                pantalla = Pantalla.query.filter_by(numero=i).first()
-                if not pantalla:
-                    pantalla = Pantalla(
-                        numero=i,
-                        nombre=f'Pantalla {i}',
-                        estado='disponible',
-                        created_by='sistema'
-                    )
-                    db.session.add(pantalla)
-            
-            db.session.commit()
-            print('Pantallas inicializadas')
-                
-        except Exception as e:
-            error_msg = str(e).lower()
-            
-            # Si hay error de columnas, recrear las tablas
-            if 'does not exist' in error_msg or 'column' in error_msg:
-                print('Detectado error de esquema - Recreando tablas...')
-                
-                try:
-                    # Eliminar todas las tablas
-                    db.drop_all()
-                    print('Tablas antiguas eliminadas')
-                    
-                    # Crear todas las tablas nuevamente
-                    db.create_all()
-                    print('Tablas recreadas correctamente')
-                    
-                    # Crear usuario administrador
+            # Verificar/Crear usuario admin
+            try:
+                admin = Usuario.query.filter_by(usuario='admin').first()
+                if not admin:
+                    print('🔄 Creando usuario administrador...')
                     admin = Usuario(
                         usuario='admin',
                         rol='administrador',
@@ -272,8 +237,19 @@ def init_db(app):
                     )
                     admin.set_password('admin123')
                     db.session.add(admin)
-                    
-                    # Crear pantallas
+                    db.session.commit()
+                    print('✅ Usuario administrador creado')
+                else:
+                    print('✅ Usuario administrador ya existe')
+            except Exception as e:
+                db.session.rollback()
+                print(f'⚠️  Error al crear admin (puede que ya exista): {str(e)}')
+            
+            # Verificar/Crear pantallas
+            try:
+                pantallas_existentes = Pantalla.query.count()
+                if pantallas_existentes == 0:
+                    print('🔄 Creando pantallas por defecto...')
                     for i in range(1, 7):
                         pantalla = Pantalla(
                             numero=i,
@@ -282,13 +258,28 @@ def init_db(app):
                             created_by='sistema'
                         )
                         db.session.add(pantalla)
-                    
                     db.session.commit()
-                    print('Usuario administrador y pantallas creados')
-                    
-                except Exception as recreate_error:
-                    print(f'Error al recrear tablas: {str(recreate_error)}')
-                    raise
-            else:
-                print(f'Error en base de datos: {str(e)}')
-                raise
+                    print('✅ Pantallas creadas (1-6)')
+                else:
+                    print(f'✅ Pantallas ya existen ({pantallas_existentes} encontradas)')
+            except Exception as e:
+                db.session.rollback()
+                print(f'⚠️  Error al crear pantallas: {str(e)}')
+            
+            print('✅ Inicialización de base de datos completada')
+                
+        except Exception as e:
+            db.session.rollback()
+            error_msg = str(e).lower()
+            
+            print(f'❌ Error durante inicialización: {str(e)}')
+            
+            # Verificar si es error de columna faltante
+            if 'column' in error_msg and 'does not exist' in error_msg:
+                print('⚠️  ADVERTENCIA: Parece que falta una columna en la base de datos')
+                print('⚠️  Ejecuta la migración para agregar el campo recepcionista_id')
+                print('⚠️  Instrucciones en README_IMPLEMENTACION.md')
+            
+            # No lanzar excepción en producción, solo advertir
+            print('⚠️  La aplicación continuará pero puede haber problemas')
+            print('⚠️  Revisa los logs y ejecuta las migraciones necesarias')
