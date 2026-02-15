@@ -936,3 +936,60 @@ body {
     .link-pantalla:hover {
         background: #e5e7eb;
     }
+/* Modal para asignar recepcionista */
+.modal-asignar-recepcionista {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+}
+
+.modal-content-small {
+    background: white;
+    border-radius: 12px;
+    padding: 30px;
+    min-width: 400px;
+    max-width: 500px;
+}
+
+.modal-content-small h3 {
+    margin-bottom: 10px;
+    color: #111827;
+}
+
+.modal-content-small p {
+    color: #6b7280;
+    margin-bottom: 20px;
+}
+
+.form-select {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 20px;
+    background: white;
+    cursor: pointer;
+}
+
+.form-select:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.modal-buttons .btn {
+    flex: 1;
+    padding: 12px;
+}

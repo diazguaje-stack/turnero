@@ -505,16 +505,23 @@ console.log('✅ Administrador.js cargado correctamente');
 const PANTALLAS_API = {
     getPantallas: `${API_URL}/api/pantallas`,
     vincular: (id) => `${API_URL}/api/pantallas/${id}/vincular`,
-    desvincular: (id) => `${API_URL}/api/pantallas/${id}/desvincular`
+    desvincular: (id) => `${API_URL}/api/pantallas/${id}/desvincular`,
+    asignarRecepcionista: (id) => `${API_URL}/api/pantallas/${id}/asignar-recepcionista`
+};
+
+const RECEPCIONISTAS_API = {
+    getAll: `${API_URL}/api/users/recepcionistas`
 };
 
 let pantallasList = [];
 let pantallasInterval = null;
+let recepcionistasDisponibles = [];
 
 /**
  * Inicializar seccion de pantallas
  */
 function inicializarPantallas() {
+    cargarRecepcionistas(); // Cargar lista de recepcionistas
     cargarPantallas();
     
     // Actualizar cada 5 segundos cuando la seccion este visible
@@ -627,6 +634,10 @@ function renderInfoPantalla(pantalla) {
     }
 
     if (pantalla.estado === 'vinculada') {
+        const recepcionistaInfo = pantalla.recepcionista_nombre 
+            ? `<span style="color: #059669; font-weight: 600;">✓ ${pantalla.recepcionista_nombre}</span>`
+            : `<span style="color: #9ca3af;">Sin asignar</span>`;
+        
         return `
             <div class="info-item">
                 <span class="info-label">Vinculada:</span>
@@ -635,6 +646,10 @@ function renderInfoPantalla(pantalla) {
             <div class="info-item">
                 <span class="info-label">Última conexión:</span>
                 <span class="info-value">${formatFecha(pantalla.ultima_conexion)}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Recepcionista:</span>
+                <span class="info-value">${recepcionistaInfo}</span>
             </div>
             ${pantalla.device_id ? `
                 <div class="device-id-small" style="margin-top: 12px;">
@@ -677,6 +692,15 @@ function renderAccionesPantalla(pantalla) {
         return `
             <div class="pantalla-actions">
                 <button 
+                    class="btn btn-primary btn-asignar-recepcionista" 
+                    data-id="${pantalla.id}"
+                    data-numero="${pantalla.numero}"
+                    data-recepcionista="${pantalla.recepcionista_id || ''}"
+                    style="background: #059669; margin-bottom: 8px; width: 100%;"
+                >
+                    👤 Asignar Recepcionista
+                </button>
+                <button 
                     class="btn btn-danger btn-desvincular" 
                     data-id="${pantalla.id}"
                     data-numero="${pantalla.numero}"
@@ -716,6 +740,16 @@ function agregarEventListenersPantallas() {
             const pantallaId = e.target.dataset.id;
             const numero = e.target.dataset.numero;
             confirmarDesvincularPantalla(pantallaId, numero);
+        });
+    });
+
+    // Botones de asignar recepcionista
+    document.querySelectorAll('.btn-asignar-recepcionista').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const pantallaId = e.target.dataset.id;
+            const numero = e.target.dataset.numero;
+            const recepcionistaId = e.target.dataset.recepcionista;
+            mostrarModalAsignarRecepcionista(pantallaId, numero, recepcionistaId);
         });
     });
 
@@ -873,8 +907,109 @@ function limpiarIntervaloPantallas() {
     }
 }
 
+/**
+ * Cargar lista de recepcionistas disponibles
+ */
+async function cargarRecepcionistas() {
+    try {
+        const response = await fetch(RECEPCIONISTAS_API.getAll, {
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            recepcionistasDisponibles = data.recepcionistas || [];
+            console.log(`✅ ${recepcionistasDisponibles.length} recepcionistas cargados`);
+        }
+    } catch (error) {
+        console.error('Error al cargar recepcionistas:', error);
+    }
+}
+
+/**
+ * Asignar recepcionista a una pantalla
+ */
+async function asignarRecepcionista(pantallaId, recepcionistaId) {
+    try {
+        const response = await fetch(PANTALLAS_API.asignarRecepcionista(pantallaId), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+                recepcionista_id: recepcionistaId
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            mostrarMensajePantallas(
+                recepcionistaId ? '✅ Recepcionista asignado exitosamente' : '✅ Recepcionista desasignado',
+                'success'
+            );
+            cargarPantallas();
+        } else {
+            mostrarMensajePantallas(data.message || 'Error al asignar recepcionista', 'error');
+        }
+
+    } catch (error) {
+        console.error('Error al asignar recepcionista:', error);
+        mostrarMensajePantallas('Error al asignar recepcionista', 'error');
+    }
+}
+
+/**
+ * Mostrar modal para asignar recepcionista
+ */
+function mostrarModalAsignarRecepcionista(pantallaId, pantallaNumero, recepcionistaActualId) {
+    const opciones = recepcionistasDisponibles.map(r => 
+        `<option value="${r.id}" ${r.id === recepcionistaActualId ? 'selected' : ''}>
+            ${r.nombre_completo || r.usuario} (ID: ${r.id})
+        </option>`
+    ).join('');
+
+    const html = `
+        <div class="modal-asignar-recepcionista" id="modalAsignarRecepcionista">
+            <div class="modal-content-small">
+                <h3>Asignar Recepcionista</h3>
+                <p>Pantalla ${pantallaNumero}</p>
+                <select id="selectRecepcionista" class="form-select">
+                    <option value="">Sin asignar</option>
+                    ${opciones}
+                </select>
+                <div class="modal-buttons">
+                    <button onclick="cerrarModalRecepcionista()" class="btn btn-secondary">Cancelar</button>
+                    <button onclick="confirmarAsignacionRecepcionista('${pantallaId}')" class="btn btn-primary">Asignar</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function cerrarModalRecepcionista() {
+    const modal = document.getElementById('modalAsignarRecepcionista');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+function confirmarAsignacionRecepcionista(pantallaId) {
+    const select = document.getElementById('selectRecepcionista');
+    const recepcionistaId = select.value || null;
+    
+    asignarRecepcionista(pantallaId, recepcionistaId);
+    cerrarModalRecepcionista();
+}
+
 // Exportar funciones globales
 window.inicializarPantallas = inicializarPantallas;
 window.vincularPantallaAdmin = vincularPantallaAdmin;
 window.desvincularPantallaAdmin = desvincularPantallaAdmin;
 window.limpiarIntervaloPantallas = limpiarIntervaloPantallas;
+window.mostrarModalAsignarRecepcionista = mostrarModalAsignarRecepcionista;
+window.cerrarModalRecepcionista = cerrarModalRecepcionista;
+window.confirmarAsignacionRecepcionista = confirmarAsignacionRecepcionista;

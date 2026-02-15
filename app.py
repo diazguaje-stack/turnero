@@ -505,6 +505,99 @@ def recepcion():
     return render_template('recepcion.html')
 
 
+@app.route('/screen')
+def screen():
+    """Pagina de pantalla de turnos"""
+    return render_template('screen.html')
+
+
+# ===================================
+# RUTAS DE GESTIÓN DE RECEPCIONISTAS EN PANTALLAS
+# ===================================
+
+@app.route('/api/pantallas/<pantalla_id>/asignar-recepcionista', methods=['POST'])
+@login_required
+def asignar_recepcionista(pantalla_id):
+    """Asignar un recepcionista a una pantalla"""
+    try:
+        data = request.get_json()
+        recepcionista_id = data.get('recepcionista_id')
+        
+        pantalla = Pantalla.query.get(pantalla_id)
+        
+        if not pantalla:
+            return jsonify({
+                'success': False,
+                'message': 'Pantalla no encontrada'
+            }), 404
+        
+        # Si recepcionista_id es None o vacío, quitar la asignación
+        if not recepcionista_id:
+            pantalla.recepcionista_id = None
+            db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Recepcionista desasignado',
+                'pantalla': pantalla.to_dict()
+            }), 200
+        
+        # Verificar que el usuario existe y es recepcionista
+        recepcionista = Usuario.query.get(recepcionista_id)
+        
+        if not recepcionista:
+            return jsonify({
+                'success': False,
+                'message': 'Recepcionista no encontrado'
+            }), 404
+        
+        if recepcionista.rol != 'recepcion':
+            return jsonify({
+                'success': False,
+                'message': 'El usuario no es recepcionista'
+            }), 400
+        
+        # Asignar recepcionista
+        pantalla.recepcionista_id = recepcionista_id
+        db.session.commit()
+        
+        print(f"Recepcionista {recepcionista.nombre_completo} asignado a Pantalla {pantalla.numero}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Recepcionista asignado exitosamente',
+            'pantalla': pantalla.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error al asignar recepcionista: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Error al asignar recepcionista'
+        }), 500
+
+
+@app.route('/api/users/recepcionistas', methods=['GET'])
+@login_required
+def get_recepcionistas():
+    """Obtener lista de usuarios con rol recepción"""
+    try:
+        recepcionistas = Usuario.query.filter_by(rol='recepcion', activo=True).all()
+        
+        return jsonify({
+            'success': True,
+            'recepcionistas': [r.to_dict() for r in recepcionistas]
+        }), 200
+        
+    except Exception as e:
+        print(f"Error al obtener recepcionistas: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Error al obtener recepcionistas'
+        }), 500
+
+
 # ===================================
 # RUTAS DE UTILIDAD
 # ===================================
@@ -571,4 +664,3 @@ if __name__ == '__main__':
     print("=" * 60 + "\n")
     
     app.run(host='0.0.0.0', port=port, debug=debug)
-

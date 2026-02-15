@@ -65,6 +65,7 @@ def migrate_users_from_json():
             db.session.rollback()
             print(f"\n❌ Error durante la migración: {str(e)}")
             raise
+        
 
 if __name__ == '__main__':
     print("\n🔄 INICIANDO MIGRACIÓN DE USUARIOS")

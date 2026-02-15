@@ -33,6 +33,9 @@ class Usuario(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_by = db.Column(db.String(50))
     
+    # Relación con pantallas (para recepcionistas)
+    pantallas_asignadas = db.relationship('Pantalla', backref='recepcionista', lazy='dynamic', foreign_keys='Pantalla.recepcionista_id')
+    
     # Metodos
     def set_password(self, password):
         """Hashea la contrasena antes de guardarla"""
@@ -79,6 +82,9 @@ class Pantalla(db.Model):
     ultima_conexion = db.Column(db.DateTime)
     vinculada_at = db.Column(db.DateTime)
     
+    # NUEVO: Recepcionista asignado a esta pantalla
+    recepcionista_id = db.Column(db.String(36), db.ForeignKey('usuarios.id'), nullable=True)
+    
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -92,6 +98,10 @@ class Pantalla(db.Model):
     
     def to_dict(self):
         """Convierte la pantalla a diccionario"""
+        recepcionista_nombre = None
+        if self.recepcionista_id and self.recepcionista:
+            recepcionista_nombre = self.recepcionista.nombre_completo or self.recepcionista.usuario
+        
         return {
             'id': self.id,
             'numero': self.numero,
@@ -101,7 +111,9 @@ class Pantalla(db.Model):
             'estado': self.estado,
             'ultima_conexion': self.ultima_conexion.isoformat() if self.ultima_conexion else None,
             'vinculada_at': self.vinculada_at.isoformat() if self.vinculada_at else None,
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'recepcionista_id': self.recepcionista_id,
+            'recepcionista_nombre': recepcionista_nombre
         }
     
     def __repr__(self):
