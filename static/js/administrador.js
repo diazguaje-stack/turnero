@@ -1,3 +1,82 @@
+// ==================================================
+// CÓDIGO PARA AGREGAR AL INICIO DE TU administrador.js
+// (Reemplaza la función de navegación existente)
+// ==================================================
+
+// Función de navegación entre secciones
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Panel de administrador cargado');
+    
+    // Obtener todos los botones de navegación
+    const navButtons = document.querySelectorAll('.nav-item');
+    
+    navButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const sectionName = this.getAttribute('data-section');
+            console.log('Navegando a sección:', sectionName);
+            
+            // Remover clase active de todos los botones
+            navButtons.forEach(btn => btn.classList.remove('active'));
+            
+            // Agregar clase active al botón clickeado
+            this.classList.add('active');
+            
+            // Ocultar todas las secciones
+            const sections = document.querySelectorAll('.section');
+            sections.forEach(section => {
+                section.classList.remove('active');
+                section.style.display = 'none';
+            });
+            
+            // Mostrar la sección seleccionada
+            const targetSection = document.getElementById(`section-${sectionName}`);
+            if (targetSection) {
+                targetSection.classList.add('active');
+                targetSection.style.display = 'block';
+                
+                // Si es la sección de pantallas, inicializarla
+                if (sectionName === 'pantallas') {
+                    console.log('Inicializando pantallas...');
+                    if (typeof inicializarPantallas === 'function') {
+                        inicializarPantallas();
+                    } else {
+                        console.error('Función inicializarPantallas no encontrada');
+                    }
+                } else {
+                    // Limpiar intervalo de pantallas si se sale de esa sección
+                    if (typeof limpiarIntervaloPantallas === 'function') {
+                        limpiarIntervaloPantallas();
+                    }
+                }
+                
+                // Si es la sección de usuarios, cargar usuarios
+                if (sectionName === 'usuarios') {
+                    if (typeof loadUsers === 'function') {
+                        loadUsers();
+                    }
+                }
+            } else {
+                console.error('Sección no encontrada:', `section-${sectionName}`);
+            }
+        });
+    });
+    
+    // Inicializar la primera sección (usuarios)
+    const firstSection = document.getElementById('section-usuarios');
+    if (firstSection) {
+        firstSection.classList.add('active');
+        firstSection.style.display = 'block';
+    }
+    
+    // Cargar usuarios al inicio
+    if (typeof loadUsers === 'function') {
+        loadUsers();
+    }
+});
+
+// ==================================================
+// FIN DEL CÓDIGO DE NAVEGACIÓN
+// ==================================================
 // administrador.js - Sistema completo de gestión de usuarios con sincronización
 
 // API Configuration
