@@ -1,4 +1,4 @@
-# config.py - Configuración de la base de datos PostgreSQL
+# config.py - Configuración híbrida: SQLite (localhost) + PostgreSQL (Render)
 
 import os
 from urllib.parse import quote_plus
@@ -9,35 +9,9 @@ class Config:
     # Secret Key para Flask
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'tu_clave_secreta_muy_segura_12345'
     
-    # Configuración de PostgreSQL
-    # Formato: postgresql://usuario:contraseña@host:puerto/nombre_db
-    
-    # Opción 1: Usando variables individuales (más limpio)
-    DB_USER = os.environ.get('DB_USER', 'postgres')
-    DB_PASSWORD = os.environ.get('DB_PASSWORD', 'tu_contraseña')
-    DB_HOST = os.environ.get('DB_HOST', 'localhost')
-    DB_PORT = os.environ.get('DB_PORT', '5432')
-    DB_NAME = os.environ.get('DB_NAME', 'turnero_medico')
-    
-    # Construir URL de base de datos
-    # quote_plus codifica caracteres especiales en la contraseña
-    SQLALCHEMY_DATABASE_URI = (
-        f"postgresql://{DB_USER}:{quote_plus(DB_PASSWORD)}"
-        f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    )
-    
-    # Opción 2: Usar DATABASE_URL directamente (útil para Render)
-    # Si DATABASE_URL existe, úsala en lugar de construir manualmente
-    DATABASE_URL = os.environ.get('DATABASE_URL')
-    if DATABASE_URL:
-        # Render usa postgres:// pero SQLAlchemy necesita postgresql://
-        if DATABASE_URL.startswith('postgres://'):
-            DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-        SQLALCHEMY_DATABASE_URI = DATABASE_URL
-    
     # Configuración de SQLAlchemy
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_ECHO = os.environ.get('FLASK_ENV') == 'development'  # Log SQL queries en dev
+    SQLALCHEMY_ECHO = False
     
     # Pool de conexiones
     SQLALCHEMY_ENGINE_OPTIONS = {
@@ -49,23 +23,45 @@ class Config:
 
 
 class DevelopmentConfig(Config):
-    """Configuración para desarrollo local"""
+    """Configuración para desarrollo local - Usa SQLite"""
     DEBUG = True
     FLASK_ENV = 'development'
     
-    # Base de datos local
-    DB_HOST = 'localhost'
-    DB_PORT = '5432'
-    DB_NAME = 'turnero_medico_dev'
+    # Base de datos SQLite local (sin dependencias externas)
+    DB_PATH = os.path.join(os.path.dirname(__file__), 'turnero_medico.db')
+    SQLALCHEMY_DATABASE_URI = f'sqlite:///{DB_PATH}'
+    
+    # SQLite no necesita pool config complejo
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'connect_args': {'check_same_thread': False}
+    }
 
 
 class ProductionConfig(Config):
-    """Configuración para producción (Render)"""
+    """Configuración para producción (Render) - Usa PostgreSQL"""
     DEBUG = False
     FLASK_ENV = 'production'
     
     # En producción, usar DATABASE_URL de Render
-    # Se configura automáticamente en Render
+    DATABASE_URL = os.environ.get('DATABASE_URL')
+    
+    if DATABASE_URL:
+        # Render a veces usa postgres://, SQLAlchemy espera postgresql://
+        if DATABASE_URL.startswith('postgres://'):
+            DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+        SQLALCHEMY_DATABASE_URI = DATABASE_URL
+    else:
+        # Fallback a PostgreSQL local si no hay DATABASE_URL
+        DB_USER = os.environ.get('DB_USER', 'postgres')
+        DB_PASSWORD = os.environ.get('DB_PASSWORD', 'tu_contraseña')
+        DB_HOST = os.environ.get('DB_HOST', 'localhost')
+        DB_PORT = os.environ.get('DB_PORT', '5432')
+        DB_NAME = os.environ.get('DB_NAME', 'turnero_medico')
+        
+        SQLALCHEMY_DATABASE_URI = (
+            f"postgresql://{DB_USER}:{quote_plus(DB_PASSWORD)}"
+            f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+        )
 
 
 # Diccionario de configuraciones

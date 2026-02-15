@@ -236,7 +236,8 @@ function createUserCard(user) {
     card.className = 'user-card';
     card.onclick = () => showUserDetails(user.id);
 
-    const initial = user.usuario.charAt(0).toUpperCase();
+    const nombreCompleto = user.nombre_completo || user.usuario;
+    const initial = nombreCompleto.charAt(0).toUpperCase();
     const roleClass = `role-${user.rol.toLowerCase()}`;
     const roleLabel = {
         'administrador': 'Administrador',
@@ -251,7 +252,7 @@ function createUserCard(user) {
             <span class="user-id">#${user.id}</span>
         </div>
         <div class="user-info">
-            <h3>${user.usuario}</h3>
+            <h3>${nombreCompleto}</h3>
             <span class="user-role ${roleClass}">${roleLabel}</span>
         </div>
     `;
@@ -298,7 +299,7 @@ async function handleCreateUser(e) {
     const newUser = {
         id: userId,
         usuario: username,
-        nombre: name,
+        nombre_completo: name,
         password: password,
         rol: role,
         created_at: new Date().toISOString(),
@@ -318,10 +319,7 @@ async function handleCreateUser(e) {
         const data = await response.json();
 
         if (response.ok) {
-            users.push(newUser);
-            localStorage.setItem('systemUsers', JSON.stringify(users));
-            
-            loadUsers();
+            loadUsersFromBackend();
             updateStats();
             closeCreateUserModal();
             showToast(`Usuario ${username} creado exitosamente`, 'success');
@@ -446,10 +444,7 @@ async function deleteUser() {
             const data = await response.json();
 
             if (response.ok) {
-                users = users.filter(u => u.id !== selectedUserId);
-                localStorage.setItem('systemUsers', JSON.stringify(users));
-                
-                loadUsers();
+                loadUsersFromBackend();
                 updateStats();
                 closeUserDetailsModal();
                 showToast(`Usuario ${user.usuario} eliminado`, 'success');

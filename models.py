@@ -245,6 +245,27 @@ def init_db(app):
                 db.session.rollback()
                 print(f'⚠️  Error al crear admin (puede que ya exista): {str(e)}')
             
+            # Verificar/Crear usuario recepcionista
+            try:
+                recepcion = Usuario.query.filter_by(usuario='recepcion').first()
+                if not recepcion:
+                    print('🔄 Creando usuario recepcionista...')
+                    recepcion = Usuario(
+                        usuario='recepcion',
+                        rol='recepcionista',
+                        nombre_completo='Usuario Recepción',
+                        created_by='sistema'
+                    )
+                    recepcion.set_password('recep123')
+                    db.session.add(recepcion)
+                    db.session.commit()
+                    print('✅ Usuario recepcionista creado')
+                else:
+                    print('✅ Usuario recepcionista ya existe')
+            except Exception as e:
+                db.session.rollback()
+                print(f'⚠️  Error al crear recepción: {str(e)}')
+            
             # Verificar/Crear pantallas
             try:
                 pantallas_existentes = Pantalla.query.count()

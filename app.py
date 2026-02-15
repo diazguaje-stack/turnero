@@ -15,8 +15,8 @@ from config import config
 # Crear aplicacion Flask
 app = Flask(__name__)
 
-# Configuracion del entorno
-env = os.environ.get('FLASK_ENV', 'production')
+# Configuracion del entorno (development por defecto en localhost)
+env = os.environ.get('FLASK_ENV', 'development')
 app.config.from_object(config[env])
 
 # Inicializar base de datos
