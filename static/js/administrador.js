@@ -80,8 +80,8 @@ document.addEventListener('DOMContentLoaded', function() {
 // administrador.js - Sistema completo de gestión de usuarios con sincronización
 
 // API Configuration
-const API_BASE_URL = 'http://localhost:5000/api';
-
+const API_URL = window.location.origin;
+const API_BASE_URL = `${API_URL}/api`;
 // Base de datos local de usuarios (sincronizada con backend)
 let users = [];
 let currentUser = null;
