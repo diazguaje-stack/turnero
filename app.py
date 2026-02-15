@@ -511,8 +511,6 @@ def update_user(user_id):
         # Actualizar campos
         user.usuario = data.get('usuario', user.usuario).strip()
         user.nombre_completo = data.get('nombre_completo', user.nombre_completo)
-        user.email = data.get('email', user.email)
-        user.telefono = data.get('telefono', user.telefono)
         user.rol = data.get('rol', user.rol)
         
         # Actualizar contraseña si se proporciona

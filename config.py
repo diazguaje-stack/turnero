@@ -2,12 +2,17 @@
 
 import os
 from urllib.parse import quote_plus
+from cryptography.fernet import Fernet
 
 class Config:
     """Configuración base"""
     
     # Secret Key para Flask
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'tu_clave_secreta_muy_segura_12345'
+    
+    # Clave de encriptación Fernet para contraseñas
+    # Genera una nueva clave con: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    PASSWORD_ENCRYPTION_KEY = os.environ.get('PASSWORD_ENCRYPTION_KEY') or b'K_m3xH9nP2vL5qQ8wR6tY9uO1iA4jB7cD0eF3gH6jK9lM2nN5pQ8sT1uV4wX7yZ0a'
     
     # Configuración de SQLAlchemy
     SQLALCHEMY_TRACK_MODIFICATIONS = False

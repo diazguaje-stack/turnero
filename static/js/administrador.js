@@ -374,8 +374,6 @@ function showUserDetails(userId) {
     document.getElementById('detailId').textContent = user.id;
     document.getElementById('detailUsername').textContent = user.usuario;
     document.getElementById('detailName').textContent = user.nombre_completo || 'Sin especificar';
-    document.getElementById('detailEmail').textContent = user.email || 'Sin especificar';
-    document.getElementById('detailPhone').textContent = user.telefono || 'Sin especificar';
     document.getElementById('detailPassword').textContent = '••••••••';
     document.getElementById('detailPassword').dataset.password = user.password || '';
     
@@ -403,10 +401,11 @@ function showUserDetails(userId) {
     // Asegurar que los inputs están ocultos
     document.getElementById('editUsername').style.display = 'none';
     document.getElementById('editName').style.display = 'none';
-    document.getElementById('editEmail').style.display = 'none';
-    document.getElementById('editPhone').style.display = 'none';
-    document.getElementById('editPassword').style.display = 'none';
+    document.getElementById('editPasswordContainer').style.display = 'none';
     document.getElementById('editRole').style.display = 'none';
+
+    // Mostrar vista de contraseña (no editable)
+    document.getElementById('detailPasswordView').style.display = 'flex';
 
     // Mostrar botones correctos
     document.getElementById('deleteBtn').style.display = 'block';
@@ -452,6 +451,11 @@ function toggleDetailPassword() {
 
 function togglePasswordVisibility(inputId) {
     const input = document.getElementById(inputId);
+    input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+function toggleEditPassword() {
+    const input = document.getElementById('editPassword');
     input.type = input.type === 'password' ? 'text' : 'password';
 }
 
@@ -1070,8 +1074,6 @@ function enterEditMode() {
     document.getElementById('detailId').textContent = user.id;
     document.getElementById('detailUsername').textContent = user.usuario;
     document.getElementById('detailName').textContent = user.nombre_completo || 'Sin especificar';
-    document.getElementById('detailEmail').textContent = user.email || 'Sin especificar';
-    document.getElementById('detailPhone').textContent = user.telefono || 'Sin especificar';
     
     const roleLabel = {
         'administrador': 'Administrador',
@@ -1094,17 +1096,18 @@ function enterEditMode() {
     document.getElementById('editName').style.display = 'block';
     document.getElementById('editName').value = user.nombre_completo || '';
 
-    document.getElementById('detailEmail').style.display = 'none';
-    document.getElementById('editEmail').style.display = 'block';
-    document.getElementById('editEmail').value = user.email || '';
-
-    document.getElementById('detailPhone').style.display = 'none';
-    document.getElementById('editPhone').style.display = 'block';
-    document.getElementById('editPhone').value = user.telefono || '';
-
-    document.getElementById('detailPassword').parentElement.style.display = 'none';
-    document.getElementById('editPassword').style.display = 'block';
-    document.getElementById('editPassword').value = '';
+    // Mostrar campo de contraseña editable
+    document.getElementById('detailPasswordView').style.display = 'none';
+    document.getElementById('editPasswordContainer').style.display = 'flex';
+    
+    // Cargar contraseña actual
+    const passwordValue = user.password || '';
+    document.getElementById('editPassword').value = passwordValue;
+    document.getElementById('editPassword').type = 'password';
+    
+    // Debug: log para verificar
+    console.log('User:', user);
+    console.log('Password:', passwordValue);
 
     document.getElementById('detailRole').style.display = 'none';
     document.getElementById('editRole').style.display = 'block';
@@ -1127,14 +1130,8 @@ function cancelEditMode() {
     document.getElementById('detailName').style.display = 'span';
     document.getElementById('editName').style.display = 'none';
 
-    document.getElementById('detailEmail').style.display = 'span';
-    document.getElementById('editEmail').style.display = 'none';
-
-    document.getElementById('detailPhone').style.display = 'span';
-    document.getElementById('editPhone').style.display = 'none';
-
-    document.getElementById('detailPassword').parentElement.style.display = 'flex';
-    document.getElementById('editPassword').style.display = 'none';
+    document.getElementById('detailPasswordView').style.display = 'flex';
+    document.getElementById('editPasswordContainer').style.display = 'none';
 
     document.getElementById('detailRole').style.display = 'span';
     document.getElementById('editRole').style.display = 'none';
@@ -1149,8 +1146,6 @@ function cancelEditMode() {
 async function saveUserChanges() {
     const newUsername = document.getElementById('editUsername').value.trim();
     const newName = document.getElementById('editName').value.trim();
-    const newEmail = document.getElementById('editEmail').value.trim();
-    const newPhone = document.getElementById('editPhone').value.trim();
     const newPassword = document.getElementById('editPassword').value;
     const newRole = document.getElementById('editRole').value;
 
@@ -1165,12 +1160,11 @@ async function saveUserChanges() {
     const updatedData = {
         usuario: newUsername,
         nombre_completo: newName,
-        email: newEmail,
-        telefono: newPhone,
         rol: newRole
     };
 
-    if (newPassword) {
+    // Solo incluir contraseña si ha sido modificada
+    if (newPassword !== user.password) {
         updatedData.password = newPassword;
     }
 

@@ -3,11 +3,42 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
+from cryptography.fernet import Fernet
 import uuid
 import random
 import string
+import os
 
 db = SQLAlchemy()
+
+# Clave para encriptación de contraseñas
+try:
+    from config import Config
+    cipher = Fernet(Config.PASSWORD_ENCRYPTION_KEY if isinstance(Config.PASSWORD_ENCRYPTION_KEY, bytes) else Config.PASSWORD_ENCRYPTION_KEY.encode())
+except:
+    # Fallback en caso de error (desarrollo sin config)
+    key = Fernet.generate_key()
+    cipher = Fernet(key)
+
+def encrypt_password(password):
+    """Encripta una contraseña"""
+    try:
+        if isinstance(password, str):
+            password = password.encode()
+        return cipher.encrypt(password).decode()
+    except Exception as e:
+        print(f"Error al encriptar contraseña: {e}")
+        return ""
+
+def decrypt_password(encrypted_password):
+    """Desencripta una contraseña"""
+    try:
+        if isinstance(encrypted_password, str):
+            encrypted_password = encrypted_password.encode()
+        return cipher.decrypt(encrypted_password).decode()
+    except Exception as e:
+        print(f"Error al desencriptar contraseña: {e}")
+        return ""
 
 # ==========================================
 # MODELO: Usuario
@@ -22,6 +53,7 @@ class Usuario(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     usuario = db.Column(db.String(50), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
+    password_encrypted = db.Column(db.String(500))  # Contraseña encriptada reversible para administrador
     rol = db.Column(db.String(20), nullable=False)
     nombre_completo = db.Column(db.String(100))
     email = db.Column(db.String(100), unique=True)
@@ -38,18 +70,26 @@ class Usuario(db.Model):
     
     # Metodos
     def set_password(self, password):
-        """Hashea la contrasena antes de guardarla"""
+        """Hashea la contrasena antes de guardarla y la encripta"""
         self.password_hash = generate_password_hash(password)
+        self.password_encrypted = encrypt_password(password)
     
     def check_password(self, password):
         """Verifica si la contrasena es correcta"""
         return check_password_hash(self.password_hash, password)
+    
+    def get_password(self):
+        """Obtiene la contraseña desencriptada (solo para admin)"""
+        if self.password_encrypted:
+            return decrypt_password(self.password_encrypted)
+        return ""
     
     def to_dict(self):
         """Convierte el usuario a diccionario"""
         return {
             'id': self.id,
             'usuario': self.usuario,
+            'password': self.get_password(),  # Agregar contraseña desencriptada
             'rol': self.rol,
             'nombre_completo': self.nombre_completo,
             'email': self.email,

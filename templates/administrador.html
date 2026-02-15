@@ -240,27 +240,25 @@
                     <input type="text" class="detail-input" id="editName" style="display: none;" />
                 </div>
                 <div class="detail-item">
-                    <span class="detail-label">Email</span>
-                    <span class="detail-value" id="detailEmail">-</span>
-                    <input type="email" class="detail-input" id="editEmail" style="display: none;" />
-                </div>
-                <div class="detail-item">
-                    <span class="detail-label">Teléfono</span>
-                    <span class="detail-value" id="detailPhone">-</span>
-                    <input type="text" class="detail-input" id="editPhone" style="display: none;" />
-                </div>
-                <div class="detail-item">
                     <span class="detail-label">Contraseña</span>
-                    <div class="detail-password">
+                    <div class="detail-password" id="detailPasswordView">
                         <span class="detail-value" id="detailPassword">••••••••</span>
-                        <button class="btn-icon" onclick="toggleDetailPassword()">
+                        <button class="btn-icon" type="button" onclick="toggleDetailPassword()">
                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                                 <circle cx="12" cy="12" r="3"></circle>
                             </svg>
                         </button>
                     </div>
-                    <input type="password" class="detail-input" id="editPassword" style="display: none;" placeholder="Dejar en blanco para no cambiar" />
+                    <div class="password-edit-container" id="editPasswordContainer" style="display: none;">
+                        <input type="password" class="detail-input" id="editPassword" placeholder="Contraseña actual" />
+                        <button class="btn-icon" type="button" onclick="toggleEditPassword()">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">Rol</span>

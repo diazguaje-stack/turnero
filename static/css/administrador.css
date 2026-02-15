@@ -1046,6 +1046,21 @@ body {
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
+.password-edit-container {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.password-edit-container .detail-input {
+    flex: 1;
+}
+
+.password-edit-container .btn-icon {
+    padding: 8px;
+    cursor: pointer;
+}
+
 .detail-item {
     margin-bottom: 16px;
 }
