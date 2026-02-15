@@ -278,10 +278,11 @@ async function handleCreateUser(e) {
     e.preventDefault();
 
     const username = document.getElementById('newUsername').value.trim();
+    const name = document.getElementById('newName').value.trim();
     const password = document.getElementById('newPassword').value;
     const role = document.getElementById('newRole').value;
 
-    if (!username || !password || !role) {
+    if (!username || !name || !password || !role) {
         showToast('Por favor completa todos los campos', 'error');
         return;
     }
@@ -297,6 +298,7 @@ async function handleCreateUser(e) {
     const newUser = {
         id: userId,
         usuario: username,
+        nombre: name,
         password: password,
         rol: role,
         created_at: new Date().toISOString(),
