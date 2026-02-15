@@ -21,303 +21,149 @@
         }
 
         .container {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 60px;
-            width: 90%;
-            max-width: 600px;
             text-align: center;
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            flex-direction: column;
         }
 
-        /* ========================================
-           ESTILOS PARA ESTADOS INICIALES
-           ======================================== */
-
-        .screen-icon {
-            font-size: 80px;
-            margin-bottom: 20px;
+        #linkedState {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100%;
         }
 
-        h1 {
-            color: #333;
-            font-size: 32px;
-            margin-bottom: 10px;
-        }
-
-        .subtitle {
-            color: #666;
-            font-size: 16px;
+        .pantalla-nombre {
+            font-size: 120px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            letter-spacing: 10px;
             margin-bottom: 30px;
         }
 
-        .status-box {
-            background: #f3f4f6;
-            border-radius: 12px;
-            padding: 30px;
-            margin: 30px 0;
-        }
-
-        .status-icon {
+        .recepcionista-nombre {
             font-size: 60px;
-            margin-bottom: 15px;
-        }
-
-        .status-text {
-            font-size: 18px;
-            color: #374151;
             font-weight: 600;
+            color: rgba(255, 255, 255, 0.9);
+            text-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .recepcionista-label {
+            font-size: 24px;
+            color: rgba(255, 255, 255, 0.7);
             margin-bottom: 10px;
-        }
-
-        .codigo-display {
-            font-size: 48px;
-            font-weight: bold;
-            color: #667eea;
-            letter-spacing: 8px;
-            margin: 20px 0;
-            font-family: 'Courier New', monospace;
-        }
-
-        .instruction {
-            color: #6b7280;
-            font-size: 14px;
-            line-height: 1.6;
-        }
-
-        .device-info {
-            background: #f9fafb;
-            border-radius: 8px;
-            padding: 15px;
-            margin-top: 20px;
-            font-size: 12px;
-            color: #6b7280;
-        }
-
-        .device-id {
-            font-family: monospace;
-            word-break: break-all;
-            margin-top: 5px;
-            color: #9ca3af;
         }
 
         .loading {
             display: inline-block;
-            width: 50px;
-            height: 50px;
-            border: 5px solid #f3f4f6;
+            width: 80px;
+            height: 80px;
+            border: 8px solid rgba(255, 255, 255, 0.3);
             border-radius: 50%;
-            border-top-color: #667eea;
-            animation: spin 1s linear infinite;
+            border-top-color: white;
+            animation: spin 1.5s linear infinite;
         }
 
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
 
-        .error-message {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 15px;
-            border-radius: 8px;
+        .status-text {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 24px;
             margin-top: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .pantalla-nombre {
+                font-size: 80px;
+                letter-spacing: 5px;
+            }
+
+            .recepcionista-nombre {
+                font-size: 40px;
+            }
+
+            .recepcionista-label {
+                font-size: 18px;
+            }
+
+            .status-text {
+                font-size: 18px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .pantalla-nombre {
+                font-size: 60px;
+                letter-spacing: 3px;
+            }
+
+            .recepcionista-nombre {
+                font-size: 30px;
+            }
+
+            .recepcionista-label {
+                font-size: 14px;
+            }
+
+            .status-text {
+                font-size: 14px;
+            }
+        }
+
+        .error-message {
+            background-color: rgba(255, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 18px;
             display: none;
+            max-width: 800px;
+            margin: 20px auto;
         }
 
         .error-message.show {
             display: block;
         }
 
-        /* ========================================
-           ESTILOS PARA PANTALLA DE TRABAJO
-           ======================================== */
-
-        .pantalla-trabajo {
-            display: none;
-            min-height: 400px;
-        }
-
-        .pantalla-trabajo.active {
-            display: block;
-        }
-
-        /* Header de la pantalla */
-        .pantalla-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            border-radius: 15px;
-            margin-bottom: 30px;
-        }
-
-        .pantalla-numero-grande {
-            font-size: 64px;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-
-        .pantalla-info-header {
-            font-size: 18px;
-            opacity: 0.9;
-        }
-
-        /* Sección de recepcionista */
-        .recepcionista-section {
-            background: #f0fdf4;
-            border: 2px solid #10b981;
-            border-radius: 12px;
-            padding: 25px;
-            margin-bottom: 25px;
-        }
-
-        .recepcionista-label {
-            font-size: 14px;
-            color: #065f46;
-            font-weight: 600;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .recepcionista-nombre {
-            font-size: 28px;
-            color: #059669;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-
-        .recepcionista-id {
-            font-size: 12px;
-            color: #6b7280;
-            font-family: monospace;
-        }
-
-        .sin-recepcionista {
-            color: #9ca3af;
-            font-style: italic;
-        }
-
-        /* Sección de paciente */
-        .paciente-section {
-            background: #f3f4f6;
-            border: 2px dashed #d1d5db;
-            border-radius: 12px;
-            padding: 25px;
-            margin-bottom: 25px;
-        }
-
-        .paciente-label {
-            font-size: 14px;
-            color: #6b7280;
-            font-weight: 600;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .paciente-nombre {
-            font-size: 28px;
-            color: #374151;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-
-        .sin-paciente {
-            color: #9ca3af;
-            font-size: 24px;
-            font-style: italic;
-        }
-
-        /* Footer de la pantalla */
-        .pantalla-footer {
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 2px solid #e5e7eb;
-        }
-
-        .ultima-actualizacion {
-            font-size: 12px;
-            color: #9ca3af;
-            margin-bottom: 10px;
-        }
-
-        .status-indicator {
-            display: inline-flex;
+        .pending-state {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
             align-items: center;
-            gap: 8px;
-            background: #d1fae5;
-            color: #065f46;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 13px;
+            width: 100%;
+            height: 100%;
+            gap: 40px;
+        }
+
+        .pending-label {
+            font-size: 36px;
+            color: rgba(255, 255, 255, 0.9);
             font-weight: 600;
         }
 
-        .status-dot {
-            width: 10px;
-            height: 10px;
-            background: #10b981;
-            border-radius: 50%;
-            animation: pulse 2s infinite;
+        .codigo-vinculacion {
+            font-size: 80px;
+            font-weight: bold;
+            color: #FFD700;
+            letter-spacing: 20px;
+            font-family: 'Courier New', monospace;
+            text-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
         }
 
-        @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
-            }
-            50% {
-                opacity: 0.5;
-            }
-        }
-
-        /* Info adicional */
-        .info-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
+        .codigo-label {
+            font-size: 24px;
+            color: rgba(255, 255, 255, 0.7);
             margin-top: 20px;
-        }
-
-        .info-item {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid #e5e7eb;
-        }
-
-        .info-label {
-            font-size: 11px;
-            color: #9ca3af;
-            font-weight: 600;
-            text-transform: uppercase;
-            margin-bottom: 5px;
-        }
-
-        .info-value {
-            font-size: 16px;
-            color: #111827;
-            font-weight: 600;
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .container {
-                padding: 30px;
-                width: 95%;
-            }
-
-            .pantalla-numero-grande {
-                font-size: 48px;
-            }
-
-            .recepcionista-nombre,
-            .paciente-nombre {
-                font-size: 22px;
-            }
-
-            .info-grid {
-                grid-template-columns: 1fr;
-            }
         }
     </style>
 </head>
@@ -325,97 +171,24 @@
     <div class="container">
         <!-- Estado: Conectando -->
         <div id="connectingState">
-            <div class="screen-icon">📺</div>
-            <h1>Pantalla de Turnos</h1>
-            <p class="subtitle">Iniciando sistema...</p>
-            
-            <div class="status-box">
-                <div class="loading"></div>
-                <p class="status-text" style="margin-top: 20px;">Conectando con el servidor...</p>
-            </div>
+            <div class="loading"></div>
+            <p class="status-text">Conectando...</p>
         </div>
 
-        <!-- Estado: Pendiente de vinculación -->
-        <div id="pendingState" style="display: none;">
-            <div class="screen-icon">🔗</div>
-            <h1>Vinculación Pendiente</h1>
-            <p class="subtitle">Esta pantalla está lista para vincularse</p>
-            
-            <div class="status-box">
-                <div class="status-icon">🔑</div>
-                <p class="status-text">Código de Vinculación:</p>
-                <div class="codigo-display" id="codigoVinculacion">------</div>
-                <p class="instruction">
-                    Ingresa este código en el panel de administrador<br>
-                    para vincular esta pantalla al sistema
-                </p>
-            </div>
-
-            <div class="device-info">
-                <strong>ID del Dispositivo:</strong>
-                <div class="device-id" id="deviceIdDisplay">Generando...</div>
-            </div>
-
-            <div id="errorMessage" class="error-message"></div>
+        <!-- Estado: Pendiente de Vinculación (muestra código) -->
+        <div id="pendingState" class="pending-state" style="display: none;">
+            <div class="pending-label">Código de Vinculación</div>
+            <div class="codigo-vinculacion" id="codigoVinculacion">------</div>
+            <div class="codigo-label">Ingresa este código en la pantalla del administrador</div>
         </div>
 
-        <!-- Estado: Vinculada - PANTALLA DE TRABAJO -->
-        <div id="linkedState" class="pantalla-trabajo">
-            <!-- Header -->
-            <div class="pantalla-header">
-                <div class="pantalla-numero-grande" id="pantallaNumeroGrande">
-                    Pantalla 0
-                </div>
-                <div class="pantalla-info-header" id="pantallaNombreHeader">
-                    Sistema de Turnos
-                </div>
-            </div>
-
-            <!-- Sección de Recepcionista -->
-            <div class="recepcionista-section">
-                <div class="recepcionista-label">
-                    👤 Recepcionista Asignado
-                </div>
-                <div class="recepcionista-nombre" id="recepcionistaDisplay">
-                    <span class="sin-recepcionista">Sin asignar</span>
-                </div>
-                <div class="recepcionista-id" id="recepcionistaIdDisplay"></div>
-            </div>
-
-            <!-- Sección de Paciente -->
-            <div class="paciente-section">
-                <div class="paciente-label">
-                    🏥 Paciente Actual
-                </div>
-                <div class="paciente-nombre" id="pacienteDisplay">
-                    <span class="sin-paciente">Esperando paciente...</span>
-                </div>
-            </div>
-
-            <!-- Info Grid -->
-            <div class="info-grid">
-                <div class="info-item">
-                    <div class="info-label">Vinculada</div>
-                    <div class="info-value" id="vinculadaDisplay">-</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">Estado</div>
-                    <div class="info-value">
-                        <div class="status-indicator">
-                            <div class="status-dot"></div>
-                            Activa
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Footer -->
-            <div class="pantalla-footer">
-                <div class="ultima-actualizacion" id="ultimaActualizacion">
-                    Última actualización: Ahora
-                </div>
-            </div>
+        <!-- Estado: Pantalla Vinculada (muestra solo nombre del recepcionista) -->
+        <div id="linkedState" style="display: none;">
+            <div class="recepcionista-nombre" id="recepcionistaName">-</div>
         </div>
+
+        <!-- Estado: Error -->
+        <div id="errorMessage" class="error-message"></div>
     </div>
 
     <script src="{{ url_for('static', filename='js/screen.js') }}"></script>

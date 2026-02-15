@@ -1,5 +1,4 @@
 // screen.js - Sistema de vinculación de pantallas v2
-
 const API_URL = window.location.origin;
 const SCREEN_API = {
     init: `${API_URL}/api/screen/init`,
@@ -9,6 +8,9 @@ const SCREEN_API = {
 let deviceFingerprint = null;
 let statusCheckInterval = null;
 let pantallaData = null;
+let intentoInicializacion = 0;
+const MAX_INTENTOS = 5;
+const DELAY_REINTENTO = 3000; // 3 segundos
 
 // =========================
 // INICIALIZACIÓN
@@ -16,6 +18,8 @@ let pantallaData = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('📺 Pantalla de turnos iniciando...');
+    console.log(`🌐 API URL: ${API_URL}`);
+    console.log(`📍 Ubicación: ${window.location.href}`);
     inicializarPantalla();
 });
 
@@ -67,6 +71,8 @@ async function inicializarPantalla() {
         mostrarDeviceId();
         
         // Inicializar con el servidor
+        console.log(`🔗 Intentando conectar a: ${SCREEN_API.init}`);
+        
         const response = await fetch(SCREEN_API.init, {
             method: 'POST',
             headers: {
@@ -74,13 +80,22 @@ async function inicializarPantalla() {
             },
             body: JSON.stringify({
                 device_fingerprint: deviceFingerprint
-            })
+            }),
+            timeout: 10000 // Timeout de 10 segundos
         });
         
+        console.log(`📥 Respuesta del servidor: ${response.status} ${response.statusText}`);
+        
+        if (!response.ok) {
+            throw new Error(`Error HTTP ${response.status}: ${response.statusText}`);
+        }
+        
         const data = await response.json();
+        console.log('📊 Datos recibidos:', data);
         
         if (data.success) {
             pantallaData = data.pantalla;
+            intentoInicializacion = 0; // Reset intentos
             
             switch (data.status) {
                 case 'vinculada':
@@ -103,8 +118,29 @@ async function inicializarPantalla() {
         }
         
     } catch (error) {
-        console.error('❌ Error al inicializar:', error);
-        mostrarError('Error de conexión con el servidor');
+        intentoInicializacion++;
+        console.error('❌ Error al inicializar:', error.message);
+        console.error('   Stack:', error.stack);
+        
+        // Mensaje de error más informativo
+        let mensajeError = `Error de conexión con el servidor`;
+        
+        if (error.message.includes('Failed to fetch')) {
+            mensajeError = `No se puede conectar a ${API_URL} - Verifica que el servidor esté corriendo`;
+        } else if (error.message.includes('HTTP')) {
+            mensajeError = `Error del servidor: ${error.message}`;
+        } else if (error.message.includes('timeout')) {
+            mensajeError = `Timeout al conectar con el servidor`;
+        }
+        
+        if (intentoInicializacion < MAX_INTENTOS) {
+            console.log(`⏳ Reintentando en ${DELAY_REINTENTO}ms... (intento ${intentoInicializacion}/${MAX_INTENTOS})`);
+            mostrarError(`${mensajeError} - Reintentando...`);
+            setTimeout(inicializarPantalla, DELAY_REINTENTO);
+        } else {
+            console.error('❌ Máximo de intentos alcanzado');
+            mostrarError(`${mensajeError}\n\nSi el problema persiste:\n1. Verifica que el servidor está corriendo (python app.py)\n2. Intenta acceder a: ${API_URL}\n3. Abre la consola (F12) para ver los detalles del error`);
+        }
     }
 }
 
@@ -122,62 +158,65 @@ function mostrarDeviceId() {
  * Mostrar estado pendiente
  */
 function mostrarEstadoPendiente(pantalla) {
-    // Ocultar otros estados
-    document.getElementById('connectingState').style.display = 'none';
-    document.getElementById('linkedState').style.display = 'none';
-    
-    // Mostrar estado pendiente
-    const pendingState = document.getElementById('pendingState');
-    pendingState.style.display = 'block';
-    
-    // Mostrar código de vinculación
-    const codigoDisplay = document.getElementById('codigoVinculacion');
-    if (codigoDisplay && pantalla.codigo_vinculacion) {
-        codigoDisplay.textContent = pantalla.codigo_vinculacion;
+    try {
+        // Ocultar otros estados
+        const connectingState = document.getElementById('connectingState');
+        const linkedState = document.getElementById('linkedState');
+        const pendingState = document.getElementById('pendingState');
+        
+        if (connectingState) connectingState.style.display = 'none';
+        if (linkedState) linkedState.style.display = 'none';
+        
+        // Mostrar estado pendiente
+        if (pendingState) {
+            pendingState.style.display = 'flex';
+            
+            // Mostrar código de vinculación
+            const codigoDisplay = document.getElementById('codigoVinculacion');
+            if (codigoDisplay && pantalla.codigo_vinculacion) {
+                codigoDisplay.textContent = pantalla.codigo_vinculacion;
+            }
+            
+            console.log('🔑 Código de vinculación:', pantalla.codigo_vinculacion);
+        } else {
+            console.warn('⚠️ Elemento pendingState no encontrado en el DOM');
+        }
+    } catch (error) {
+        console.error('Error al mostrar estado pendiente:', error);
     }
-    
-    console.log('🔑 Código de vinculación:', pantalla.codigo_vinculacion);
 }
 
 /**
  * Mostrar pantalla de trabajo (vinculada)
  */
 function mostrarPantallaTrabajo(pantalla) {
-    console.log('🖥️ Mostrando pantalla de trabajo:', pantalla);
-    
-    // Ocultar otros estados
-    document.getElementById('connectingState').style.display = 'none';
-    document.getElementById('pendingState').style.display = 'none';
-    
-    // Mostrar pantalla de trabajo
-    const linkedState = document.getElementById('linkedState');
-    linkedState.style.display = 'block';
-    linkedState.classList.add('active');
-    
-    // Actualizar número de pantalla
-    const pantallaNumeroGrande = document.getElementById('pantallaNumeroGrande');
-    if (pantallaNumeroGrande) {
-        pantallaNumeroGrande.textContent = `Pantalla ${pantalla.numero}`;
+    try {
+        console.log('🖥️ Mostrando pantalla de trabajo:', pantalla);
+        
+        // Ocultar otros estados
+        const connectingState = document.getElementById('connectingState');
+        const pendingState = document.getElementById('pendingState');
+        const linkedState = document.getElementById('linkedState');
+        
+        if (connectingState) connectingState.style.display = 'none';
+        if (pendingState) pendingState.style.display = 'none';
+        
+        // Mostrar pantalla de trabajo
+        if (linkedState) {
+            linkedState.style.display = 'flex';
+            linkedState.classList.add('active');
+            
+            // Mostrar nombre del recepcionista
+            const recepcionistaName = document.getElementById('recepcionistaName');
+            if (recepcionistaName) {
+                recepcionistaName.textContent = pantalla.recepcionista_nombre || '-';
+            }
+            
+            console.log('✅ Pantalla de trabajo lista');
+        }
+    } catch (error) {
+        console.error('Error al mostrar pantalla de trabajo:', error);
     }
-    
-    const pantallaNombreHeader = document.getElementById('pantallaNombreHeader');
-    if (pantallaNombreHeader) {
-        pantallaNombreHeader.textContent = pantalla.nombre || `Sistema de Turnos - Pantalla ${pantalla.numero}`;
-    }
-    
-    // Actualizar recepcionista
-    actualizarRecepcionista(pantalla);
-    
-    // Actualizar fecha de vinculación
-    const vinculadaDisplay = document.getElementById('vinculadaDisplay');
-    if (vinculadaDisplay && pantalla.vinculada_at) {
-        vinculadaDisplay.textContent = formatearFechaCorta(pantalla.vinculada_at);
-    }
-    
-    // Actualizar última actualización
-    actualizarUltimaActualizacion();
-    
-    console.log('✅ Pantalla de trabajo lista');
 }
 
 /**
@@ -272,7 +311,8 @@ function iniciarMonitoreoVinculacion() {
             }
             
         } catch (error) {
-            console.error('Error al verificar estado:', error);
+            console.warn('⚠️ Error temporal al verificar vinculación:', error.message);
+            // No mostrar error, solo continuar intentando
         }
     }, 3000); // Cada 3 segundos
 }
@@ -283,6 +323,7 @@ function iniciarMonitoreoVinculacion() {
  */
 function iniciarMonitoreoEstado() {
     console.log('📡 Iniciando monitoreo de estado...');
+    let erroresConsecutivos = 0;
     
     statusCheckInterval = setInterval(async () => {
         try {
@@ -296,9 +337,14 @@ function iniciarMonitoreoEstado() {
                 })
             });
             
-            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
             
-            if (data.success) {
+            const data = await response.json();
+            erroresConsecutivos = 0; // Reset contador de errores
+            
+            if (data.success && data.pantalla) {
                 const pantallaAnterior = pantallaData;
                 pantallaData = data.pantalla;
                 
@@ -310,20 +356,24 @@ function iniciarMonitoreoEstado() {
                 }
                 
                 // Verificar si cambió el recepcionista
-                if (pantallaAnterior.recepcionista_id !== pantallaData.recepcionista_id) {
-                    console.log('🔄 Recepcionista actualizado');
-                    actualizarRecepcionista(pantallaData);
+                if (pantallaAnterior && pantallaAnterior.recepcionista_nombre !== pantallaData.recepcionista_nombre) {
+                    console.log('🔄 Recepcionista actualizado:', pantallaData.recepcionista_nombre);
+                    const recepcionistaName = document.getElementById('recepcionistaName');
+                    if (recepcionistaName) {
+                        recepcionistaName.textContent = pantallaData.recepcionista_nombre || '-';
+                    }
                 }
-                
-                // Actualizar última actualización
-                actualizarUltimaActualizacion();
-                
-                // TODO: En el futuro, aquí se actualizará el paciente
-                
             }
             
         } catch (error) {
-            console.error('Error al verificar estado:', error);
+            erroresConsecutivos++;
+            console.warn(`⚠️ Error #${erroresConsecutivos} al verificar estado:`, error.message);
+            
+            // Si hay muchos errores consecutivos, mostrar alerta
+            if (erroresConsecutivos > 3) {
+                console.error('❌ Múltiples errores de conexión en monitoreo');
+                // Podríamos mostrar un error visual o intentar reconectar
+            }
         }
     }, 10000); // Cada 10 segundos
 }
@@ -332,14 +382,28 @@ function iniciarMonitoreoEstado() {
  * Mostrar error
  */
 function mostrarError(mensaje) {
-    const errorMessage = document.getElementById('errorMessage');
-    if (errorMessage) {
-        errorMessage.textContent = mensaje;
-        errorMessage.classList.add('show');
+    try {
+        const errorMessage = document.getElementById('errorMessage');
+        if (errorMessage) {
+            // Mejorar formato del mensaje de error
+            const mensajeFormateado = mensaje.replace(/\n/g, '<br>');
+            errorMessage.innerHTML = `
+                <div style="text-align: center; line-height: 1.6;">
+                    <div style="font-size: 24px; margin-bottom: 10px;">⚠️</div>
+                    <div>${mensajeFormateado}</div>
+                </div>
+            `;
+            errorMessage.classList.add('show');
+        }
+        
+        // Ocultar loading
+        const connectingState = document.getElementById('connectingState');
+        if (connectingState) {
+            connectingState.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error al mostrar mensaje de error:', error);
     }
-    
-    // Ocultar loading
-    document.getElementById('connectingState').style.display = 'none';
     
     console.error('❌', mensaje);
 }
