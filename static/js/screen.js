@@ -1,4 +1,4 @@
-// screen.js - Sistema de vinculación de pantallas
+// screen.js - Sistema de vinculación de pantallas v2
 
 const API_URL = window.location.origin;
 const SCREEN_API = {
@@ -85,7 +85,7 @@ async function inicializarPantalla() {
             switch (data.status) {
                 case 'vinculada':
                     console.log('✅ Pantalla ya vinculada');
-                    mostrarEstadoVinculada(pantallaData);
+                    mostrarPantallaTrabajo(pantallaData);
                     iniciarMonitoreoEstado();
                     break;
                     
@@ -140,46 +140,106 @@ function mostrarEstadoPendiente(pantalla) {
 }
 
 /**
- * Mostrar estado vinculada
+ * Mostrar pantalla de trabajo (vinculada)
  */
-function mostrarEstadoVinculada(pantalla) {
+function mostrarPantallaTrabajo(pantalla) {
+    console.log('🖥️ Mostrando pantalla de trabajo:', pantalla);
+    
     // Ocultar otros estados
     document.getElementById('connectingState').style.display = 'none';
     document.getElementById('pendingState').style.display = 'none';
     
-    // Mostrar estado vinculada
+    // Mostrar pantalla de trabajo
     const linkedState = document.getElementById('linkedState');
     linkedState.style.display = 'block';
     linkedState.classList.add('active');
     
-    // Actualizar información
-    const pantallaNumero = document.getElementById('pantallaNumero');
-    const pantallaNombre = document.getElementById('pantallaNombre');
-    const vinculadaAt = document.getElementById('vinculadaAt');
-    const recepcionistaAsignado = document.getElementById('recepcionistaAsignado');
-    
-    if (pantallaNumero) {
-        pantallaNumero.textContent = `Pantalla ${pantalla.numero}`;
+    // Actualizar número de pantalla
+    const pantallaNumeroGrande = document.getElementById('pantallaNumeroGrande');
+    if (pantallaNumeroGrande) {
+        pantallaNumeroGrande.textContent = `Pantalla ${pantalla.numero}`;
     }
     
-    if (pantallaNombre) {
-        pantallaNombre.textContent = pantalla.nombre || `Pantalla ${pantalla.numero}`;
+    const pantallaNombreHeader = document.getElementById('pantallaNombreHeader');
+    if (pantallaNombreHeader) {
+        pantallaNombreHeader.textContent = pantalla.nombre || `Sistema de Turnos - Pantalla ${pantalla.numero}`;
     }
     
-    if (vinculadaAt && pantalla.vinculada_at) {
-        vinculadaAt.textContent = formatearFecha(pantalla.vinculada_at);
+    // Actualizar recepcionista
+    actualizarRecepcionista(pantalla);
+    
+    // Actualizar fecha de vinculación
+    const vinculadaDisplay = document.getElementById('vinculadaDisplay');
+    if (vinculadaDisplay && pantalla.vinculada_at) {
+        vinculadaDisplay.textContent = formatearFechaCorta(pantalla.vinculada_at);
     }
     
-    // Aquí se mostrará el recepcionista asignado cuando esté implementado
-    if (recepcionistaAsignado) {
-        if (pantalla.recepcionista_nombre) {
-            recepcionistaAsignado.textContent = pantalla.recepcionista_nombre;
-        } else {
-            recepcionistaAsignado.textContent = 'Sin asignar';
+    // Actualizar última actualización
+    actualizarUltimaActualizacion();
+    
+    console.log('✅ Pantalla de trabajo lista');
+}
+
+/**
+ * Actualizar información del recepcionista
+ */
+function actualizarRecepcionista(pantalla) {
+    const recepcionistaDisplay = document.getElementById('recepcionistaDisplay');
+    const recepcionistaIdDisplay = document.getElementById('recepcionistaIdDisplay');
+    
+    if (pantalla.recepcionista_nombre) {
+        // Hay recepcionista asignado
+        if (recepcionistaDisplay) {
+            recepcionistaDisplay.innerHTML = pantalla.recepcionista_nombre;
         }
+        
+        if (recepcionistaIdDisplay && pantalla.recepcionista_id) {
+            recepcionistaIdDisplay.textContent = `ID: ${pantalla.recepcionista_id}`;
+        }
+        
+        console.log('👤 Recepcionista:', pantalla.recepcionista_nombre);
+    } else {
+        // Sin recepcionista
+        if (recepcionistaDisplay) {
+            recepcionistaDisplay.innerHTML = '<span class="sin-recepcionista">Sin asignar</span>';
+        }
+        
+        if (recepcionistaIdDisplay) {
+            recepcionistaIdDisplay.textContent = '';
+        }
+        
+        console.log('⚠️ Sin recepcionista asignado');
     }
+}
+
+/**
+ * Actualizar paciente (por ahora siempre vacío)
+ */
+function actualizarPaciente() {
+    const pacienteDisplay = document.getElementById('pacienteDisplay');
     
-    console.log('✅ Pantalla vinculada:', pantalla);
+    if (pacienteDisplay) {
+        // Por ahora siempre muestra "Esperando paciente"
+        pacienteDisplay.innerHTML = '<span class="sin-paciente">Esperando paciente...</span>';
+    }
+}
+
+/**
+ * Actualizar última actualización
+ */
+function actualizarUltimaActualizacion() {
+    const ultimaActualizacion = document.getElementById('ultimaActualizacion');
+    
+    if (ultimaActualizacion) {
+        const ahora = new Date();
+        const horaActual = ahora.toLocaleTimeString('es-ES', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+        
+        ultimaActualizacion.textContent = `Última actualización: ${horaActual}`;
+    }
 }
 
 /**
@@ -207,7 +267,7 @@ function iniciarMonitoreoVinculacion() {
                 console.log('🎉 ¡Pantalla vinculada!');
                 clearInterval(statusCheckInterval);
                 pantallaData = data.pantalla;
-                mostrarEstadoVinculada(pantallaData);
+                mostrarPantallaTrabajo(pantallaData);
                 iniciarMonitoreoEstado();
             }
             
@@ -219,7 +279,7 @@ function iniciarMonitoreoVinculacion() {
 
 /**
  * Iniciar monitoreo de estado
- * Mantiene la conexión activa y actualiza última conexión
+ * Mantiene la conexión activa y actualiza información
  */
 function iniciarMonitoreoEstado() {
     console.log('📡 Iniciando monitoreo de estado...');
@@ -239,13 +299,27 @@ function iniciarMonitoreoEstado() {
             const data = await response.json();
             
             if (data.success) {
+                const pantallaAnterior = pantallaData;
                 pantallaData = data.pantalla;
                 
                 // Si la pantalla fue desvinculada, recargar
                 if (data.status !== 'vinculada') {
                     console.log('⚠️ Pantalla desvinculada, recargando...');
                     location.reload();
+                    return;
                 }
+                
+                // Verificar si cambió el recepcionista
+                if (pantallaAnterior.recepcionista_id !== pantallaData.recepcionista_id) {
+                    console.log('🔄 Recepcionista actualizado');
+                    actualizarRecepcionista(pantallaData);
+                }
+                
+                // Actualizar última actualización
+                actualizarUltimaActualizacion();
+                
+                // TODO: En el futuro, aquí se actualizará el paciente
+                
             }
             
         } catch (error) {
@@ -271,7 +345,7 @@ function mostrarError(mensaje) {
 }
 
 /**
- * Formatear fecha
+ * Formatear fecha completa
  */
 function formatearFecha(fechaISO) {
     if (!fechaISO) return 'N/A';
@@ -284,6 +358,30 @@ function formatearFecha(fechaISO) {
             year: 'numeric',
             hour: '2-digit',
             minute: '2-digit'
+        });
+    } catch (e) {
+        return 'N/A';
+    }
+}
+
+/**
+ * Formatear fecha corta
+ */
+function formatearFechaCorta(fechaISO) {
+    if (!fechaISO) return 'N/A';
+    
+    try {
+        const fecha = new Date(fechaISO);
+        const ahora = new Date();
+        const diff = Math.floor((ahora - fecha) / 1000); // segundos
+        
+        if (diff < 60) return 'Hace un momento';
+        if (diff < 3600) return `Hace ${Math.floor(diff / 60)} min`;
+        if (diff < 86400) return `Hace ${Math.floor(diff / 3600)} hrs`;
+        
+        return fecha.toLocaleDateString('es-ES', {
+            day: '2-digit',
+            month: '2-digit'
         });
     } catch (e) {
         return 'N/A';

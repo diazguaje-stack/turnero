@@ -30,6 +30,10 @@
             text-align: center;
         }
 
+        /* ========================================
+           ESTILOS PARA ESTADOS INICIALES
+           ======================================== */
+
         .screen-icon {
             font-size: 80px;
             margin-bottom: 20px;
@@ -111,53 +115,6 @@
             to { transform: rotate(360deg); }
         }
 
-        .success-screen {
-            display: none;
-        }
-
-        .success-screen.active {
-            display: block;
-        }
-
-        .pantalla-numero {
-            font-size: 72px;
-            font-weight: bold;
-            color: #667eea;
-            margin: 20px 0;
-        }
-
-        .success-icon {
-            font-size: 100px;
-            margin-bottom: 20px;
-        }
-
-        .info-grid {
-            display: grid;
-            gap: 15px;
-            margin-top: 30px;
-            text-align: left;
-        }
-
-        .info-item {
-            background: #f9fafb;
-            padding: 15px;
-            border-radius: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .info-label {
-            color: #6b7280;
-            font-size: 14px;
-        }
-
-        .info-value {
-            color: #111827;
-            font-weight: 600;
-            font-size: 14px;
-        }
-
         .error-message {
             background: #fee2e2;
             color: #dc2626;
@@ -169,6 +126,198 @@
 
         .error-message.show {
             display: block;
+        }
+
+        /* ========================================
+           ESTILOS PARA PANTALLA DE TRABAJO
+           ======================================== */
+
+        .pantalla-trabajo {
+            display: none;
+            min-height: 400px;
+        }
+
+        .pantalla-trabajo.active {
+            display: block;
+        }
+
+        /* Header de la pantalla */
+        .pantalla-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+        }
+
+        .pantalla-numero-grande {
+            font-size: 64px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .pantalla-info-header {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+
+        /* Sección de recepcionista */
+        .recepcionista-section {
+            background: #f0fdf4;
+            border: 2px solid #10b981;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+
+        .recepcionista-label {
+            font-size: 14px;
+            color: #065f46;
+            font-weight: 600;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .recepcionista-nombre {
+            font-size: 28px;
+            color: #059669;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .recepcionista-id {
+            font-size: 12px;
+            color: #6b7280;
+            font-family: monospace;
+        }
+
+        .sin-recepcionista {
+            color: #9ca3af;
+            font-style: italic;
+        }
+
+        /* Sección de paciente */
+        .paciente-section {
+            background: #f3f4f6;
+            border: 2px dashed #d1d5db;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+
+        .paciente-label {
+            font-size: 14px;
+            color: #6b7280;
+            font-weight: 600;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .paciente-nombre {
+            font-size: 28px;
+            color: #374151;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .sin-paciente {
+            color: #9ca3af;
+            font-size: 24px;
+            font-style: italic;
+        }
+
+        /* Footer de la pantalla */
+        .pantalla-footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #e5e7eb;
+        }
+
+        .ultima-actualizacion {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-bottom: 10px;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #d1fae5;
+            color: #065f46;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background: #10b981;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        /* Info adicional */
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .info-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .info-label {
+            font-size: 11px;
+            color: #9ca3af;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .info-value {
+            font-size: 16px;
+            color: #111827;
+            font-weight: 600;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 30px;
+                width: 95%;
+            }
+
+            .pantalla-numero-grande {
+                font-size: 48px;
+            }
+
+            .recepcionista-nombre,
+            .paciente-nombre {
+                font-size: 22px;
+            }
+
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -210,35 +359,62 @@
             <div id="errorMessage" class="error-message"></div>
         </div>
 
-        <!-- Estado: Vinculada -->
-        <div id="linkedState" class="success-screen">
-            <div class="success-icon">✅</div>
-            <h1>Pantalla Vinculada</h1>
-            
-            <div class="pantalla-numero" id="pantallaNumero">0</div>
-            
-            <div class="info-grid">
-                <div class="info-item">
-                    <span class="info-label">Nombre:</span>
-                    <span class="info-value" id="pantallaNombre">-</span>
+        <!-- Estado: Vinculada - PANTALLA DE TRABAJO -->
+        <div id="linkedState" class="pantalla-trabajo">
+            <!-- Header -->
+            <div class="pantalla-header">
+                <div class="pantalla-numero-grande" id="pantallaNumeroGrande">
+                    Pantalla 0
                 </div>
-                <div class="info-item">
-                    <span class="info-label">Estado:</span>
-                    <span class="info-value">🟢 Activa</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Vinculada:</span>
-                    <span class="info-value" id="vinculadaAt">-</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Recepcionista asignado:</span>
-                    <span class="info-value" id="recepcionistaAsignado">Sin asignar</span>
+                <div class="pantalla-info-header" id="pantallaNombreHeader">
+                    Sistema de Turnos
                 </div>
             </div>
 
-            <p class="instruction" style="margin-top: 30px;">
-                Esta pantalla está lista para mostrar turnos
-            </p>
+            <!-- Sección de Recepcionista -->
+            <div class="recepcionista-section">
+                <div class="recepcionista-label">
+                    👤 Recepcionista Asignado
+                </div>
+                <div class="recepcionista-nombre" id="recepcionistaDisplay">
+                    <span class="sin-recepcionista">Sin asignar</span>
+                </div>
+                <div class="recepcionista-id" id="recepcionistaIdDisplay"></div>
+            </div>
+
+            <!-- Sección de Paciente -->
+            <div class="paciente-section">
+                <div class="paciente-label">
+                    🏥 Paciente Actual
+                </div>
+                <div class="paciente-nombre" id="pacienteDisplay">
+                    <span class="sin-paciente">Esperando paciente...</span>
+                </div>
+            </div>
+
+            <!-- Info Grid -->
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Vinculada</div>
+                    <div class="info-value" id="vinculadaDisplay">-</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Estado</div>
+                    <div class="info-value">
+                        <div class="status-indicator">
+                            <div class="status-dot"></div>
+                            Activa
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="pantalla-footer">
+                <div class="ultima-actualizacion" id="ultimaActualizacion">
+                    Última actualización: Ahora
+                </div>
+            </div>
         </div>
     </div>
 
