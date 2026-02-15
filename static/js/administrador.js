@@ -234,7 +234,12 @@ function loadUsers() {
 function createUserCard(user) {
     const card = document.createElement('div');
     card.className = 'user-card';
-    card.onclick = () => showUserDetails(user.id);
+    
+    // Agregar evento de clic derecho para mostrar menú de contexto
+    card.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showContextMenu(e.clientX, e.clientY, user.id);
+    });
 
     const nombreCompleto = user.nombre_completo || user.usuario;
     const initial = nombreCompleto.charAt(0).toUpperCase();
@@ -364,11 +369,15 @@ function showUserDetails(userId) {
     if (!user) return;
 
     selectedUserId = userId;
+    isEditMode = false;
 
     document.getElementById('detailId').textContent = user.id;
     document.getElementById('detailUsername').textContent = user.usuario;
+    document.getElementById('detailName').textContent = user.nombre_completo || 'Sin especificar';
+    document.getElementById('detailEmail').textContent = user.email || 'Sin especificar';
+    document.getElementById('detailPhone').textContent = user.telefono || 'Sin especificar';
     document.getElementById('detailPassword').textContent = '••••••••';
-    document.getElementById('detailPassword').dataset.password = user.password;
+    document.getElementById('detailPassword').dataset.password = user.password || '';
     
     const roleLabel = {
         'administrador': 'Administrador',
@@ -391,6 +400,20 @@ function showUserDetails(userId) {
         minute: '2-digit'
     });
 
+    // Asegurar que los inputs están ocultos
+    document.getElementById('editUsername').style.display = 'none';
+    document.getElementById('editName').style.display = 'none';
+    document.getElementById('editEmail').style.display = 'none';
+    document.getElementById('editPhone').style.display = 'none';
+    document.getElementById('editPassword').style.display = 'none';
+    document.getElementById('editRole').style.display = 'none';
+
+    // Mostrar botones correctos
+    document.getElementById('deleteBtn').style.display = 'block';
+    document.getElementById('saveBtn').style.display = 'none';
+    document.getElementById('cancelBtn').style.display = 'none';
+    document.getElementById('closeBtn').style.display = 'block';
+
     const modal = document.getElementById('userDetailsModal');
     modal.classList.add('active');
 }
@@ -399,9 +422,15 @@ function closeUserDetailsModal() {
     const modal = document.getElementById('userDetailsModal');
     modal.classList.remove('active');
     selectedUserId = null;
+    isEditMode = false;
     
     const passwordEl = document.getElementById('detailPassword');
     passwordEl.textContent = '••••••••';
+    
+    // Cancelar edición si está en modo edición
+    if (isEditMode) {
+        cancelEditMode();
+    }
 }
 
 function closeAllModals() {
@@ -1000,6 +1029,175 @@ function confirmarAsignacionRecepcionista(pantallaId) {
     
     asignarRecepcionista(pantallaId, recepcionistaId);
     cerrarModalRecepcionista();
+}
+
+// =========================
+// MENÚ DE CONTEXTO Y EDICIÓN
+// =========================
+
+let isEditMode = false;
+
+function showContextMenu(x, y, userId) {
+    const menu = document.getElementById('contextMenu');
+    menu.style.display = 'block';
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    selectedUserId = userId;
+    
+    // Cerrar el menú cuando se hace clic en otro lugar
+    setTimeout(() => {
+        document.addEventListener('click', hideContextMenu);
+    }, 0);
+}
+
+function hideContextMenu() {
+    const menu = document.getElementById('contextMenu');
+    menu.style.display = 'none';
+    document.removeEventListener('click', hideContextMenu);
+}
+
+function enterEditMode() {
+    hideContextMenu();
+    const user = users.find(u => u.id === selectedUserId);
+    if (!user) return;
+
+    isEditMode = true;
+
+    // Primero mostrar el modal
+    document.getElementById('userDetailsModal').classList.add('active');
+    
+    // Cargar los datos en los campos de solo lectura
+    document.getElementById('detailId').textContent = user.id;
+    document.getElementById('detailUsername').textContent = user.usuario;
+    document.getElementById('detailName').textContent = user.nombre_completo || 'Sin especificar';
+    document.getElementById('detailEmail').textContent = user.email || 'Sin especificar';
+    document.getElementById('detailPhone').textContent = user.telefono || 'Sin especificar';
+    
+    const roleLabel = {
+        'administrador': 'Administrador',
+        'recepcion': 'Recepción',
+        'medico': 'Médico',
+        'enfermero': 'Enfermero'
+    }[user.rol.toLowerCase()] || user.rol;
+    
+    const roleClass = `role-${user.rol.toLowerCase()}`;
+    const roleElement = document.getElementById('detailRole');
+    roleElement.textContent = roleLabel;
+    roleElement.className = `detail-value detail-role ${roleClass}`;
+
+    // Ocultar spans y mostrar inputs
+    document.getElementById('detailUsername').style.display = 'none';
+    document.getElementById('editUsername').style.display = 'block';
+    document.getElementById('editUsername').value = user.usuario;
+
+    document.getElementById('detailName').style.display = 'none';
+    document.getElementById('editName').style.display = 'block';
+    document.getElementById('editName').value = user.nombre_completo || '';
+
+    document.getElementById('detailEmail').style.display = 'none';
+    document.getElementById('editEmail').style.display = 'block';
+    document.getElementById('editEmail').value = user.email || '';
+
+    document.getElementById('detailPhone').style.display = 'none';
+    document.getElementById('editPhone').style.display = 'block';
+    document.getElementById('editPhone').value = user.telefono || '';
+
+    document.getElementById('detailPassword').parentElement.style.display = 'none';
+    document.getElementById('editPassword').style.display = 'block';
+    document.getElementById('editPassword').value = '';
+
+    document.getElementById('detailRole').style.display = 'none';
+    document.getElementById('editRole').style.display = 'block';
+    document.getElementById('editRole').value = user.rol;
+
+    // Cambiar botones
+    document.getElementById('deleteBtn').style.display = 'none';
+    document.getElementById('saveBtn').style.display = 'block';
+    document.getElementById('cancelBtn').style.display = 'block';
+    document.getElementById('closeBtn').style.display = 'none';
+}
+
+function cancelEditMode() {
+    isEditMode = false;
+    
+    // Mostrar spans y ocultar inputs
+    document.getElementById('detailUsername').style.display = 'span';
+    document.getElementById('editUsername').style.display = 'none';
+
+    document.getElementById('detailName').style.display = 'span';
+    document.getElementById('editName').style.display = 'none';
+
+    document.getElementById('detailEmail').style.display = 'span';
+    document.getElementById('editEmail').style.display = 'none';
+
+    document.getElementById('detailPhone').style.display = 'span';
+    document.getElementById('editPhone').style.display = 'none';
+
+    document.getElementById('detailPassword').parentElement.style.display = 'flex';
+    document.getElementById('editPassword').style.display = 'none';
+
+    document.getElementById('detailRole').style.display = 'span';
+    document.getElementById('editRole').style.display = 'none';
+
+    // Restaurar botones
+    document.getElementById('deleteBtn').style.display = 'block';
+    document.getElementById('saveBtn').style.display = 'none';
+    document.getElementById('cancelBtn').style.display = 'none';
+    document.getElementById('closeBtn').style.display = 'block';
+}
+
+async function saveUserChanges() {
+    const newUsername = document.getElementById('editUsername').value.trim();
+    const newName = document.getElementById('editName').value.trim();
+    const newEmail = document.getElementById('editEmail').value.trim();
+    const newPhone = document.getElementById('editPhone').value.trim();
+    const newPassword = document.getElementById('editPassword').value;
+    const newRole = document.getElementById('editRole').value;
+
+    if (!newUsername || !newName) {
+        showToast('Usuario y Nombre Completo son requeridos', 'error');
+        return;
+    }
+
+    const user = users.find(u => u.id === selectedUserId);
+    if (!user) return;
+
+    const updatedData = {
+        usuario: newUsername,
+        nombre_completo: newName,
+        email: newEmail,
+        telefono: newPhone,
+        rol: newRole
+    };
+
+    if (newPassword) {
+        updatedData.password = newPassword;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/users/${selectedUserId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify(updatedData)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            loadUsersFromBackend();
+            cancelEditMode();
+            closeUserDetailsModal();
+            showToast('Usuario actualizado exitosamente', 'success');
+        } else {
+            showToast(data.message || 'Error al actualizar usuario', 'error');
+        }
+    } catch (error) {
+        console.error('Error al actualizar usuario:', error);
+        showToast('Error al actualizar usuario', 'error');
+    }
 }
 
 // Exportar funciones globales

@@ -477,6 +477,69 @@ def delete_user(user_id):
         }), 500
 
 
+@app.route('/api/users/<user_id>', methods=['PUT'])
+@login_required
+def update_user(user_id):
+    """Actualizar datos de un usuario"""
+    try:
+        user = Usuario.query.get(user_id)
+
+        if not user:
+            return jsonify({
+                'success': False,
+                'message': 'Usuario no encontrado'
+            }), 404
+
+        data = request.get_json()
+        
+        # Validar campos requeridos
+        if 'usuario' not in data or not data['usuario'].strip():
+            return jsonify({
+                'success': False,
+                'message': 'El usuario es requerido'
+            }), 400
+
+        # Verificar si el nuevo usuario ya existe (y no es el mismo usuario)
+        if data['usuario'].strip() != user.usuario:
+            existing = Usuario.query.filter_by(usuario=data['usuario'].strip()).first()
+            if existing:
+                return jsonify({
+                    'success': False,
+                    'message': 'El usuario ya existe'
+                }), 400
+
+        # Actualizar campos
+        user.usuario = data.get('usuario', user.usuario).strip()
+        user.nombre_completo = data.get('nombre_completo', user.nombre_completo)
+        user.email = data.get('email', user.email)
+        user.telefono = data.get('telefono', user.telefono)
+        user.rol = data.get('rol', user.rol)
+        
+        # Actualizar contraseña si se proporciona
+        if data.get('password', '').strip():
+            user.set_password(data['password'])
+
+        user.updated_at = datetime.utcnow()
+        
+        db.session.commit()
+
+        print(f"[{datetime.now()}] Usuario actualizado: {user.usuario}")
+
+        return jsonify({
+            'success': True,
+            'message': f'Usuario {user.usuario} actualizado exitosamente',
+            'user': user.to_dict()
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"[{datetime.now()}] Error al actualizar usuario: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Error al actualizar usuario'
+        }), 500
+
+
 # ===================================
 # RUTAS DE PAGINAS HTML
 # ===================================

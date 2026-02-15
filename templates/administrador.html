@@ -232,6 +232,22 @@
                 <div class="detail-item">
                     <span class="detail-label">Usuario</span>
                     <span class="detail-value" id="detailUsername">-</span>
+                    <input type="text" class="detail-input" id="editUsername" style="display: none;" />
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Nombre Completo</span>
+                    <span class="detail-value" id="detailName">-</span>
+                    <input type="text" class="detail-input" id="editName" style="display: none;" />
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Email</span>
+                    <span class="detail-value" id="detailEmail">-</span>
+                    <input type="email" class="detail-input" id="editEmail" style="display: none;" />
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Teléfono</span>
+                    <span class="detail-value" id="detailPhone">-</span>
+                    <input type="text" class="detail-input" id="editPhone" style="display: none;" />
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">Contraseña</span>
@@ -244,10 +260,17 @@
                             </svg>
                         </button>
                     </div>
+                    <input type="password" class="detail-input" id="editPassword" style="display: none;" placeholder="Dejar en blanco para no cambiar" />
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">Rol</span>
                     <span class="detail-value detail-role" id="detailRole">-</span>
+                    <select class="detail-input" id="editRole" style="display: none;">
+                        <option value="administrador">Administrador</option>
+                        <option value="recepcion">Recepción</option>
+                        <option value="medico">Médico</option>
+                        <option value="enfermero">Enfermero</option>
+                    </select>
                 </div>
                 <div class="detail-item">
                     <span class="detail-label">Fecha de Creación</span>
@@ -255,9 +278,30 @@
                 </div>
             </div>
             <div class="modal-actions">
-                <button type="button" class="btn-danger" onclick="deleteUser()">Eliminar Usuario</button>
-                <button type="button" class="btn-secondary" onclick="closeUserDetailsModal()">Cerrar</button>
+                <button type="button" class="btn-danger" id="deleteBtn" onclick="deleteUser()">Eliminar Usuario</button>
+                <button type="button" class="btn-primary" id="saveBtn" style="display: none;" onclick="saveUserChanges()">Guardar Cambios</button>
+                <button type="button" class="btn-secondary" id="cancelBtn" style="display: none;" onclick="cancelEditMode()">Cancelar</button>
+                <button type="button" class="btn-secondary" id="closeBtn" onclick="closeUserDetailsModal()">Cerrar</button>
             </div>
+        </div>
+    </div>
+
+    <div id="contextMenu" class="context-menu" style="display: none;">
+        <div class="context-menu-item" onclick="enterEditMode()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+            Editar
+        </div>
+        <div class="context-menu-item" onclick="deleteUser()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+            Eliminar
         </div>
     </div>
 
