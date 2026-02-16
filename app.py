@@ -228,11 +228,13 @@ def screen_status():
         ).first()
         
         if not pantalla:
+            # ✅ CORRECCIÓN: Retornar 200 OK con status 'desvinculada'
+            print(f"✅ Device no encontrado, marcando como desvinculado")
             return jsonify({
-                'success': False,
-                'status': 'no_vinculada',
-                'message': 'Dispositivo no vinculado'
-            }), 404
+                'success': True,
+                'status': 'desvinculada',
+                'message': 'Dispositivo desvinculado'
+            }), 200  # ✅ 200 OK, no 404
         
         # Actualizar ultima conexion
         pantalla.ultima_conexion = datetime.utcnow()
@@ -245,12 +247,11 @@ def screen_status():
         }), 200
         
     except Exception as e:
-        print(f"Error al verificar estado: {str(e)}")
+        print(f"❌ Error al verificar estado: {str(e)}")
         return jsonify({
             'success': False,
             'message': 'Error al verificar estado'
         }), 500
-
 
 # Decorador para rutas protegidas
 def login_required(f):
