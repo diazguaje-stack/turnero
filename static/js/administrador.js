@@ -557,10 +557,16 @@ function inicializarPantallas() {
     // Actualizar cada 5 segundos cuando la seccion este visible
     pantallasInterval = setInterval(() => {
         const section = document.getElementById('pantallasSection');
-        if (section && section.style.display !== 'none') {
+        const isVisible = section && (
+            section.classList.contains('active') ||
+            window.getComputedStyle(section).display !== 'none' ||
+            section.offsetParent !== null
+        );
+
+        if (isVisible) {
             cargarPantallas();
         }
-    }, 5000);
+    }, 3000); // polling cada 3s para detectar cambios rápidamente
 }
 
 /**
@@ -1202,3 +1208,14 @@ window.limpiarIntervaloPantallas = limpiarIntervaloPantallas;
 window.mostrarModalAsignarRecepcionista = mostrarModalAsignarRecepcionista;
 window.cerrarModalRecepcionista = cerrarModalRecepcionista;
 window.confirmarAsignacionRecepcionista = confirmarAsignacionRecepcionista;
+
+// Auto-inicializar pantallas si la sección ya está visible al cargar la página
+document.addEventListener('DOMContentLoaded', () => {
+    const section = document.getElementById('section-pantallas') || document.getElementById('pantallasSection');
+    if (section) {
+        const isVisible = section.classList.contains('active') || window.getComputedStyle(section).display !== 'none' || section.offsetParent !== null;
+        if (isVisible) {
+            inicializarPantallas();
+        }
+    }
+});

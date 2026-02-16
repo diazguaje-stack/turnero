@@ -228,11 +228,13 @@ def screen_status():
         ).first()
         
         if not pantalla:
+            # Devolver estado "no_vinculada" con 200 para que el cliente
+            # (/screen) pueda procesarlo y recargarse automáticamente.
             return jsonify({
-                'success': False,
+                'success': True,
                 'status': 'no_vinculada',
                 'message': 'Dispositivo no vinculado'
-            }), 404
+            }), 200
         
         # Actualizar ultima conexion
         pantalla.ultima_conexion = datetime.utcnow()

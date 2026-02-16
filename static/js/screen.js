@@ -309,6 +309,11 @@ function iniciarMonitoreoVinculacion() {
                 mostrarPantallaTrabajo(pantallaData);
                 iniciarMonitoreoEstado();
             }
+            else if (data.status && data.status !== 'pendiente') {
+                // Si el servidor indica que ya no está pendiente (por ejemplo 'no_vinculada'), recargar
+                console.log('⚠️ Estado cambió durante vinculación:', data.status, '-> recargando');
+                location.reload();
+            }
             
         } catch (error) {
             console.warn('⚠️ Error temporal al verificar vinculación:', error.message);
@@ -343,25 +348,33 @@ function iniciarMonitoreoEstado() {
             
             const data = await response.json();
             erroresConsecutivos = 0; // Reset contador de errores
-            
-            if (data.success && data.pantalla) {
-                const pantallaAnterior = pantallaData;
-                pantallaData = data.pantalla;
-                
-                // Si la pantalla fue desvinculada, recargar
-                if (data.status !== 'vinculada') {
-                    console.log('⚠️ Pantalla desvinculada, recargando...');
+            // Manejo robusto: si el servidor indica que la pantalla ya no está vinculada, recargar
+            if (!data.success) {
+                if (data.status && data.status !== 'vinculada') {
+                    console.log('⚠️ Servidor indica no vinculado, recargando...');
                     location.reload();
                     return;
                 }
-                
-                // Verificar si cambió el recepcionista
-                if (pantallaAnterior && pantallaAnterior.recepcionista_nombre !== pantallaData.recepcionista_nombre) {
-                    console.log('🔄 Recepcionista actualizado:', pantallaData.recepcionista_nombre);
-                    const recepcionistaName = document.getElementById('recepcionistaName');
-                    if (recepcionistaName) {
-                        recepcionistaName.textContent = pantallaData.recepcionista_nombre || '-';
-                    }
+                // No hay información útil, continuar
+                return;
+            }
+
+            // data.success === true
+            if (!data.pantalla || data.status !== 'vinculada') {
+                console.log('⚠️ Pantalla desvinculada según el servidor, recargando...');
+                location.reload();
+                return;
+            }
+
+            const pantallaAnterior = pantallaData;
+            pantallaData = data.pantalla;
+
+            // Verificar si cambió el recepcionista
+            if (pantallaAnterior && pantallaAnterior.recepcionista_nombre !== pantallaData.recepcionista_nombre) {
+                console.log('🔄 Recepcionista actualizado:', pantallaData.recepcionista_nombre);
+                const recepcionistaName = document.getElementById('recepcionistaName');
+                if (recepcionistaName) {
+                    recepcionistaName.textContent = pantallaData.recepcionista_nombre || '-';
                 }
             }
             
@@ -375,7 +388,7 @@ function iniciarMonitoreoEstado() {
                 // Podríamos mostrar un error visual o intentar reconectar
             }
         }
-    }, 10000); // Cada 10 segundos
+    }, 3000); // Cada 3 segundos
 }
 
 /**
