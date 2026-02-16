@@ -591,9 +591,8 @@ async function cargarPantallas() {
         mostrarMensajePantallas('Error al cargar las pantallas', 'error');
     }
 }
-
 /**
- * Renderizar pantallas en el grid
+ * Renderizar pantallas en el grid - NUEVA VERSIÓN SIMPLIFICADA
  */
 function renderizarPantallas() {
     const grid = document.getElementById('pantallasGrid');
@@ -605,210 +604,42 @@ function renderizarPantallas() {
         return;
     }
 
-    grid.innerHTML = pantallasList.map(pantalla => `
-        <div class="pantalla-card ${pantalla.estado}">
-            <div class="pantalla-numero">${pantalla.numero}</div>
-            
-            <div class="pantalla-estado">
-                <div class="estado-badge ${pantalla.estado}">
-                    ${getEstadoTexto(pantalla.estado)}
-                </div>
-                <div class="pantalla-nombre">
-                    ${pantalla.nombre || `Pantalla ${pantalla.numero}`}
-                </div>
-            </div>
-
-            <div class="pantalla-info">
-                ${renderInfoPantalla(pantalla)}
-            </div>
-
-            ${renderAccionesPantalla(pantalla)}
-        </div>
-    `).join('');
-
-    // Agregar event listeners
-    agregarEventListenersPantallas();
-}
-
-/**
- * Renderizar informacion segun estado
- */
-function renderInfoPantalla(pantalla) {
-    if (pantalla.estado === 'disponible') {
-        return `
-            <div style="text-align: center; color: #6b7280; padding: 20px 0;">
-                <p>⚪ Esperando dispositivo...</p>
-                <p style="font-size: 12px; margin-top: 8px;">
-                    Abre <strong>/screen</strong> en un dispositivo
-                </p>
-            </div>
-        `;
-    }
-
-    if (pantalla.estado === 'pendiente') {
-        return `
-            <div class="instrucciones-vinculacion">
-                📱 Dispositivo conectado - Ingresa el código
-            </div>
-            <div class="codigo-grande">${pantalla.codigo_vinculacion || '------'}</div>
-            <div class="codigo-input-group">
-                <input 
-                    type="text" 
-                    class="codigo-input" 
-                    id="codigo-${pantalla.id}"
-                    placeholder="Ingresa código"
-                    maxlength="6"
-                    pattern="[0-9]*"
-                >
-            </div>
-            ${pantalla.device_id ? `
-                <div class="device-id-small">
-                    Device: ${pantalla.device_id.substring(0, 30)}...
-                </div>
-            ` : ''}
-        `;
-    }
-
-    if (pantalla.estado === 'vinculada') {
-        const recepcionistaInfo = pantalla.recepcionista_nombre 
-            ? `<span style="color: #059669; font-weight: 600;">✓ ${pantalla.recepcionista_nombre}</span>`
-            : `<span style="color: #9ca3af;">Sin asignar</span>`;
+    grid.innerHTML = '';
+    
+    pantallasList.forEach(pantalla => {
+        const card = document.createElement('div');
+        card.className = `tv-card ${pantalla.estado}`;
         
-        return `
-            <div class="info-item">
-                <span class="info-label">Vinculada:</span>
-                <span class="info-value">${formatFecha(pantalla.vinculada_at)}</span>
+        // Agregar evento onclick directamente
+        card.onclick = () => {
+            abrirModalPantalla(
+                pantalla.id, 
+                pantalla.numero, 
+                pantalla.estado, 
+                pantalla.recepcionista_id || '', 
+                pantalla.codigo_vinculacion || ''
+            );
+        };
+        
+        card.innerHTML = `
+            <div class="tv-header">
+                <div class="tv-icon">📺</div>
+                <div class="tv-numero">TV ${pantalla.numero}</div>
             </div>
-            <div class="info-item">
-                <span class="info-label">Última conexión:</span>
-                <span class="info-value">${formatFecha(pantalla.ultima_conexion)}</span>
+            <div class="tv-estado">
+                <span class="estado-dot ${pantalla.estado}"></span>
+                <span class="estado-texto">${pantalla.estado === 'vinculada' ? 'Ocupado' : 'Disponible'}</span>
             </div>
-            <div class="info-item">
-                <span class="info-label">Recepcionista:</span>
-                <span class="info-value">${recepcionistaInfo}</span>
-            </div>
-            ${pantalla.device_id ? `
-                <div class="device-id-small" style="margin-top: 12px;">
-                    Device ID: ${pantalla.device_id.substring(0, 40)}...
+            ${pantalla.recepcionista_nombre ? `
+                <div class="tv-recepcionista">
+                    👤 ${pantalla.recepcionista_nombre}
                 </div>
             ` : ''}
-            <a href="/screen" target="_blank" class="link-pantalla">
-                🔗 Abrir pantalla completa
-            </a>
         `;
-    }
-
-    return '';
-}
-
-/**
- * Renderizar acciones segun estado
- */
-function renderAccionesPantalla(pantalla) {
-    if (pantalla.estado === 'pendiente') {
-        return `
-            <div class="pantalla-actions">
-                <button 
-                    class="btn btn-primary btn-vincular" 
-                    data-id="${pantalla.id}"
-                >
-                    ✓ Vincular
-                </button>
-                <button 
-                    class="btn btn-secondary btn-cancelar" 
-                    data-id="${pantalla.id}"
-                >
-                    ✗ Cancelar
-                </button>
-            </div>
-        `;
-    }
-
-    if (pantalla.estado === 'vinculada') {
-        return `
-            <div class="pantalla-actions">
-                <button 
-                    class="btn btn-primary btn-asignar-recepcionista" 
-                    data-id="${pantalla.id}"
-                    data-numero="${pantalla.numero}"
-                    data-recepcionista="${pantalla.recepcionista_id || ''}"
-                    style="background: #059669; margin-bottom: 8px; width: 100%;"
-                >
-                    👤 Asignar Recepcionista
-                </button>
-                <button 
-                    class="btn btn-danger btn-desvincular" 
-                    data-id="${pantalla.id}"
-                    data-numero="${pantalla.numero}"
-                >
-                    🔓 Desvincular
-                </button>
-            </div>
-        `;
-    }
-
-    return '';
-}
-
-/**
- * Agregar event listeners a los botones
- */
-function agregarEventListenersPantallas() {
-    // Botones de vincular
-    document.querySelectorAll('.btn-vincular').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const pantallaId = e.target.dataset.id;
-            vincularPantallaAdmin(pantallaId);
-        });
-    });
-
-    // Botones de cancelar
-    document.querySelectorAll('.btn-cancelar').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const pantallaId = e.target.dataset.id;
-            desvincularPantallaAdmin(pantallaId);
-        });
-    });
-
-    // Botones de desvincular
-    document.querySelectorAll('.btn-desvincular').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const pantallaId = e.target.dataset.id;
-            const numero = e.target.dataset.numero;
-            confirmarDesvincularPantalla(pantallaId, numero);
-        });
-    });
-
-    // Botones de asignar recepcionista
-    document.querySelectorAll('.btn-asignar-recepcionista').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const pantallaId = e.target.dataset.id;
-            const numero = e.target.dataset.numero;
-            const recepcionistaId = e.target.dataset.recepcionista;
-            mostrarModalAsignarRecepcionista(pantallaId, numero, recepcionistaId);
-        });
-    });
-
-    // Inputs de código - validación y enter
-    document.querySelectorAll('.codigo-input').forEach(input => {
-        // Solo números
-        input.addEventListener('input', (e) => {
-            e.target.value = e.target.value.replace(/[^0-9]/g, '').substring(0, 6);
-        });
-
-        // Enter para vincular
-        input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                const pantallaId = input.id.replace('codigo-', '');
-                vincularPantallaAdmin(pantallaId);
-            }
-        });
+        
+        grid.appendChild(card);
     });
 }
-
-/**
- * Vincular pantalla desde admin
- */
 async function vincularPantallaAdmin(pantallaId) {
     const input = document.getElementById(`codigo-${pantallaId}`);
     const codigo = input ? input.value.trim() : '';
@@ -1200,15 +1031,269 @@ async function saveUserChanges() {
     }
 }
 
+// =========================
+// MODAL DE VINCULACIÓN DE PANTALLA
+// =========================
+
+let modalPantallaActual = null;
+
+/**
+ * Abrir modal de gestión de pantalla
+ */
+function abrirModalPantalla(id, numero, estado, recepcionistaId, codigoVinculacion) {
+    modalPantallaActual = { id, numero, estado, recepcionistaId, codigoVinculacion };
+    
+    const pantalla = pantallasList.find(p => p.id === id);
+    if (!pantalla) return;
+    
+    const modalHTML = `
+        <div class="modal active" id="modalPantalla" onclick="cerrarModalSiFueraClick(event)">
+            <div class="modal-pantalla-content">
+                <div class="modal-pantalla-header">
+                    <h3>📺 TV ${numero}</h3>
+                    <button class="modal-close" onclick="cerrarModalPantalla()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+                
+                <div class="modal-pantalla-body">
+                    ${estado === 'disponible' ? `
+                        <div class="estado-pantalla-info" style="background: #fef3c7; border-color: #f59e0b;">
+                            <p style="color: #92400e;">⚠️ Pantalla disponible - Esperando dispositivo...</p>
+                        </div>
+                    ` : ''}
+                    
+                    ${estado === 'pendiente' || estado === 'vinculada' ? `
+                        <div class="modal-section">
+                            <div class="modal-section-title">Código de Vinculación</div>
+                            ${estado === 'pendiente' ? `
+                                <div class="codigo-display">
+                                    <div class="codigo-numero">${codigoVinculacion || '------'}</div>
+                                    <div class="codigo-instruccion">Ingresa este código en el dispositivo</div>
+                                </div>
+                                <div class="input-codigo-group">
+                                    <input 
+                                        type="text" 
+                                        class="input-codigo" 
+                                        id="inputCodigoModal"
+                                        placeholder="CÓDIGO"
+                                        maxlength="6"
+                                    />
+                                    <button class="btn-vincular" onclick="vincularDesdeModal()">
+                                        ✓ Vincular
+                                    </button>
+                                </div>
+                            ` : `
+                                <div class="estado-pantalla-info">
+                                    <p>✅ Pantalla vinculada correctamente</p>
+                                </div>
+                            `}
+                        </div>
+                    ` : ''}
+                    
+                    ${estado === 'vinculada' ? `
+                        <div class="modal-section">
+                            <div class="modal-section-title">Asignar Recepcionista</div>
+                            <select class="select-recepcionista" id="selectRecepcionistaModal" onchange="asignarRecepcionistaDesdeModal()">
+                                <option value="">Sin asignar</option>
+                                ${recepcionistasDisponibles.map(r => `
+                                    <option value="${r.id}" ${r.id === recepcionistaId ? 'selected' : ''}>
+                                        ${r.nombre_completo || r.usuario}
+                                    </option>
+                                `).join('')}
+                            </select>
+                        </div>
+                    ` : ''}
+                </div>
+                
+                <div class="modal-pantalla-footer">
+                    ${estado === 'vinculada' ? `
+                        <button class="btn-desvincular-modal" onclick="desvincularDesdeModal()">
+                            🔓 Desvincular
+                        </button>
+                    ` : ''}
+                    ${estado === 'pendiente' ? `
+                        <button class="btn-desvincular-modal" onclick="desvincularDesdeModal()">
+                            ✗ Cancelar
+                        </button>
+                    ` : ''}
+                    <button class="btn-cerrar-modal" onclick="cerrarModalPantalla()">
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Insertar modal
+    const existingModal = document.getElementById('modalPantalla');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Focus en input si está en modo pendiente
+    if (estado === 'pendiente') {
+        setTimeout(() => {
+            const input = document.getElementById('inputCodigoModal');
+            if (input) {
+                input.focus();
+                // Solo números
+                input.addEventListener('input', (e) => {
+                    e.target.value = e.target.value.replace(/[^0-9]/g, '').substring(0, 6);
+                });
+                // Enter para vincular
+                input.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        vincularDesdeModal();
+                    }
+                });
+            }
+        }, 100);
+    }
+}
+
+/**
+ * Cerrar modal si se hace clic fuera
+ */
+function cerrarModalSiFueraClick(event) {
+    if (event.target.id === 'modalPantalla') {
+        cerrarModalPantalla();
+    }
+}
+
+/**
+ * Cerrar modal de pantalla
+ */
+function cerrarModalPantalla() {
+    const modal = document.getElementById('modalPantalla');
+    if (modal) {
+        modal.remove();
+    }
+    modalPantallaActual = null;
+}
+
+/**
+ * Vincular desde modal
+ */
+async function vincularDesdeModal() {
+    if (!modalPantallaActual) return;
+    
+    const input = document.getElementById('inputCodigoModal');
+    const codigo = input ? input.value.trim() : '';
+    
+    if (!codigo || codigo.length !== 6) {
+        mostrarMensajePantallas('Por favor ingresa el código de 6 dígitos', 'error');
+        if (input) input.focus();
+        return;
+    }
+    
+    try {
+        const response = await fetch(PANTALLAS_API.vincular(modalPantallaActual.id), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({ codigo })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            mostrarMensajePantallas('✅ Pantalla vinculada exitosamente', 'success');
+            cerrarModalPantalla();
+            cargarPantallas();
+        } else {
+            mostrarMensajePantallas(data.message || 'Código incorrecto', 'error');
+        }
+    } catch (error) {
+        console.error('Error al vincular:', error);
+        mostrarMensajePantallas('Error al vincular la pantalla', 'error');
+    }
+}
+
+/**
+ * Desvincular desde modal
+ */
+async function desvincularDesdeModal() {
+    if (!modalPantallaActual) return;
+    
+    const confirmar = confirm(`¿Estás seguro de desvincular la TV ${modalPantallaActual.numero}?`);
+    if (!confirmar) return;
+    
+    try {
+        const response = await fetch(PANTALLAS_API.desvincular(modalPantallaActual.id), {
+            method: 'POST',
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            mostrarMensajePantallas('✅ Pantalla desvinculada exitosamente', 'success');
+            cerrarModalPantalla();
+            cargarPantallas();
+        } else {
+            mostrarMensajePantallas(data.message || 'Error al desvincular', 'error');
+        }
+    } catch (error) {
+        console.error('Error al desvincular:', error);
+        mostrarMensajePantallas('Error al desvincular la pantalla', 'error');
+    }
+}
+
+/**
+ * Asignar recepcionista desde modal
+ */
+async function asignarRecepcionistaDesdeModal() {
+    if (!modalPantallaActual) return;
+    
+    const select = document.getElementById('selectRecepcionistaModal');
+    const recepcionistaId = select ? select.value : null;
+    
+    try {
+        const response = await fetch(PANTALLAS_API.asignarRecepcionista(modalPantallaActual.id), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+                recepcionista_id: recepcionistaId || null
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            mostrarMensajePantallas(
+                recepcionistaId ? '✅ Recepcionista asignado' : '✅ Recepcionista removido',
+                'success'
+            );
+            cargarPantallas();
+        } else {
+            mostrarMensajePantallas(data.message || 'Error al asignar recepcionista', 'error');
+        }
+    } catch (error) {
+        console.error('Error al asignar recepcionista:', error);
+        mostrarMensajePantallas('Error al asignar recepcionista', 'error');
+    }
+}
+// Exportar funciones globales
 // Exportar funciones globales
 window.inicializarPantallas = inicializarPantallas;
-window.vincularPantallaAdmin = vincularPantallaAdmin;
-window.desvincularPantallaAdmin = desvincularPantallaAdmin;
 window.limpiarIntervaloPantallas = limpiarIntervaloPantallas;
-window.mostrarModalAsignarRecepcionista = mostrarModalAsignarRecepcionista;
-window.cerrarModalRecepcionista = cerrarModalRecepcionista;
-window.confirmarAsignacionRecepcionista = confirmarAsignacionRecepcionista;
-
+window.abrirModalPantalla = abrirModalPantalla;
+window.cerrarModalPantalla = cerrarModalPantalla;
+window.vincularDesdeModal = vincularDesdeModal;
+window.desvincularDesdeModal = desvincularDesdeModal;
+window.asignarRecepcionistaDesdeModal = asignarRecepcionistaDesdeModal;
+window.cerrarModalSiFueraClick = cerrarModalSiFueraClick;
 // Auto-inicializar pantallas si la sección ya está visible al cargar la página
 document.addEventListener('DOMContentLoaded', () => {
     const section = document.getElementById('section-pantallas') || document.getElementById('pantallasSection');
