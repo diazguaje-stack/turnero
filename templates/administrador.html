@@ -162,7 +162,7 @@
         </main>
     </div>
 
-    <!-- Modales existentes... -->
+    <!-- Modal: Crear Usuario -->
     <div id="createUserModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -201,8 +201,7 @@
                         <option value="">Selecciona un rol</option>
                         <option value="administrador">Administrador</option>
                         <option value="recepcion">Recepción</option>
-                        <option value="registro">registro</option>
-                        
+                        <option value="registro">Registro</option>
                     </select>
                 </div>
                 <div class="modal-actions">
@@ -213,6 +212,7 @@
         </div>
     </div>
 
+    <!-- Modal: Detalles de Usuario -->
     <div id="userDetailsModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -266,7 +266,7 @@
                     <select class="detail-input" id="editRole" style="display: none;">
                         <option value="administrador">Administrador</option>
                         <option value="recepcion">Recepción</option>
-                        <option value="registro">registro</option>
+                        <option value="registro">Registro</option>
                     </select>
                 </div>
                 <div class="detail-item">
@@ -275,14 +275,15 @@
                 </div>
             </div>
             <div class="modal-actions">
-                <button type="button" class="btn-danger" id="deleteBtn" onclick="deleteUser()">Eliminar Usuario</button>
-                <button type="button" class="btn-primary" id="saveBtn" style="display: none;" onclick="saveUserChanges()">Guardar Cambios</button>
-                <button type="button" class="btn-secondary" id="cancelBtn" style="display: none;" onclick="cancelEditMode()">Cancelar</button>
-                <button type="button" class="btn-secondary" id="closeBtn" onclick="closeUserDetailsModal()">Cerrar</button>
+                <button type="button" class="btn-danger"    id="deleteBtn"                     onclick="deleteUser()">Eliminar Usuario</button>
+                <button type="button" class="btn-primary"   id="saveBtn"   style="display:none" onclick="saveUserChanges()">Guardar Cambios</button>
+                <button type="button" class="btn-secondary" id="cancelBtn" style="display:none" onclick="cancelEditMode()">Cancelar</button>
+                <button type="button" class="btn-secondary" id="closeBtn"                      onclick="closeUserDetailsModal()">Cerrar</button>
             </div>
         </div>
     </div>
 
+    <!-- Menú contextual (clic derecho sobre tarjeta) -->
     <div id="contextMenu" class="context-menu" style="display: none;">
         <div class="context-menu-item" onclick="enterEditMode()">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -304,6 +305,10 @@
 
     <div id="toast" class="toast"></div>
 
-    <script src="{{ url_for('static', filename='js/administrador.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/config.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/usuarios.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/pantallas.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/estadisticas.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
