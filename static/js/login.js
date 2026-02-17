@@ -84,7 +84,7 @@ function redirectToPanel(role) {
     const panels = {
         'administrador': '/administrador',
         'recepcion': '/recepcion',
-        'medico': '/medico'
+        'registro': '/registro'
     };
     
     const targetUrl = panels[role] || '/administrador';

@@ -247,8 +247,8 @@ function createUserCard(user) {
     const roleLabel = {
         'administrador': 'Administrador',
         'recepcion': 'Recepción',
-        'medico': 'Médico',
-        'enfermero': 'Enfermero'
+        'registro': 'registro',
+    
     }[user.rol.toLowerCase()] || user.rol;
 
     card.innerHTML = `
@@ -380,8 +380,8 @@ function showUserDetails(userId) {
     const roleLabel = {
         'administrador': 'Administrador',
         'recepcion': 'Recepción',
-        'medico': 'Médico',
-        'enfermero': 'Enfermero'
+        'registro': 'registro',
+        
     }[user.rol.toLowerCase()] || user.rol;
     
     const roleClass = `role-${user.rol.toLowerCase()}`;
@@ -1078,8 +1078,8 @@ function enterEditMode() {
     const roleLabel = {
         'administrador': 'Administrador',
         'recepcion': 'Recepción',
-        'medico': 'Médico',
-        'enfermero': 'Enfermero'
+        'registro': 'registro',
+        
     }[user.rol.toLowerCase()] || user.rol;
     
     const roleClass = `role-${user.rol.toLowerCase()}`;

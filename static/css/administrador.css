@@ -370,15 +370,11 @@ body {
     color: #1e3a8a;
 }
 
-.role-medico {
+.role-registro {
     background: #d1fae5;
     color: #065f46;
 }
 
-.role-enfermero {
-    background: #fce7f3;
-    color: #831843;
-}
 
 /* Empty State */
 .empty-state {
