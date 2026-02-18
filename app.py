@@ -8,7 +8,7 @@ from flask_cors import CORS
 from datetime import datetime
 import os
 from functools import wraps
-from models import db, Usuario, init_db, Pantalla
+from models import db, Usuario, init_db, Pantalla, Paciente, db, uuid
 from config import config
 
 
@@ -723,6 +723,207 @@ def internal_error(error):
         'error': 'Error interno del servidor'
     }), 500
 
+
+
+# ==========================================
+# OBTENER MÉDICOS (para generar cards)
+# ==========================================
+
+@app.route('/api/medicos', methods=['GET'])
+def obtener_medicos():
+    """Obtener todos los médicos activos"""
+    try:
+        medicos = Usuario.query.filter_by(rol='medico', activo=True).all()
+        
+        medicos_data = [{
+            'id': medico.id,
+            'nombre_completo': medico.nombre_completo or medico.usuario,
+            'usuario': medico.usuario,
+            'inicial': (medico.nombre_completo or medico.usuario)[0].upper()
+        } for medico in medicos]
+        
+        return jsonify({
+            'success': True,
+            'medicos': medicos_data,
+            'total': len(medicos_data)
+        }), 200
+        
+    except Exception as e:
+        print(f"Error al obtener médicos: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+# ==========================================
+# GENERAR CÓDIGO DE PACIENTE
+# ==========================================
+
+def generar_codigo_paciente(medico_id, motivo):
+    """
+    Genera código único: INICIAL_MEDICO-INICIAL_MOTIVO-NÚMERO
+    Ejemplo: D-I-001 (Dr. Juan - Información - 001)
+    """
+    try:
+        # Obtener médico
+        medico = Usuario.query.filter_by(id=medico_id, rol='medico').first()
+        if not medico:
+            raise Exception("Médico no encontrado")
+        
+        # Primera inicial del médico
+        inicial_medico = (medico.nombre_completo or medico.usuario)[0].upper()
+        
+        # Primera inicial del motivo
+        inicial_motivo = motivo[0].upper() if motivo else 'X'
+        
+        # Obtener último número para este médico y motivo
+        ultimo_paciente = Paciente.query.filter(
+            Paciente.medico_id == medico_id,
+            Paciente.motivo == motivo
+        ).order_by(Paciente.created_at.desc()).first()
+        
+        # Calcular siguiente número
+        if ultimo_paciente and ultimo_paciente.codigo_paciente:
+            # Extraer el número del código (ej: "D-I-001" → 001)
+            partes = ultimo_paciente.codigo_paciente.split('-')
+            if len(partes) >= 3:
+                numero = int(partes[2]) + 1
+            else:
+                numero = 1
+        else:
+            numero = 1
+        
+        # Formato final
+        codigo = f"{inicial_medico}-{inicial_motivo}-{numero:03d}"
+        
+        return codigo
+        
+    except Exception as e:
+        print(f"Error generando código: {str(e)}")
+        raise
+
+
+# ==========================================
+# REGISTRAR PACIENTE
+# ==========================================
+
+@app.route('/api/pacientes/registrar', methods=['POST'])
+def registrar_paciente():
+    """Registrar nuevo paciente con código dinámico"""
+    try:
+        data = request.get_json()
+        
+        # Validar datos requeridos
+        nombre = data.get('nombre', '').strip()
+        medico_id = data.get('medico_id', '').strip()
+        motivo = data.get('motivo', '').strip()
+        documento = data.get('documento', '').strip() or str(uuid.uuid4())[:12]
+        
+        if not nombre or not medico_id or not motivo:
+            return jsonify({
+                'success': False,
+                'message': 'Nombre, médico y motivo son obligatorios'
+            }), 400
+        
+        # Verificar que el médico existe
+        medico = Usuario.query.filter_by(id=medico_id, rol='medico', activo=True).first()
+        if not medico:
+            return jsonify({
+                'success': False,
+                'message': 'Médico no encontrado'
+            }), 404
+        
+        # Generar código único
+        codigo_paciente = generar_codigo_paciente(medico_id, motivo)
+        
+        # Crear paciente
+        nuevo_paciente = Paciente(
+            id=str(uuid.uuid4()),
+            nombre=nombre,
+            apellido=data.get('apellido', ''),
+            documento=documento,
+            codigo_paciente=codigo_paciente,
+            motivo=motivo,
+            medico_id=medico_id,
+            created_at=datetime.utcnow()
+        )
+        
+        db.session.add(nuevo_paciente)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Paciente registrado exitosamente',
+            'paciente': {
+                'id': nuevo_paciente.id,
+                'nombre': nuevo_paciente.nombre,
+                'codigo': codigo_paciente,
+                'medico': medico.nombre_completo,
+                'motivo': motivo
+            }
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error al registrar paciente: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+
+# ==========================================
+# OBTENER PACIENTES POR MÉDICO
+# ==========================================
+
+@app.route('/api/pacientes/medico/<medico_id>', methods=['GET'])
+def obtener_pacientes_medico(medico_id):
+    """Obtener pacientes de un médico específico"""
+    try:
+        pacientes = Paciente.query.filter_by(medico_id=medico_id).all()
+        
+        pacientes_data = [p.to_dict() for p in pacientes]
+        
+        return jsonify({
+            'success': True,
+            'pacientes': pacientes_data,
+            'total': len(pacientes_data)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+# ==========================================
+# OBTENER PACIENTE POR CÓDIGO
+# ==========================================
+
+@app.route('/api/pacientes/codigo/<codigo>', methods=['GET'])
+def obtener_paciente_codigo(codigo):
+    """Obtener paciente por su código único"""
+    try:
+        paciente = Paciente.query.filter_by(codigo_paciente=codigo).first()
+        
+        if not paciente:
+            return jsonify({
+                'success': False,
+                'message': 'Paciente no encontrado'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'paciente': paciente.to_dict()
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
 
 # ===================================
 # INICIALIZACION

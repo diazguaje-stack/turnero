@@ -185,8 +185,14 @@ class Pantalla(db.Model):
 # MODELO: Paciente
 # ==========================================
 
+# REEMPLAZAR EN models.py - Modelo Paciente actualizado
+
+# ==========================================
+# MODELO: Paciente (ACTUALIZADO)
+# ==========================================
+
 class Paciente(db.Model):
-    """Modelo de Paciente"""
+    """Modelo de Paciente con código único y relación con médico"""
     
     __tablename__ = 'pacientes'
     
@@ -194,6 +200,9 @@ class Paciente(db.Model):
     nombre = db.Column(db.String(100), nullable=False)
     apellido = db.Column(db.String(100), nullable=False)
     documento = db.Column(db.String(20), unique=True, nullable=False, index=True)
+    codigo_paciente = db.Column(db.String(50), unique=True, nullable=True, index=True)  # Ej: D-I-001
+    motivo = db.Column(db.String(100), nullable=True)  # Información o Consulta
+    medico_id = db.Column(db.String(36), db.ForeignKey('usuarios.id'), nullable=True)
     fecha_nacimiento = db.Column(db.Date)
     genero = db.Column(db.String(10))
     telefono = db.Column(db.String(20))
@@ -203,6 +212,9 @@ class Paciente(db.Model):
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relacion con medico
+    medico = db.relationship('Usuario', backref='pacientes', foreign_keys=[medico_id])
     
     # Relacion con turnos
     turnos = db.relationship('Turno', backref='paciente', lazy='dynamic')
@@ -214,6 +226,10 @@ class Paciente(db.Model):
             'apellido': self.apellido,
             'nombre_completo': f"{self.nombre} {self.apellido}",
             'documento': self.documento,
+            'codigo_paciente': self.codigo_paciente,
+            'motivo': self.motivo,
+            'medico_id': self.medico_id,
+            'medico_nombre': self.medico.nombre_completo if self.medico else None,
             'fecha_nacimiento': self.fecha_nacimiento.isoformat() if self.fecha_nacimiento else None,
             'genero': self.genero,
             'telefono': self.telefono,
@@ -222,8 +238,7 @@ class Paciente(db.Model):
         }
     
     def __repr__(self):
-        return f'<Paciente {self.nombre} {self.apellido}>'
-
+        return f'<Paciente {self.nombre} {self.apellido} ({self.codigo_paciente})>'
 
 # ==========================================
 # MODELO: Turno

@@ -3,13 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Registro</title>
+    <title>Registro de Pacientes</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/registro.css') }}">
+
 </head>
 <body>
+    <!-- Navbar -->
     <div class="navbar">
         <div>
-            <h1>Sistema de Registro</h1>
+            <h1>📋 Registro de Pacientes</h1>
         </div>
         <div class="user-info">
             <div class="user-avatar" id="userAvatar">👤</div>
@@ -21,12 +23,62 @@
         </div>
     </div>
 
-    <!-- Contenido principal aquí -->
-    <div class="content">
-        <h2>Bienvenido al Dashboard de Registro</h2>
-        <!-- Agrega el contenido de registro aquí -->
+    <!-- Contenido Principal -->
+    <div class="container">
+        <!-- Header -->
+        <div class="header-section">
+            <h2>👨‍⚕️ Selecciona un Médico</h2>
+            <p>Haz clic en la tarjeta del médico para registrar un nuevo paciente</p>
+        </div>
+
+        <!-- Grid de Médicos -->
+        <div id="medicosContainer">
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Cargando médicos...</p>
+            </div>
+        </div>
     </div>
 
-    <script src="{{ url_for('static', filename='js/registro.js') }}"></script>  
+    <!-- Modal de Registro -->
+    <div id="registroModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Registrar Paciente</h2>
+                <button class="close-btn" onclick="cerrarModal()">&times;</button>
+            </div>
+
+            <div id="modalMessage"></div>
+
+            <form id="registroForm" onsubmit="registrarPaciente(event)">
+                <div class="form-group">
+                    <label>👨‍⚕️ Médico</label>
+                    <input type="text" id="medicoNombre" readonly>
+                    <input type="hidden" id="medicoId">
+                </div>
+
+                <div class="form-group">
+                    <label>👤 Nombre del Paciente *</label>
+                    <input type="text" id="pacienteNombre" placeholder="Ej: Juan" required>
+                </div>
+
+                <div class="form-group">
+                    <label>📋 Motivo de Consulta *</label>
+                    <select id="pacienteMotivo" required>
+                        <option value="">-- Selecciona un motivo --</option>
+                        <option value="Información">ℹ️ Información</option>
+                        <option value="Consulta">🏥 Consulta Médica</option>
+                    </select>
+                </div>
+
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" id="btnRegistrar">Registrar Paciente</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/registro.js') }}"></script>
 </body>
 </html>
