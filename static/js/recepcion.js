@@ -14,7 +14,7 @@ async function verificarSesion() {
             return;
         }
 
-        // 🔒 Validar que el rol coincida con la página
+        // 🔐 Validar que el rol coincida con la página
         const currentPath = window.location.pathname;
 
         if (currentPath.includes("recepcion") && data.role !== "recepcion") {
@@ -29,8 +29,22 @@ async function verificarSesion() {
             return;
         }
 
-        // ✅ Mostrar nombre
-        document.getElementById("userName").textContent = data.nombre;
+        // ✅ Mostrar NOMBRE COMPLETO del usuario
+        const nombreCompleto = data.nombre_completo || data.usuario || "Usuario";
+        
+        const userNameElement = document.getElementById("userName");
+        if (userNameElement) {
+            userNameElement.textContent = nombreCompleto;
+        }
+
+        // 👤 Actualizar avatar con inicial del nombre
+        const userAvatarElement = document.getElementById("userAvatar");
+        if (userAvatarElement) {
+            const inicial = nombreCompleto.charAt(0).toUpperCase();
+            userAvatarElement.textContent = inicial;
+        }
+
+        console.log(`✅ Bienvenido ${nombreCompleto} (${data.role})`);
 
     } catch (error) {
         console.error("Error verificando sesión:", error);

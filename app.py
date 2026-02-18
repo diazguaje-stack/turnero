@@ -340,13 +340,34 @@ def logout():
 
 @app.route('/api/verify-session', methods=['GET'])
 def verify_session():
-    """Verificar si hay una sesion activa valida"""
+    """Verificar si hay una sesion activa valida y obtener datos del usuario"""
     if 'usuario' in session:
+        # 🔍 Buscar el usuario en la base de datos para obtener su nombre completo
+        usuario_login = session['usuario']
+        
+        # Si usas SQLite/PostgreSQL/MySQL:
+        usuario = Usuario.query.filter_by(usuario=usuario_login).first()
+        
+        # Si usas MongoDB:
+        # usuario = db.usuarios.find_one({'usuario': usuario_login})
+        
+        # Si usas un diccionario/lista en memoria:
+        # usuario = next((u for u in users if u['usuario'] == usuario_login), None)
+        
+        if not usuario:
+            return jsonify({
+                'success': False,
+                'authenticated': False,
+                'message': 'Usuario no encontrado'
+            }), 401
+        
         return jsonify({
             'success': True,
             'authenticated': True,
             'usuario': session['usuario'],
+            'nombre_completo': usuario.nombre_completo,  # ← AQUÍ VA EL NOMBRE COMPLETO
             'role': session['role'],
+            'id': usuario.id,
             'login_time': session.get('login_time')
         }), 200
     
@@ -355,7 +376,6 @@ def verify_session():
         'authenticated': False,
         'message': 'No hay sesion activa'
     }), 401
-
 
 # ===================================
 # RUTAS DE GESTION DE USUARIOS

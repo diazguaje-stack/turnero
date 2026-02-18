@@ -14,26 +14,47 @@ async function verificarSesion() {
             return;
         }
 
-        // 🔒 Validar que el rol coincida con la página
+        // 🔐 Validar que el rol coincida con la página
         const currentPath = window.location.pathname;
 
-        if (currentPath.includes("recepcion") && data.rol !== "recepcion") {
+        if (currentPath.includes("recepcion") && data.role !== "recepcion") {
             alert("Acceso no autorizado");
             window.location.href = "/";
             return;
         }
 
-        if (currentPath.includes("registro") && data.rol !== "registro") {
+        if (currentPath.includes("registro") && data.role !== "registro") {
             alert("Acceso no autorizado");
             window.location.href = "/";
             return;
         }
 
-        // ✅ Mostrar nombre
-        document.getElementById("userName").textContent = data.nombre;
+        // ✅ Mostrar NOMBRE COMPLETO del usuario
+        const nombreCompleto = data.nombre_completo || data.usuario || "Usuario";
+        
+        const userNameElement = document.getElementById("userName");
+        if (userNameElement) {
+            userNameElement.textContent = nombreCompleto;
+        }
+
+        // 👤 Actualizar avatar con inicial del nombre
+        const userAvatarElement = document.getElementById("userAvatar");
+        if (userAvatarElement) {
+            const inicial = nombreCompleto.charAt(0).toUpperCase();
+            userAvatarElement.textContent = inicial;
+        }
+
+        console.log(`✅ Bienvenido ${nombreCompleto} (${data.role})`);
 
     } catch (error) {
         console.error("Error verificando sesión:", error);
         window.location.href = "/";
+    }
+}
+function logout() {
+    if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
+        fetch('/logout', { method: 'POST', credentials: 'include' })
+            .then(() => window.location.href = '/')
+            .catch(err => console.error('Error al cerrar sesión:', err));
     }
 }
