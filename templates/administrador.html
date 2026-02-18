@@ -174,10 +174,14 @@
                     </svg>
                 </button>
             </div>
-            <form id="createUserForm" class="modal-form">
+            <form id="createUserForm" class="modal-form" autocomplete="off">
+                <!-- Campos trampa para evitar autocompletado -->
+                <input type="text" name="fakeuser" style="display:none">
+                <input type="password" name="fakepass" style="display:none">
+
                 <div class="form-group">
                     <label for="newUsername">Usuario</label>
-                    <input type="text" id="newUsername" required placeholder="Ingresa el nombre de usuario">
+                    <input type="text" id="newUsername" name="usuario_nuevo" required placeholder="Ingresa el nombre de usuario" autocomplete="new-username" readonly onfocus="this.removeAttribute('readonly')">
                 </div>
                 <div class="form-group">
                     <label for="newName">Nombre</label>
@@ -186,7 +190,7 @@
                 <div class="form-group">
                     <label for="newPassword">Contraseña</label>
                     <div class="input-with-icon">
-                        <input type="password" id="newPassword" required placeholder="Ingresa la contraseña">
+                        <input type="password" id="newPassword" required placeholder="Ingresa la contraseña" autocomplete="off">
                         <button type="button" class="toggle-password-btn" onclick="togglePasswordVisibility('newPassword')">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -202,10 +206,10 @@
                         <option value="administrador">Administrador</option>
                         <option value="recepcion">Recepción</option>
                         <option value="registro">Registro</option>
+                        <option value="medico">Médico</option>
                     </select>
                 </div>
                 <div class="modal-actions">
-                    <button type="button" class="btn-secondary" onclick="closeCreateUserModal()">Cancelar</button>
                     <button type="submit" class="btn-primary">Crear Usuario</button>
                 </div>
             </form>
@@ -267,6 +271,7 @@
                         <option value="administrador">Administrador</option>
                         <option value="recepcion">Recepción</option>
                         <option value="registro">Registro</option>
+                        <option value="medico">Médico</option>
                     </select>
                 </div>
                 <div class="detail-item">
@@ -277,7 +282,6 @@
             <div class="modal-actions">
                 <button type="button" class="btn-danger"    id="deleteBtn"                     onclick="deleteUser()">Eliminar Usuario</button>
                 <button type="button" class="btn-primary"   id="saveBtn"   style="display:none" onclick="saveUserChanges()">Guardar Cambios</button>
-                <button type="button" class="btn-secondary" id="cancelBtn" style="display:none" onclick="cancelEditMode()">Cancelar</button>
                 <button type="button" class="btn-secondary" id="closeBtn"                      onclick="closeUserDetailsModal()">Cerrar</button>
             </div>
         </div>

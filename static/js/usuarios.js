@@ -203,10 +203,28 @@ async function saveUserChanges() {
     const user = users.find(u => u.id === selectedUserId);
     if (!user) return;
 
-    const updatedData = { usuario: newUsername, nombre_completo: newName, rol: newRole };
-    
-    // Solo enviar password si fue modificado (diferente al original o si había uno vacío)
     const originalPassword = user.password || '';
+
+    // 🔎 Detectar si hubo cambios reales
+    const huboCambios =
+        newUsername !== user.usuario ||
+        newName !== (user.nombre_completo || '') ||
+        newRole !== user.rol ||
+        (newPassword && newPassword !== originalPassword);
+
+    // 🟢 SI NO HUBO CAMBIOS → solo cerrar modal
+    if (!huboCambios) {
+        closeUserDetailsModal();
+        return;
+    }
+
+    // 🟣 SI HUBO CAMBIOS → enviar al backend
+    const updatedData = {
+        usuario: newUsername,
+        nombre_completo: newName,
+        rol: newRole
+    };
+
     if (newPassword && newPassword !== originalPassword) {
         updatedData.password = newPassword;
     }
@@ -218,13 +236,13 @@ async function saveUserChanges() {
             credentials: 'include',
             body:    JSON.stringify(updatedData)
         });
+
         const data = await response.json();
 
         if (response.ok) {
             await loadUsersFromBackend();
-            cancelEditMode();
             closeUserDetailsModal();
-            showToast('Usuario actualizado exitosamente', 'success');
+            showToast('Cambios registrados correctamente', 'success');
         } else {
             showToast(data.message || 'Error al actualizar usuario', 'error');
         }
@@ -236,6 +254,14 @@ async function saveUserChanges() {
 // ── Modales ───────────────────────────────────────────────────────────────────
 
 function openCreateUserModal() {
+    document.getElementById('createUserModal').classList.add('active');
+    const form = document.getElementById('createUserForm');
+    form.reset();
+
+    setTimeout(() => {
+        document.getElementById('newUsername').value = '';
+    }, 150);
+
     document.getElementById('createUserModal').classList.add('active');
 }
 
@@ -330,6 +356,34 @@ function enterEditMode() {
 
 function cancelEditMode() {
     isEditMode = false;
+    
+    // Restaurar datos originales del usuario
+    const user = users.find(u => u.id === selectedUserId);
+    if (user) {
+        // Restaurar valores de lectura
+        document.getElementById('detailUsername').textContent = user.usuario;
+        document.getElementById('detailName').textContent = user.nombre_completo || 'Sin especificar';
+        
+        const passwordEl = document.getElementById('detailPassword');
+        const userPassword = user.password || '';
+        
+        if (!userPassword) {
+            passwordEl.textContent = '[No disponible]';
+            passwordEl.dataset.password = '';
+            passwordEl.style.color = '#9ca3af';
+            passwordEl.style.fontStyle = 'italic';
+        } else {
+            passwordEl.textContent = '••••••••';
+            passwordEl.dataset.password = userPassword;
+            passwordEl.style.color = '';
+            passwordEl.style.fontStyle = '';
+        }
+        
+        const roleEl = document.getElementById('detailRole');
+        roleEl.textContent = getRoleLabel(user.rol);
+        roleEl.className = `detail-value detail-role role-${(user.rol || '').toLowerCase()}`;
+    }
+    
     _setModoLectura();
 }
 
