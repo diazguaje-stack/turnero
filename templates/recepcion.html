@@ -3,13 +3,646 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Recepción</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/recepcion.css') }}">
+    <title>Recepción - Pacientes</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #ffffff;
+            padding: 15px 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            max-width: 1400px;
+            margin-left: auto;
+            margin-right: auto;
+            position: relative;
+        }
+
+        .navbar h1 {
+            color: #333;
+            font-size: 24px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .user-avatar {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .user-name {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-name-label {
+            font-size: 11px;
+            color: #999;
+            text-transform: uppercase;
+        }
+
+        .user-name-value {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .navbar-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .papelera-btn {
+            padding: 8px 16px;
+            background-color: #ff9800;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.3s;
+            font-size: 14px;
+        }
+
+        .papelera-btn:hover {
+            background-color: #f57c00;
+        }
+
+        .logout-btn {
+            padding: 8px 16px;
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.3s;
+            font-size: 14px;
+        }
+
+        .logout-btn:hover {
+            background-color: #c82333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header-section {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .header-section h2 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .header-section p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .search-box input {
+            flex: 1;
+            max-width: 400px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .search-box button {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .medicos-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .medico-section {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .medico-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .medico-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .medico-info h3 {
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+
+        .medico-info p {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .pacientes-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .paciente-item {
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.3s;
+        }
+
+        .paciente-item:hover {
+            background: #f8f9fa;
+        }
+
+        .paciente-item:last-child {
+            border-bottom: none;
+        }
+
+        .paciente-nombre {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .paciente-nombre strong {
+            color: #333;
+            font-size: 15px;
+        }
+
+        .paciente-motivo {
+            font-size: 12px;
+            color: #999;
+        }
+
+        /* BOTÓN DINÁMICO DEL CÓDIGO */
+        .paciente-codigo-button {
+            position: relative;
+            cursor: pointer;
+        }
+
+        .codigo-display {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+            text-align: center;
+            min-width: 120px;
+            display: inline-block;
+            transition: all 0.3s;
+        }
+
+        .codigo-display:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .botones-paciente {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 10px;
+            z-index: 100;
+            background: white;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            padding: 8px;
+            min-width: 140px;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .btn-llamar {
+            padding: 10px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            transition: background 0.3s;
+        }
+
+        .btn-llamar:hover {
+            background: #45a049;
+        }
+
+        .btn-eliminar {
+            padding: 10px;
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            transition: background 0.3s;
+        }
+
+        .btn-eliminar:hover {
+            background: #da190b;
+        }
+
+        .medico-footer {
+            padding: 15px 20px;
+            background: #f8f9fa;
+            text-align: center;
+            color: #666;
+            font-size: 13px;
+            border-top: 1px solid #eee;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            background: white;
+            border-radius: 8px;
+            color: #999;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* NOTIFICACIÓN DE LLAMADA */
+        .notificacion-llamada {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            z-index: 2000;
+            text-align: center;
+            min-width: 300px;
+            animation: popIn 0.4s ease;
+        }
+
+        @keyframes popIn {
+            0% {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.8);
+            }
+            100% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);
+            }
+        }
+
+        .notificacion-llamada h3 {
+            color: #4CAF50;
+            margin-bottom: 15px;
+        }
+
+        /* MODAL DE DETALLES */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.3s ease;
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            width: 90%;
+            max-width: 500px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .modal-header h2 {
+            color: #333;
+            margin: 0;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #999;
+        }
+
+        .close-btn:hover {
+            color: #333;
+        }
+
+        .modal-body {
+            color: #333;
+        }
+
+        .modal-body p {
+            margin: 15px 0;
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .modal-body strong {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .modal-body .valor {
+            text-align: right;
+            font-weight: 500;
+        }
+
+        /* PAPELERA MODAL */
+        .papelera-item {
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .papelera-info strong {
+            display: block;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .papelera-acciones {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .btn-restaurar {
+            padding: 8px 12px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .btn-restaurar:hover {
+            background: #0b7dda;
+        }
+
+        .btn-eliminar-permanente {
+            padding: 8px 12px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .btn-eliminar-permanente:hover {
+            background: #c82333;
+        }
+
+        .papelera-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .papelera-header h2 {
+            color: #333;
+            margin: 0;
+        }
+
+        .btn-vaciar {
+            padding: 8px 16px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .btn-vaciar:hover {
+            background: #c82333;
+        }
+    </style>
 </head>
 <body>
-    <div id="userInfo" class="user-info">
-        👤 <span id="userName">Cargando...</span>
+    <!-- Navbar -->
+    <div class="navbar">
+        <div>
+            <h1>🏥 Recepción - Pacientes</h1>
+        </div>
+        <div class="user-info">
+            <div class="user-avatar" id="userAvatar">👤</div>
+            <div class="user-name">
+                <span class="user-name-label">Sesión iniciada como</span>
+                <span class="user-name-value" id="userName">Cargando...</span>
+            </div>
+            <div class="navbar-buttons">
+                <button class="papelera-btn" onclick="abrirPapelera()">🗑️ Papelera</button>
+                <button class="logout-btn" onclick="logout()">Cerrar Sesión</button>
+            </div>
+        </div>
     </div>
+
+    <!-- Contenido Principal -->
+    <div class="container">
+        <!-- Header -->
+        <div class="header-section">
+            <h2>📋 Pacientes Registrados</h2>
+            <p>Visualiza todos los pacientes registrados por cada médico</p>
+            
+            <div class="search-box">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    placeholder="🔍 Buscar por código de paciente (ej: J-I-001)"
+                >
+                <button onclick="buscarPaciente()">Buscar</button>
+            </div>
+        </div>
+
+        <!-- Container de Médicos -->
+        <div id="medicosContainer">
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Cargando pacientes...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Detalles -->
+    <div id="detallesModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Detalles del Paciente</h2>
+                <button class="close-btn" onclick="cerrarModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="detallesContent"></div>
+        </div>
+    </div>
+
+    <!-- Modal de Papelera -->
+    <div id="papelaModal" class="modal">
+        <div class="modal-content">
+            <div class="papelera-header">
+                <h2>🗑️ Papelera de Códigos Eliminados</h2>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-vaciar" onclick="vaciarPapelera()">Vaciar Todo</button>
+                    <button class="close-btn" onclick="cerrarPapelera()">&times;</button>
+                </div>
+            </div>
+            <div class="modal-body" id="papelaBody"></div>
+        </div>
+    </div>
+
     <script src="{{ url_for('static', filename='js/recepcion.js') }}"></script>
 </body>
 </html>

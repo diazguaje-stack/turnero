@@ -295,7 +295,7 @@ def login():
             # Guardar en sesion
             session.permanent = True
             session['usuario'] = usuario
-            session['role'] = user.rol
+            session['role'] = user.rol.lower()
             session['user_id'] = user.id
             session['login_time'] = datetime.now().isoformat()
 
@@ -920,6 +920,181 @@ def obtener_paciente_codigo(codigo):
         }), 200
         
     except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+# ==========================================
+# OBTENER PACIENTES POR MÉDICO
+# ==========================================
+
+@app.route('/api/recepcion/pacientes', methods=['GET'])
+def obtener_pacientes_recepcion():
+    """
+    Obtener todos los pacientes organizados por médico
+    Retorna: {medicos: [{id, nombre, pacientes: [...]}]}
+    """
+    try:
+        # Obtener todos los médicos activos
+        medicos = Usuario.query.filter_by(rol='medico', activo=True).all()
+        
+        resultado = []
+        
+        for medico in medicos:
+            # Obtener pacientes de este médico
+            pacientes = Paciente.query.filter_by(medico_id=medico.id).all()
+            
+            medico_data = {
+                'id': medico.id,
+                'nombre': medico.nombre_completo or medico.usuario,
+                'usuario': medico.usuario,
+                'inicial': (medico.nombre_completo or medico.usuario)[0].upper(),
+                'total_pacientes': len(pacientes),
+                'pacientes': [{
+                    'id': paciente.id,
+                    'nombre': paciente.nombre,
+                    'codigo': paciente.codigo_paciente,
+                    'motivo': paciente.motivo,
+                    'created_at': paciente.created_at.isoformat() if paciente.created_at else None
+                } for paciente in pacientes]
+            }
+            
+            resultado.append(medico_data)
+        
+        return jsonify({
+            'success': True,
+            'medicos': resultado,
+            'total_medicos': len(resultado)
+        }), 200
+        
+    except Exception as e:
+        print(f"Error al obtener pacientes: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+# ==========================================
+# OBTENER PACIENTES DE UN MÉDICO ESPECÍFICO
+# ==========================================
+
+@app.route('/api/recepcion/medico/<medico_id>/pacientes', methods=['GET'])
+def obtener_pacientes_por_medico(medico_id):
+    """Obtener pacientes de un médico específico"""
+    try:
+        # Verificar que el médico existe
+        medico = Usuario.query.filter_by(id=medico_id, rol='medico', activo=True).first()
+        
+        if not medico:
+            return jsonify({
+                'success': False,
+                'message': 'Médico no encontrado'
+            }), 404
+        
+        # Obtener pacientes
+        pacientes = Paciente.query.filter_by(medico_id=medico_id).all()
+        
+        pacientes_data = [{
+            'id': paciente.id,
+            'nombre': paciente.nombre,
+            'apellido': paciente.apellido,
+            'nombre_completo': f"{paciente.nombre} {paciente.apellido}",
+            'codigo': paciente.codigo_paciente,
+            'motivo': paciente.motivo,
+            'documento': paciente.documento,
+            'created_at': paciente.created_at.isoformat() if paciente.created_at else None
+        } for paciente in pacientes]
+        
+        return jsonify({
+            'success': True,
+            'medico': {
+                'id': medico.id,
+                'nombre': medico.nombre_completo or medico.usuario,
+            },
+            'pacientes': pacientes_data,
+            'total': len(pacientes_data)
+        }), 200
+        
+    except Exception as e:
+        print(f"Error al obtener pacientes del médico: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+# ==========================================
+# BUSCAR PACIENTE POR CÓDIGO
+# ==========================================
+
+@app.route('/api/recepcion/paciente/<codigo>', methods=['GET'])
+def buscar_paciente_codigo(codigo):
+    """Buscar paciente por código único"""
+    try:
+        paciente = Paciente.query.filter_by(codigo_paciente=codigo).first()
+        
+        if not paciente:
+            return jsonify({
+                'success': False,
+                'message': 'Paciente no encontrado'
+            }), 404
+        
+        # Obtener datos del médico
+        medico = Usuario.query.filter_by(id=paciente.medico_id).first()
+        
+        return jsonify({
+            'success': True,
+            'paciente': {
+                'id': paciente.id,
+                'nombre': paciente.nombre,
+                'apellido': paciente.apellido,
+                'nombre_completo': f"{paciente.nombre} {paciente.apellido}",
+                'codigo': paciente.codigo_paciente,
+                'motivo': paciente.motivo,
+                'documento': paciente.documento,
+                'medico': medico.nombre_completo if medico else 'Sin médico',
+                'created_at': paciente.created_at.isoformat() if paciente.created_at else None
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"Error al buscar paciente: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+# ==========================================
+# ELIMINAR PACIENTE (si es necesario)
+# ==========================================
+
+@app.route('/api/recepcion/paciente/<paciente_id>', methods=['DELETE'])
+def eliminar_paciente(paciente_id):
+    """Eliminar un paciente (solo admin o recepcionista)"""
+    try:
+        paciente = Paciente.query.filter_by(id=paciente_id).first()
+        
+        if not paciente:
+            return jsonify({
+                'success': False,
+                'message': 'Paciente no encontrado'
+            }), 404
+        
+        db.session.delete(paciente)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Paciente eliminado correctamente'
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error al eliminar paciente: {str(e)}")
         return jsonify({
             'success': False,
             'message': str(e)
