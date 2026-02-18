@@ -204,7 +204,12 @@ async function saveUserChanges() {
     if (!user) return;
 
     const updatedData = { usuario: newUsername, nombre_completo: newName, rol: newRole };
-    if (newPassword !== user.password) updatedData.password = newPassword;
+    
+    // Solo enviar password si fue modificado (diferente al original o si había uno vacío)
+    const originalPassword = user.password || '';
+    if (newPassword && newPassword !== originalPassword) {
+        updatedData.password = newPassword;
+    }
 
     try {
         const response = await fetch(USUARIOS_API.update(selectedUserId), {
@@ -250,9 +255,21 @@ function showUserDetails(userId) {
     document.getElementById('detailUsername').textContent = user.usuario;
     document.getElementById('detailName').textContent     = user.nombre_completo || 'Sin especificar';
 
-    const passwordEl            = document.getElementById('detailPassword');
-    passwordEl.textContent      = '••••••••';
-    passwordEl.dataset.password = user.password || '';
+    const passwordEl = document.getElementById('detailPassword');
+    const userPassword = user.password || '';
+    
+    // Mostrar indicador si la contraseña está vacía o disponible
+    if (!userPassword) {
+        passwordEl.textContent = '[No disponible]';
+        passwordEl.dataset.password = '';
+        passwordEl.style.color = '#9ca3af';
+        passwordEl.style.fontStyle = 'italic';
+    } else {
+        passwordEl.textContent = '••••••••';
+        passwordEl.dataset.password = userPassword;
+        passwordEl.style.color = '';
+        passwordEl.style.fontStyle = '';
+    }
 
     const roleEl       = document.getElementById('detailRole');
     roleEl.textContent = getRoleLabel(user.rol);
@@ -270,7 +287,10 @@ function showUserDetails(userId) {
 
 function closeUserDetailsModal() {
     document.getElementById('userDetailsModal').classList.remove('active');
-    document.getElementById('detailPassword').textContent = '••••••••';
+    const passwordEl = document.getElementById('detailPassword');
+    passwordEl.textContent = '••••••••';
+    passwordEl.style.color = '';
+    passwordEl.style.fontStyle = '';
     selectedUserId = null;
     isEditMode     = false;
 }
@@ -291,7 +311,17 @@ function enterEditMode() {
     document.getElementById('userDetailsModal').classList.add('active');
     document.getElementById('editUsername').value = user.usuario;
     document.getElementById('editName').value     = user.nombre_completo || '';
-    document.getElementById('editPassword').value = user.password || '';
+    
+    // Manejar contraseña vacía en modo edición
+    const userPassword = user.password || '';
+    if (!userPassword) {
+        document.getElementById('editPassword').value = '';
+        document.getElementById('editPassword').placeholder = 'Establecer nueva contraseña';
+    } else {
+        document.getElementById('editPassword').value = userPassword;
+        document.getElementById('editPassword').placeholder = 'Contraseña actual';
+    }
+    
     document.getElementById('editPassword').type  = 'password';
     document.getElementById('editRole').value     = user.rol;
 
@@ -307,7 +337,24 @@ function cancelEditMode() {
 
 function toggleDetailPassword() {
     const el = document.getElementById('detailPassword');
-    el.textContent = el.textContent === '••••••••' ? el.dataset.password : '••••••••';
+    const storedPassword = el.dataset.password;
+    
+    // Si no hay contraseña almacenada, no hacer nada
+    if (!storedPassword) {
+        showToast('Esta contraseña no está disponible. Edita el usuario para establecer una nueva.', 'warning');
+        return;
+    }
+    
+    // Toggle entre oculta y visible
+    if (el.textContent === '••••••••') {
+        el.textContent = storedPassword;
+        el.style.color = '#059669';
+        el.style.fontWeight = '500';
+    } else {
+        el.textContent = '••••••••';
+        el.style.color = '';
+        el.style.fontWeight = '';
+    }
 }
 
 function togglePasswordVisibility(inputId) {

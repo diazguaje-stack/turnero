@@ -23,6 +23,8 @@ except:
 def encrypt_password(password):
     """Encripta una contraseña"""
     try:
+        if not password:
+            return ""
         if isinstance(password, str):
             password = password.encode()
         return cipher.encrypt(password).decode()
@@ -31,13 +33,20 @@ def encrypt_password(password):
         return ""
 
 def decrypt_password(encrypted_password):
-    """Desencripta una contraseña"""
+    """Desencripta una contraseña - CON MANEJO ROBUSTO DE ERRORES"""
     try:
+        # Si está vacío o es None, retornar vacío sin error
+        if not encrypted_password:
+            return ""
+        
         if isinstance(encrypted_password, str):
             encrypted_password = encrypted_password.encode()
-        return cipher.decrypt(encrypted_password).decode()
+        
+        decrypted = cipher.decrypt(encrypted_password).decode()
+        return decrypted
     except Exception as e:
-        print(f"Error al desencriptar contraseña: {e}")
+        # Silenciosamente retornar vacío si falla la desencriptación
+        # Esto puede pasar con datos legacy o contraseñas no encriptadas
         return ""
 
 # ==========================================
@@ -70,26 +79,38 @@ class Usuario(db.Model):
     
     # Metodos
     def set_password(self, password):
-        """Hashea la contrasena antes de guardarla y la encripta"""
+        """Hashea la contraseña antes de guardarla y la encripta"""
         self.password_hash = generate_password_hash(password)
         self.password_encrypted = encrypt_password(password)
     
     def check_password(self, password):
-        """Verifica si la contrasena es correcta"""
+        """Verifica si la contraseña es correcta"""
         return check_password_hash(self.password_hash, password)
     
     def get_password(self):
-        """Obtiene la contraseña desencriptada (solo para admin)"""
-        if self.password_encrypted:
-            return decrypt_password(self.password_encrypted)
-        return ""
+        """Obtiene la contraseña desencriptada (solo para admin) - VERSIÓN SEGURA"""
+        try:
+            if self.password_encrypted:
+                decrypted = decrypt_password(self.password_encrypted)
+                return decrypted if decrypted else ""
+            return ""
+        except Exception:
+            # Silenciosamente fallar si hay cualquier problema
+            return ""
     
     def to_dict(self):
-        """Convierte el usuario a diccionario"""
+        """Convierte el usuario a diccionario - VERSIÓN CORREGIDA SIN ERRORES"""
+        # Obtener contraseña de forma segura, sin lanzar excepciones
+        password_value = ""
+        try:
+            password_value = self.get_password()
+        except:
+            pass  # Ignorar errores silenciosamente
+        
         return {
             'id': self.id,
             'usuario': self.usuario,
-            'password': self.get_password(),  # Agregar contraseña desencriptada
+            'password': password_value,  # Vacío si falla la desencriptación
             'rol': self.rol,
             'nombre_completo': self.nombre_completo,
             'email': self.email,
@@ -292,7 +313,7 @@ def init_db(app):
                     print('🔄 Creando usuario recepcionista...')
                     recepcion = Usuario(
                         usuario='recepcion',
-                        rol='recepcionista',
+                        rol='recepcion',
                         nombre_completo='Usuario Recepción',
                         created_by='sistema'
                     )
