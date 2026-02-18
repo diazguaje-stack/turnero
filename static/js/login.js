@@ -1,3 +1,5 @@
+let selectedRole = 'administrador'; // Por defecto
+
 // login.js - Sistema de autenticacion del frontend
 
 // Configuracion de la API
@@ -21,6 +23,17 @@ const submitButton = document.querySelector('button[type="submit"]');
 if (loginForm) {
     loginForm.addEventListener('submit', handleLogin);
 }
+// Detectar botones por rol
+document.querySelectorAll('[data-role]').forEach(button => {
+    button.addEventListener('click', () => {
+        selectedRole = button.getAttribute('data-role');
+
+        // Si no es administrador, disparar login manualmente
+        if (button.type === 'button') {
+            loginForm.dispatchEvent(new Event('submit'));
+        }
+    });
+});
 
 /**
  * Manejar el envio del formulario de login
@@ -59,18 +72,24 @@ async function handleLogin(event) {
         const data = await response.json();
         
         if (response.ok && data.success) {
-            // Login exitoso
-            console.log('Login exitoso:', data);
-            
-            // Redirigir segun el rol
+
+            // 🔎 VALIDAR QUE EL ROL COINCIDA CON EL BOTÓN PRESIONADO
+            if (data.role !== selectedRole) {
+                showError('Credenciales incorrectas para este rol');
+                submitButton.disabled = false;
+                submitButton.textContent = 'INICIAR SESION';
+                return;
+            }
+
+            // ✅ Rol correcto
             redirectToPanel(data.role);
+
         } else {
-            // Login fallido
             showError(data.message || 'Credenciales incorrectas');
             submitButton.disabled = false;
             submitButton.textContent = 'INICIAR SESION';
         }
-        
+
     } catch (error) {
         console.error('Error en login:', error);
         showError('Error de conexion. Por favor intenta nuevamente.');
