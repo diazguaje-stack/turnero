@@ -62,7 +62,6 @@ async function handleLogin(event) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            credentials: 'include', // Importante para cookies de sesion
             body: JSON.stringify({
                 usuario: usuario,
                 password: password
@@ -82,8 +81,12 @@ async function handleLogin(event) {
             }
 
             // ✅ Rol correcto
-            redirectToPanel(data.role);
+            // Guardar JWT
+            localStorage.setItem("token", data.token);
+            localStorage.setItem("role", data.role);
 
+            // Redirigir
+            redirectToPanel(data.role);
         } else {
             showError(data.message || 'Credenciales incorrectas');
             submitButton.disabled = false;

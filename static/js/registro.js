@@ -1,3 +1,17 @@
+function getAuthHeaders() {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+        window.location.href = "/";
+        return {};
+    }
+
+    return {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json"
+    };
+}
+
 // Variables globales
 let medicosData = [];
 
@@ -11,49 +25,30 @@ document.addEventListener("DOMContentLoaded", () => {
 // ==================== VERIFICAR SESIÓN ====================
 
 async function verificarSesion() {
-    try {
-        const response = await fetch('/api/verify-session', {
-            method: 'GET',
-            credentials: 'include'
-        });
+    // Validar que tiene rol 'registro' - de lo contrario, redirigirá a login
+    const tieneAcceso = await estaAutenticado();
+    if (!tieneAcceso) return;
 
-        const data = await response.json();
-
-        if (!response.ok || !data.authenticated) {
-            window.location.href = "/";
-            return;
-        }
-
-        // Validar rol
-        const currentPath = window.location.pathname;
-        if (currentPath.includes("registro") && data.role !== "registro") {
-            alert("Acceso no autorizado");
-            window.location.href = "/";
-            return;
-        }
-
-        // Mostrar nombre del usuario
-        const nombreCompleto = data.nombre_completo || data.usuario || "Usuario";
-        
-        const userNameElement = document.getElementById("userName");
-        if (userNameElement) {
-            userNameElement.textContent = nombreCompleto;
-        }
-
-        const userAvatarElement = document.getElementById("userAvatar");
-        if (userAvatarElement) {
-            const inicial = nombreCompleto.charAt(0).toUpperCase();
-            userAvatarElement.textContent = inicial;
-        }
-
-        console.log(`✅ Sesión verificada: ${nombreCompleto} (${data.role})`);
-
-    } catch (error) {
-        console.error("Error verificando sesión:", error);
-        window.location.href = "/";
+    // Si llegó aquí, tiene acceso. Mostrar nombre del usuario
+    const nombreCompleto = window.sessionData.nombre_completo || window.sessionData.usuario || "Usuario";
+    
+    const userNameElement = document.getElementById("userName");
+    if (userNameElement) {
+        userNameElement.textContent = nombreCompleto;
     }
+
+    const userAvatarElement = document.getElementById("userAvatar");
+    if (userAvatarElement) {
+        const inicial = nombreCompleto.charAt(0).toUpperCase();
+        userAvatarElement.textContent = inicial;
+    }
+
+    console.log(`✅ Página de registro lista para: ${nombreCompleto} (${window.sessionData.rol})`);
 }
 
+function logout() {
+    confirmarCierreSesion(); // Función del sessionManager.js
+}
 // ==================== CARGAR MÉDICOS ====================
 
 async function cargarMedicos() {
@@ -62,7 +57,7 @@ async function cargarMedicos() {
         
         const response = await fetch('/api/medicos', {
             method: 'GET',
-            credentials: 'include'
+            headers:getAuthHeaders()
         });
 
         const data = await response.json();
@@ -189,7 +184,7 @@ async function registrarPaciente(event) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            credentials: 'include',
+            headers:getAuthHeaders(),
             body: JSON.stringify({
                 nombre: nombre,
                 apellido: '',
@@ -229,19 +224,29 @@ async function registrarPaciente(event) {
             </div>
         `;
 
-        modalMessage.innerHTML = html;
+        
 
         // Botón para cerrar
+  
+
         const btnCerrar = document.createElement('button');
         btnCerrar.type = 'button';
         btnCerrar.className = 'btn btn-primary';
         btnCerrar.textContent = 'Registrar Otro Paciente';
         btnCerrar.style.width = '100%';
         btnCerrar.onclick = () => {
+            // 1. Limpiar el formulario
+            document.getElementById('registroForm').style.display = 'block';
+            document.getElementById('registroForm').reset();
+            
+            // 2. Cerrar modal
             cerrarModal();
-            cargarMedicos();
+            
+            // 3. Recargar médicos CON delay para asegurar
+            setTimeout(() => {
+                cargarMedicos();
+            }, 200);
         };
-
         const btnContainer = document.createElement('div');
         btnContainer.style.marginTop = '20px';
         btnContainer.appendChild(btnCerrar);
@@ -261,7 +266,7 @@ async function registrarPaciente(event) {
 
 function logout() {
     if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
-        fetch('/logout', { method: 'POST', credentials: 'include' })
+        fetch('/logout', { method: 'POST', headers:getAuthHeaders() })
             .then(() => window.location.href = '/')
             .catch(err => console.error('Error al cerrar sesión:', err));
     }

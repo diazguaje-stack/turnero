@@ -1,3 +1,18 @@
+function getAuthHeaders() {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+        window.location.href = "/";
+        return {};
+    }
+
+    return {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json"
+    };
+}
+
+
 // Variables globales
 let pacientesData = {};
 let pacientesEliminados = [];
@@ -16,7 +31,7 @@ async function verificarSesion() {
     try {
         const response = await fetch('/api/verify-session', {
             method: 'GET',
-            credentials: 'include'
+            headers:getAuthHeaders()
         });
 
         const data = await response.json();
@@ -64,7 +79,7 @@ async function cargarPacientes() {
         
         const response = await fetch('/api/recepcion/pacientes', {
             method: 'GET',
-            credentials: 'include'
+            headers: getAuthHeaders()
         });
 
         const data = await response.json();
@@ -242,7 +257,7 @@ async function eliminarPaciente(codigo, nombre, event) {
     try {
         const response = await fetch(`/api/recepcion/paciente/${paciente.id}`, {
             method: 'DELETE',
-            credentials: 'include'
+            headers: getAuthHeaders()
         });
         
         const data = await response.json();
@@ -396,7 +411,7 @@ async function buscarPaciente() {
     try {
         const response = await fetch(`/api/recepcion/paciente/${codigo}`, {
             method: 'GET',
-            credentials: 'include'
+            headers: getAuthHeaders()
         });
 
         const data = await response.json();
@@ -546,7 +561,7 @@ function reproducirSonidoLlamada() {
 
 function logout() {
     if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
-        fetch('/logout', { method: 'POST', credentials: 'include' })
+        fetch('/logout', { method: 'POST', headers: getAuthHeaders() })
             .then(() => window.location.href = '/')
             .catch(err => console.error('Error al cerrar sesión:', err));
     }
