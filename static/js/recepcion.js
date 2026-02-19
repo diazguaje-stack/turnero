@@ -34,8 +34,6 @@ async function verificarSesion() {
     console.log(`✅ Página de recepción lista para: ${nombreCompleto} (${window.sessionData.rol})`);
 }
 
-// REEMPLAZAR la función logout() con esto:
-
 function logout() {
     confirmarCierreSesion(); // Función del sessionManager.js
 }
@@ -225,19 +223,10 @@ async function eliminarPaciente(codigo, nombre, event) {
     }
     
     try {
-        const response = await fetch(`/api/recepcion/paciente/${paciente.id}`, {
-            method: 'DELETE',
-            credentials: 'include'
-        });
+        // ✅ AQUÍ ESTÁ EL CAMBIO: NO deletear de la BD, solo agregar a papelera
+        // La papelera es LOCAL (localStorage), no elimina de la BD
         
-        const data = await response.json();
-        
-        if (!response.ok) {
-            alert(`❌ ${data.message || 'Error al eliminar'}`);
-            return;
-        }
-        
-        // Agregar a papelera
+        // Agregar a papelera LOCAL (sin eliminar de la BD)
         pacientesEliminados.push({
             codigo: codigo,
             nombre: nombre,
@@ -250,25 +239,18 @@ async function eliminarPaciente(codigo, nombre, event) {
         // Guardar en localStorage
         guardarEliminados();
         
-        // Eliminar del DOM
-        const itemElement = document.querySelector(`[data-codigo="${codigo}"]`);
-        if (itemElement) {
-            itemElement.style.opacity = '0';
-            itemElement.style.transition = 'opacity 0.3s';
-            setTimeout(() => itemElement.remove(), 300);
-        }
+        // Remover del DOM (pero no de la BD)
+        // Recargar la tabla para actualizar visualmente
+        cargarPacientes();
         
         // Mostrar notificación
-        mostrarNotificacion(`✅ ${nombre} eliminado`, 'success');
+        mostrarNotificacion(`🗑️ ${nombre} movido a papelera`, 'success');
         
-        // Recargar
-        setTimeout(() => {
-            cargarPacientes();
-        }, 1000);
+        console.log(`🗑️ Paciente movido a papelera (ID: ${paciente.id})`);
         
     } catch (error) {
-        console.error('Error al eliminar:', error);
-        alert('Error al eliminar paciente');
+        console.error('Error al mover a papelera:', error);
+        mostrarNotificacion('Error al eliminar', 'error');
     }
 }
 
@@ -281,6 +263,7 @@ function guardarEliminados() {
 function cargarEliminados() {
     const datos = localStorage.getItem('pacientesEliminados');
     pacientesEliminados = datos ? JSON.parse(datos) : [];
+    console.log(`📂 Papelera cargada: ${pacientesEliminados.length} pacientes`);
 }
 
 function abrirPapelera() {
@@ -334,21 +317,53 @@ function restaurarPaciente(index) {
     const paciente = pacientesEliminados[index];
     
     if (confirm(`¿Restaurar a ${paciente.nombre} (${paciente.codigo})?`)) {
+        // Remover de papelera
         pacientesEliminados.splice(index, 1);
         guardarEliminados();
-        mostrarNotificacion(`✅ ${paciente.nombre} restaurado`, 'success');
+        
+        // Recargar pacientes para mostrar el restaurado
+        cargarPacientes();
+        
+        // Actualizar papelera
         abrirPapelera();
+        
+        mostrarNotificacion(`✅ ${paciente.nombre} restaurado`, 'success');
+        console.log(`↩️ Paciente restaurado: ${paciente.codigo}`);
     }
 }
 
-function eliminarPermanente(index) {
+async function eliminarPermanente(index) {
     const paciente = pacientesEliminados[index];
     
     if (confirm(`¿Eliminar permanentemente a ${paciente.nombre}? Esta acción no se puede deshacer.`)) {
-        pacientesEliminados.splice(index, 1);
-        guardarEliminados();
-        mostrarNotificacion(`🗑️ ${paciente.nombre} eliminado permanentemente`, 'error');
-        abrirPapelera();
+        try {
+            // ✅ AQUÍ SÍ ELIMINAMOS DE LA BD
+            const response = await fetch(`/api/recepcion/paciente/${paciente.id}`, {
+                method: 'DELETE',
+                credentials: 'include'
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                mostrarNotificacion(`Error: ${data.message || 'No se pudo eliminar'}`, 'error');
+                return;
+            }
+            
+            // Remover de papelera local
+            pacientesEliminados.splice(index, 1);
+            guardarEliminados();
+            
+            // Actualizar papelera
+            abrirPapelera();
+            
+            mostrarNotificacion(`🗑️ ${paciente.nombre} eliminado permanentemente`, 'error');
+            console.log(`🗑️ Paciente eliminado permanentemente de BD: ${paciente.id}`);
+            
+        } catch (error) {
+            console.error('Error al eliminar de BD:', error);
+            mostrarNotificacion('Error al eliminar permanentemente', 'error');
+        }
     }
 }
 

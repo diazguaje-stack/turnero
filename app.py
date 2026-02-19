@@ -718,23 +718,23 @@ def login_page():
 
 
 @app.route('/administrador', methods=['GET'])
-@role_required('administrador')
 def admin_page():
-    """Página de administrador - solo para rol 'administrador'"""
+    """Página de administrador - protegida por JavaScript"""
+    if 'usuario' not in session or 'rol' not in session:
+        return redirect('/')
     return render_template('administrador.html')
 
-
 @app.route('/registro', methods=['GET'])
-@role_required('registro')
 def registro_page():
-    """Página de registro - solo para rol 'registro'"""
+    if 'usuario' not in session or 'rol' not in session:
+        return redirect('/')
     return render_template('registro.html')
 
 
 @app.route('/recepcion', methods=['GET'])
-@role_required('recepcion')
 def recepcion_page():
-    """Página de recepción - solo para rol 'recepcion'"""
+    if 'usuario' not in session or 'rol' not in session:
+        return redirect('/')
     return render_template('recepcion.html')
 
 

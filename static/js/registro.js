@@ -12,7 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function verificarSesion() {
     // Validar que tiene rol 'registro' - de lo contrario, redirigirá a login
-    const tieneAcceso = await verificarRol('registro');
+    const tieneAcceso = await estaAutenticado();
     if (!tieneAcceso) return;
 
     // Si llegó aquí, tiene acceso. Mostrar nombre del usuario
