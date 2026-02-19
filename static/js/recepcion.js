@@ -13,48 +13,33 @@ document.addEventListener("DOMContentLoaded", () => {
 // ==================== VERIFICAR SESIÓN ====================
 
 async function verificarSesion() {
-    try {
-        const response = await fetch('/api/verify-session', {
-            method: 'GET',
-            credentials: 'include'
-        });
+    // Validar que tiene rol 'recepcion' - de lo contrario, redirigirá a login
+    const tieneAcceso = await verificarRol('recepcion');
+    if (!tieneAcceso) return;
 
-        const data = await response.json();
-
-        if (!response.ok || !data.authenticated) {
-            window.location.href = "/";
-            return;
-        }
-
-        // Validar rol
-        const currentPath = window.location.pathname;
-        if (currentPath.includes("recepcion") && data.role !== "recepcion") {
-            alert("Acceso no autorizado");
-            window.location.href = "/";
-            return;
-        }
-
-        // Mostrar nombre del usuario
-        const nombreCompleto = data.nombre_completo || data.usuario || "Usuario";
-        
-        const userNameElement = document.getElementById("userName");
-        if (userNameElement) {
-            userNameElement.textContent = nombreCompleto;
-        }
-
-        const userAvatarElement = document.getElementById("userAvatar");
-        if (userAvatarElement) {
-            const inicial = nombreCompleto.charAt(0).toUpperCase();
-            userAvatarElement.textContent = inicial;
-        }
-
-        console.log(`✅ Sesión verificada: ${nombreCompleto} (${data.role})`);
-
-    } catch (error) {
-        console.error("Error verificando sesión:", error);
-        window.location.href = "/";
+    // Si llegó aquí, tiene acceso. Mostrar nombre del usuario
+    const nombreCompleto = window.sessionData.nombre_completo || window.sessionData.usuario || "Usuario";
+    
+    const userNameElement = document.getElementById("userName");
+    if (userNameElement) {
+        userNameElement.textContent = nombreCompleto;
     }
+
+    const userAvatarElement = document.getElementById("userAvatar");
+    if (userAvatarElement) {
+        const inicial = nombreCompleto.charAt(0).toUpperCase();
+        userAvatarElement.textContent = inicial;
+    }
+
+    console.log(`✅ Página de recepción lista para: ${nombreCompleto} (${window.sessionData.rol})`);
 }
+
+// REEMPLAZAR la función logout() con esto:
+
+function logout() {
+    confirmarCierreSesion(); // Función del sessionManager.js
+}
+
 
 // ==================== CARGAR PACIENTES ====================
 

@@ -1,186 +1,229 @@
-let selectedRole = 'administrador'; // Por defecto
+// login.js - Manejo de login con múltiples roles
 
-// login.js - Sistema de autenticacion del frontend
+let selectedRole = null;  // Variable global para guardar el rol seleccionado
 
-// Configuracion de la API
-const API_URL = window.location.origin; // Usa la misma URL del navegador
-const API_ENDPOINTS = {
-    login: `${API_URL}/api/login`,
-    logout: `${API_URL}/api/logout`,
-    verifySession: `${API_URL}/api/verify-session`
-};
-
-// Elementos del DOM
-const loginForm = document.getElementById('loginForm');
-const usuarioInput = document.getElementById('usuario');
-const passwordInput = document.getElementById('password');
-const togglePassword = document.getElementById('togglePassword');
-const eyeIcon = document.getElementById('eyeIcon');
-const errorMessage = document.getElementById('errorMessage');
-const submitButton = document.querySelector('button[type="submit"]');
-
-// Event listeners
-if (loginForm) {
-    loginForm.addEventListener('submit', handleLogin);
-}
-// Detectar botones por rol
-document.querySelectorAll('[data-role]').forEach(button => {
-    button.addEventListener('click', () => {
-        selectedRole = button.getAttribute('data-role');
-
-        // Si no es administrador, disparar login manualmente
-        if (button.type === 'button') {
-            loginForm.dispatchEvent(new Event('submit'));
+document.addEventListener('DOMContentLoaded', function() {
+    const loginForm = document.getElementById('loginForm');
+    const togglePassword = document.getElementById('togglePassword');
+    const passwordInput = document.getElementById('password');
+    const usuarioInput = document.getElementById('usuario');
+    const rememberMe = document.getElementById('rememberMe');
+    
+    // ==================== TOGGLE PASSWORD ====================
+    if (togglePassword && passwordInput) {
+        togglePassword.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            
+            // Cambiar ícono
+            const eyeIcon = document.getElementById('eyeIcon');
+            if (eyeIcon) {
+                eyeIcon.style.opacity = type === 'text' ? '0.5' : '1';
+            }
+        });
+    }
+    
+    // ==================== RECORDAR CREDENCIALES ====================
+    if (rememberMe && usuarioInput && passwordInput) {
+        // Cargar credenciales guardadas
+        const savedUser = localStorage.getItem('savedUser');
+        if (savedUser) {
+            usuarioInput.value = savedUser;
+            rememberMe.checked = true;
         }
+    }
+    
+    // ==================== BOTONES DE ROL ====================
+    // Todos los botones que tienen data-role
+    const roleButtons = document.querySelectorAll('[data-role]');
+    
+    roleButtons.forEach(button => {
+        button.addEventListener('click', async function(e) {
+            e.preventDefault();
+            
+            const rol = this.getAttribute('data-role');
+            console.log(`📍 Botón presionado: ${rol}`);
+            
+            // Guardar el rol seleccionado
+            selectedRole = rol;
+            
+            // Desabilitar el botón
+            this.disabled = true;
+            const textoBtnOriginal = this.textContent;
+            this.textContent = '⏳ Iniciando sesión...';
+            
+            // Obtener valores
+            const usuario = usuarioInput.value.trim();
+            const password = passwordInput.value;
+            
+            // Validar campos
+            if (!usuario || !password) {
+                showError('Usuario y contraseña son requeridos');
+                this.disabled = false;
+                this.textContent = textoBtnOriginal;
+                return;
+            }
+            
+            try {
+                // Hacer petición POST
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',  // IMPORTANTE: incluir cookies
+                    body: JSON.stringify({
+                        usuario: usuario,
+                        password: password
+                    })
+                });
+                
+                const data = await response.json();
+                console.log('📊 Respuesta del servidor:', data);
+                
+                if (response.ok && data.success) {
+                    // ✅ LOGIN EXITOSO
+                    console.log('✅ Login exitoso');
+                    
+                    // VALIDAR QUE EL ROL COINCIDA
+                    // Nota: El backend retorna 'rol', no 'role'
+                    const rolDelUsuario = data.rol || data.role;
+                    
+                    console.log(`🔍 Rol solicitado: ${selectedRole}`);
+                    console.log(`🔍 Rol del usuario: ${rolDelUsuario}`);
+                    
+                    if (rolDelUsuario !== selectedRole) {
+                        console.error('❌ El rol no coincide');
+                        showError(`Este usuario no tiene rol de ${selectedRole}`);
+                        this.disabled = false;
+                        this.textContent = textoBtnOriginal;
+                        return;
+                    }
+                    
+                    // ✅ TODO CORRECTO - Redirigir
+                    console.log(`✅ Rol correcto, redirigiendo a /${selectedRole}`);
+                    
+                    // Guardar credenciales si lo solicita
+                    if (rememberMe && rememberMe.checked) {
+                        localStorage.setItem('savedUser', usuario);
+                    } else {
+                        localStorage.removeItem('savedUser');
+                    }
+                    
+                    // Guardar en sessionStorage
+                    sessionStorage.setItem('usuario', data.usuario);
+                    sessionStorage.setItem('rol', rolDelUsuario);
+                    sessionStorage.setItem('nombre_completo', data.nombre_completo);
+                    
+                    // Limpiar error
+                    const errorDiv = document.getElementById('loginError');
+                    if (errorDiv) {
+                        errorDiv.textContent = '';
+                        errorDiv.style.display = 'none';
+                    }
+                    
+                    // Redirigir
+                    setTimeout(() => {
+                        window.location.href = `/${selectedRole}`;
+                    }, 500);
+                    
+                } else {
+                    // ❌ LOGIN FALLIDO
+                    console.error('❌ Login fallido:', data.message);
+                    showError(data.message || 'Credenciales incorrectas');
+                    
+                    this.disabled = false;
+                    this.textContent = textoBtnOriginal;
+                }
+                
+            } catch (error) {
+                console.error('❌ Error en petición:', error);
+                showError('Error de conexión: ' + error.message);
+                
+                this.disabled = false;
+                this.textContent = textoBtnOriginal;
+            }
+        });
     });
+    
+    // ==================== FORM SUBMIT (si es necesario) ====================
+    if (loginForm) {
+        loginForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            // El submit se maneja con los botones individuales
+        });
+    }
 });
 
-/**
- * Manejar el envio del formulario de login
- */
-async function handleLogin(event) {
-    event.preventDefault();
+// ==================== MOSTRAR ERROR ====================
+
+function showError(mensaje) {
+    const errorDiv = document.getElementById('loginError');
     
-    const usuario = usuarioInput.value.trim();
-    const password = passwordInput.value;
-    
-    // Validaciones basicas
-    if (!usuario || !password) {
-        showError('Por favor completa todos los campos');
+    if (!errorDiv) {
+        console.error('⚠️ No existe elemento con id "loginError"');
         return;
     }
     
-    // Deshabilitar boton y mostrar loading
-    submitButton.disabled = true;
-    submitButton.textContent = 'Iniciando sesion...';
-    hideError();
+    errorDiv.textContent = mensaje;
+    errorDiv.style.display = 'block';
+    errorDiv.style.color = '#dc3545';
+    errorDiv.style.marginTop = '15px';
+    errorDiv.style.padding = '12px';
+    errorDiv.style.borderRadius = '4px';
+    errorDiv.style.backgroundColor = '#f8d7da';
+    errorDiv.style.border = '1px solid #f5c6cb';
+    errorDiv.style.fontSize = '14px';
+    errorDiv.style.fontWeight = '500';
     
-    try {
-        // Realizar peticion de login
-        const response = await fetch(API_ENDPOINTS.login, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            credentials: 'include', // Importante para cookies de sesion
-            body: JSON.stringify({
-                usuario: usuario,
-                password: password
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok && data.success) {
-
-            // 🔎 VALIDAR QUE EL ROL COINCIDA CON EL BOTÓN PRESIONADO
-            if (data.role !== selectedRole) {
-                showError('Credenciales incorrectas para este rol');
-                submitButton.disabled = false;
-                submitButton.textContent = 'INICIAR SESION';
-                return;
-            }
-
-            // ✅ Rol correcto
-            redirectToPanel(data.role);
-
-        } else {
-            showError(data.message || 'Credenciales incorrectas');
-            submitButton.disabled = false;
-            submitButton.textContent = 'INICIAR SESION';
+    // Scroll hasta el error
+    errorDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    // Auto limpiar después de 10 segundos
+    const timeoutId = setTimeout(() => {
+        if (errorDiv.textContent === mensaje) {
+            errorDiv.textContent = '';
+            errorDiv.style.display = 'none';
         }
-
-    } catch (error) {
-        console.error('Error en login:', error);
-        showError('Error de conexion. Por favor intenta nuevamente.');
-        submitButton.disabled = false;
-        submitButton.textContent = 'INICIAR SESION';
-    }
-}
-
-/**
- * Redirigir al panel correspondiente segun el rol
- */
-function redirectToPanel(role) {
-    const panels = {
-        'administrador': '/administrador',
-        'recepcion': '/recepcion',
-        'registro': '/registro'
-    };
+    }, 10000);
     
-    const targetUrl = panels[role] || '/administrador';
+    // Guardar el timeout ID para limpieza manual si es necesario
+    errorDiv.dataset.timeoutId = timeoutId;
+}
+
+// Limpiar error cuando el usuario empieza a escribir
+document.addEventListener('DOMContentLoaded', function() {
+    const usuarioInput = document.getElementById('usuario');
+    const passwordInput = document.getElementById('password');
     
-    // Pequeño delay para mejor UX
-    setTimeout(() => {
-        window.location.href = targetUrl;
-    }, 500);
-}
-
-/**
- * Mostrar mensaje de error
- */
-function showError(message) {
-    if (errorMessage) {
-        errorMessage.textContent = message;
-        errorMessage.style.display = 'block';
-        
-        // Agregar animacion
-        errorMessage.classList.add('shake');
-        setTimeout(() => {
-            errorMessage.classList.remove('shake');
-        }, 500);
-    }
-}
-
-/**
- * Ocultar mensaje de error
- */
-function hideError() {
-    if (errorMessage) {
-        errorMessage.style.display = 'none';
-    }
-}
-
-// Focus en el campo de usuario al cargar
-document.addEventListener('DOMContentLoaded', () => {
     if (usuarioInput) {
-        usuarioInput.focus();
+        usuarioInput.addEventListener('focus', clearError);
+    }
+    
+    if (passwordInput) {
+        passwordInput.addEventListener('focus', clearError);
     }
 });
 
-// Limpiar errores cuando el usuario empieza a escribir
-if (usuarioInput) {
-    usuarioInput.addEventListener('input', hideError);
-}
-
-if (passwordInput) {
-    passwordInput.addEventListener('input', hideError);
-}
-// Mostrar / Ocultar contraseña
-if (togglePassword && passwordInput) {
-    togglePassword.addEventListener('click', () => {
-
-        const isPassword = passwordInput.getAttribute('type') === 'password';
-
-        // Cambiar tipo del input
-        passwordInput.setAttribute(
-            'type',
-            isPassword ? 'text' : 'password'
-        );
-
-        // Cambiar icono SVG (opcional pero profesional)
-        if (eyeIcon) {
-            eyeIcon.innerHTML = isPassword
-                ? `
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.956 9.956 0 012.293-3.95M6.228 6.228A9.956 9.956 0 0112 5c4.478 0 8.268 2.943 9.542 7a9.956 9.956 0 01-4.043 5.568M6.228 6.228L3 3m3.228 3.228l11.544 11.544" />
-                `
-                : `
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                `;
+function clearError() {
+    const errorDiv = document.getElementById('loginError');
+    if (errorDiv) {
+        // Cancelar el timeout si existe
+        if (errorDiv.dataset.timeoutId) {
+            clearTimeout(parseInt(errorDiv.dataset.timeoutId));
         }
-    });
+        errorDiv.textContent = '';
+        errorDiv.style.display = 'none';
+    }
 }
+
+// ==================== LOGGER ====================
+
+console.log('%c🔐 Login System Loaded', 'color: #667eea; font-size: 14px; font-weight: bold;');
+console.log('%cClicking a role button will:', 'color: #667eea;');
+console.log('%c1. Save the selected role', 'color: #667eea;');
+console.log('%c2. Send POST /api/login with credentials', 'color: #667eea;');
+console.log('%c3. Verify role matches', 'color: #667eea;');
+console.log('%c4. Redirect to /{role} page', 'color: #667eea;');

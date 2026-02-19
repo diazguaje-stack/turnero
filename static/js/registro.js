@@ -11,49 +11,30 @@ document.addEventListener("DOMContentLoaded", () => {
 // ==================== VERIFICAR SESIÓN ====================
 
 async function verificarSesion() {
-    try {
-        const response = await fetch('/api/verify-session', {
-            method: 'GET',
-            credentials: 'include'
-        });
+    // Validar que tiene rol 'registro' - de lo contrario, redirigirá a login
+    const tieneAcceso = await verificarRol('registro');
+    if (!tieneAcceso) return;
 
-        const data = await response.json();
-
-        if (!response.ok || !data.authenticated) {
-            window.location.href = "/";
-            return;
-        }
-
-        // Validar rol
-        const currentPath = window.location.pathname;
-        if (currentPath.includes("registro") && data.role !== "registro") {
-            alert("Acceso no autorizado");
-            window.location.href = "/";
-            return;
-        }
-
-        // Mostrar nombre del usuario
-        const nombreCompleto = data.nombre_completo || data.usuario || "Usuario";
-        
-        const userNameElement = document.getElementById("userName");
-        if (userNameElement) {
-            userNameElement.textContent = nombreCompleto;
-        }
-
-        const userAvatarElement = document.getElementById("userAvatar");
-        if (userAvatarElement) {
-            const inicial = nombreCompleto.charAt(0).toUpperCase();
-            userAvatarElement.textContent = inicial;
-        }
-
-        console.log(`✅ Sesión verificada: ${nombreCompleto} (${data.role})`);
-
-    } catch (error) {
-        console.error("Error verificando sesión:", error);
-        window.location.href = "/";
+    // Si llegó aquí, tiene acceso. Mostrar nombre del usuario
+    const nombreCompleto = window.sessionData.nombre_completo || window.sessionData.usuario || "Usuario";
+    
+    const userNameElement = document.getElementById("userName");
+    if (userNameElement) {
+        userNameElement.textContent = nombreCompleto;
     }
+
+    const userAvatarElement = document.getElementById("userAvatar");
+    if (userAvatarElement) {
+        const inicial = nombreCompleto.charAt(0).toUpperCase();
+        userAvatarElement.textContent = inicial;
+    }
+
+    console.log(`✅ Página de registro lista para: ${nombreCompleto} (${window.sessionData.rol})`);
 }
 
+function logout() {
+    confirmarCierreSesion(); // Función del sessionManager.js
+}
 // ==================== CARGAR MÉDICOS ====================
 
 async function cargarMedicos() {

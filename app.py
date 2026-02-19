@@ -26,14 +26,101 @@ init_db(app)
 CORS(app, supports_credentials=True, origins=['*'])
 
 
-# Decorador para rutas protegidas (ya deberia estar en app.py)
+"""
+ACTUALIZACIÓN DE SEGURIDAD PARA app.py
+- Decoradores mejorados para verificación de rol
+- Protección de rutas HTML
+- Validación de sesión robusta
+"""
+
+# ========================================
+# AGREGAR ESTOS DECORADORES A app.py
+# ========================================
+
+from functools import wraps
+from flask import Flask, request, jsonify, render_template, session, redirect
+
+# -------- DECORADOR DE LOGIN REQUERIDO --------
 def login_required(f):
+    """Verifica que el usuario esté autenticado"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'usuario' not in session:
-            return jsonify({'success': False, 'message': 'No autorizado'}), 401
+        if 'usuario' not in session or 'rol' not in session:
+            # Si es una llamada API, retorna JSON
+            if request.path.startswith('/api/'):
+                return jsonify({
+                    'success': False, 
+                    'message': 'No autorizado - Por favor inicia sesión',
+                    'authenticated': False
+                }), 401
+            # Si es una ruta HTML, redirige a login
+            return redirect('/')
         return f(*args, **kwargs)
     return decorated_function
+
+
+# -------- DECORADOR DE ROL ESPECÍFICO --------
+def role_required(required_role):
+    """Verifica que el usuario tenga el rol específico"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'usuario' not in session or 'rol' not in session:
+                if request.path.startswith('/api/'):
+                    return jsonify({
+                        'success': False,
+                        'message': 'No autorizado',
+                        'authenticated': False
+                    }), 401
+                return redirect('/')
+            
+            # Verificar rol
+            if session.get('rol') != required_role:
+                if request.path.startswith('/api/'):
+                    return jsonify({
+                        'success': False,
+                        'message': f'Acceso denegado - Se requiere rol: {required_role}',
+                        'authenticated': True,
+                        'current_role': session.get('rol')
+                    }), 403
+                return redirect('/')
+            
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+
+# -------- DECORADOR DE MÚLTIPLES rolS --------
+def rols_required(*required_rols):
+    """Verifica que el usuario tenga uno de los rols especificados"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'usuario' not in session or 'rol' not in session:
+                if request.path.startswith('/api/'):
+                    return jsonify({
+                        'success': False,
+                        'message': 'No autorizado',
+                        'authenticated': False
+                    }), 401
+                return redirect('/')
+            
+            # Verificar si el rol del usuario está en los rols permitidos
+            if session.get('rol') not in required_rols:
+                if request.path.startswith('/api/'):
+                    return jsonify({
+                        'success': False,
+                        'message': f'Acceso denegado - rols permitidos: {", ".join(required_rols)}',
+                        'authenticated': True,
+                        'current_rol': session.get('rol')
+                    }), 403
+                return redirect('/')
+            
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+
 
 
 # ===================================
@@ -295,7 +382,7 @@ def login():
             # Guardar en sesion
             session.permanent = True
             session['usuario'] = usuario
-            session['role'] = user.rol.lower()
+            session['rol'] = user.rol
             session['user_id'] = user.id
             session['login_time'] = datetime.now().isoformat()
 
@@ -303,7 +390,7 @@ def login():
 
             return jsonify({
                 'success': True,
-                'role': user.rol,
+                'rol': user.rol,
                 'usuario': usuario,
                 'nombre_completo': user.nombre_completo,
                 'message': 'Autenticacion exitosa',
@@ -325,7 +412,7 @@ def login():
 
 
 @app.route('/api/logout', methods=['POST'])
-def logout():
+def logout_api():
     """Endpoint para cerrar sesion"""
     usuario = session.get('usuario', 'Desconocido')
     session.clear()
@@ -337,6 +424,23 @@ def logout():
         'message': 'Sesion cerrada exitosamente'
     }), 200
 
+@app.route('/logout', methods=['POST'])
+def logout():
+    """Logout - Compatible con HTML y AJAX"""
+    usuario = session.get('usuario', 'Desconocido')
+    session.clear()
+    
+    print(f"[{datetime.now()}] Logout: {usuario}")
+    
+    # Si es AJAX (JSON), retornar JSON
+    if request.headers.get('Content-Type') == 'application/json':
+        return jsonify({
+            'success': True,
+            'message': 'Sesión cerrada exitosamente'
+        }), 200
+    
+    # Si es formulario, redirigir
+    return redirect('/')
 
 @app.route('/api/verify-session', methods=['GET'])
 def verify_session():
@@ -366,7 +470,7 @@ def verify_session():
             'authenticated': True,
             'usuario': session['usuario'],
             'nombre_completo': usuario.nombre_completo,  # ← AQUÍ VA EL NOMBRE COMPLETO
-            'role': session['role'],
+            'rol': session['rol'],
             'id': usuario.id,
             'login_time': session.get('login_time')
         }), 200
@@ -376,6 +480,38 @@ def verify_session():
         'authenticated': False,
         'message': 'No hay sesion activa'
     }), 401
+
+@app.route('/api/sesion/verificar', methods=['GET'])
+def sesion_verificar():
+    try:
+        if 'usuario' not in session or 'rol' not in session:
+            return jsonify({
+                'success': False,
+                'authenticated': False
+            }), 401
+        
+        usuario = Usuario.query.filter_by(usuario=session['usuario']).first()
+        
+        if not usuario or not usuario.activo:
+            return jsonify({
+                'success': False,
+                'authenticated': False
+            }), 401
+        
+        return jsonify({
+            'success': True,
+            'usuario': usuario.usuario,
+            'rol': session.get('rol'),
+            'nombre_completo': usuario.nombre_completo,
+            'authenticated': True
+        }), 200
+        
+    except Exception as e:
+        print(f"Error al verificar sesión: {str(e)}")
+        return jsonify({
+            'success': False,
+            'authenticated': False
+        }), 500
 
 # ===================================
 # RUTAS DE GESTION DE USUARIOS
@@ -563,33 +699,48 @@ def update_user(user_id):
 # RUTAS DE PAGINAS HTML
 # ===================================
 
-@app.route('/')
-def index():
-    """Pagina principal - Login"""
+@app.route('/', methods=['GET'])
+def login_page():
+    """Página de login - siempre accesible"""
+    # Si ya está autenticado, redirigir al dashboard según su rol
+    if 'usuario' in session and 'rol' in session:
+        rol = session.get('rol')
+        if rol == 'administrador':
+            return redirect('/administrador')
+        elif rol == 'recepcion':
+            return redirect('/recepcion')
+        elif rol == 'registro':
+            return redirect('/registro')
+        elif rol == 'medico':
+            return redirect('/medico')
+    
     return render_template('login.html')
 
 
-@app.route('/administrador')
-def administrador():
-    """Pagina de administrador"""
+@app.route('/administrador', methods=['GET'])
+@role_required('administrador')
+def admin_page():
+    """Página de administrador - solo para rol 'administrador'"""
     return render_template('administrador.html')
 
 
-@app.route('/registro')
-def registro():
-    """Pagina de registro"""
+@app.route('/registro', methods=['GET'])
+@role_required('registro')
+def registro_page():
+    """Página de registro - solo para rol 'registro'"""
     return render_template('registro.html')
 
 
-@app.route('/recepcion')
-def recepcion():
-    """Pagina de recepcion"""
+@app.route('/recepcion', methods=['GET'])
+@role_required('recepcion')
+def recepcion_page():
+    """Página de recepción - solo para rol 'recepcion'"""
     return render_template('recepcion.html')
 
 
-@app.route('/screen')
-def screen():
-    """Pagina de pantalla de turnos"""
+@app.route('/screen', methods=['GET'])
+def screen_page():
+    """Página de pantalla - pública, no requiere autenticación"""
     return render_template('screen.html')
 
 
