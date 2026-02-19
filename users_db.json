@@ -2,7 +2,7 @@
   "admin": {
     "usuario": "admin",
     "password": "admin123",
-    "role": "admin",
+    "role": "administrador",
     "nombre_completo": "Administrador del Sistema"
   },
   "recepcion": {
@@ -15,7 +15,7 @@
     "id": "GIUF2V",
     "usuario": "andresgeovannydg@ufps.edu.co",
     "password": "Elcharlatang",
-    "role": "admin",
+    "role": "administrador",
     "nombre_completo": "andresgeovannydg@ufps.edu.co",
     "created_at": "2026-02-14T11:39:26.383028",
     "created_by": "admin"

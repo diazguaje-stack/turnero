@@ -1,16 +1,3 @@
-function getAuthHeaders() {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-        window.location.href = "/";
-        return {};
-    }
-
-    return {
-        "Authorization": "Bearer " + token,
-        "Content-Type": "application/json"
-    };
-}
 // ==========================================
 // pantallas.js — Gestión completa de pantallas
 // (requiere config.js cargado antes)
@@ -50,7 +37,7 @@ function limpiarIntervaloPantallas() {
 
 async function cargarPantallas() {
     try {
-        const response = await fetch(PANTALLAS_API.getAll, { headers: getAuthHeaders() });
+        const response = await fetch(PANTALLAS_API.getAll, { credentials: 'include' });
         if (!response.ok) throw new Error('Error al cargar pantallas');
         const data    = await response.json();
         pantallasList = data.pantallas || [];
@@ -63,7 +50,7 @@ async function cargarPantallas() {
 
 async function cargarRecepcionistas() {
     try {
-        const response = await fetch(RECEPCIONISTAS_API.getAll, { headers: getAuthHeaders() });
+        const response = await fetch(RECEPCIONISTAS_API.getAll, { credentials: 'include' });
         if (response.ok) {
             const data = await response.json();
             recepcionistasDisponibles = data.recepcionistas || [];
@@ -238,7 +225,7 @@ async function vincularPantallaAdmin(pantallaId) {
         const response = await fetch(PANTALLAS_API.vincular(pantallaId), {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            headers: getAuthHeaders(),
+            credentials: 'include',
             body:    JSON.stringify({ codigo })
         });
         const data = await response.json();
@@ -263,7 +250,7 @@ async function desvincularPantallaAdmin(pantallaId) {
     try {
         const response = await fetch(PANTALLAS_API.desvincular(pantallaId), {
             method: 'POST',
-            headers: getAuthHeaders()
+            credentials: 'include'
         });
         const data = await response.json();
         mostrarMensajePantallas(
@@ -282,7 +269,7 @@ async function asignarRecepcionista(pantallaId, recepcionistaId) {
         const response = await fetch(PANTALLAS_API.asignarRecepcionista(pantallaId), {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            headers: getAuthHeaders(),
+            credentials: 'include',
             body:    JSON.stringify({ recepcionista_id: recepcionistaId })
         });
         const data = await response.json();

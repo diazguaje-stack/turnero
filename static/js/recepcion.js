@@ -1,18 +1,3 @@
-function getAuthHeaders() {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-        window.location.href = "/";
-        return {};
-    }
-
-    return {
-        "Authorization": "Bearer " + token,
-        "Content-Type": "application/json"
-    };
-}
-
-
 // Variables globales
 let pacientesData = {};
 let pacientesEliminados = [];
@@ -28,50 +13,38 @@ document.addEventListener("DOMContentLoaded", () => {
 // ==================== VERIFICAR SESIÓN ====================
 
 async function verificarSesion() {
-    try {
-        const response = await fetch('/api/verify-session', {
-            method: 'GET',
-            headers:getAuthHeaders()
-        });
+    // Validar que tiene rol 'recepcion' - de lo contrario, redirigirá a login
+    const tieneAcceso = await verificarRol('recepcion');
+    if (!tieneAcceso) return;
 
-        const data = await response.json();
-
-        if (!response.ok || !data.authenticated) {
-            window.location.href = "/";
-            return;
-        }
-
-        // Validar rol
-        const currentPath = window.location.pathname;
-        if (currentPath.includes("recepcion") && data.role !== "recepcion") {
-            alert("Acceso no autorizado");
-            window.location.href = "/";
-            return;
-        }
-
-        // Mostrar nombre del usuario
-        const nombreCompleto = data.nombre_completo || data.usuario || "Usuario";
-        
-        const userNameElement = document.getElementById("userName");
-        if (userNameElement) {
-            userNameElement.textContent = nombreCompleto;
-        }
-
-        const userAvatarElement = document.getElementById("userAvatar");
-        if (userAvatarElement) {
-            const inicial = nombreCompleto.charAt(0).toUpperCase();
-            userAvatarElement.textContent = inicial;
-        }
-
-        console.log(`✅ Sesión verificada: ${nombreCompleto} (${data.role})`);
-
-    } catch (error) {
-        console.error("Error verificando sesión:", error);
-        window.location.href = "/";
+    // Si llegó aquí, tiene acceso. Mostrar nombre del usuario
+    const nombreCompleto = window.sessionData.nombre_completo || window.sessionData.usuario || "Usuario";
+    
+    const userNameElement = document.getElementById("userName");
+    if (userNameElement) {
+        userNameElement.textContent = nombreCompleto;
     }
+
+    const userAvatarElement = document.getElementById("userAvatar");
+    if (userAvatarElement) {
+        const inicial = nombreCompleto.charAt(0).toUpperCase();
+        userAvatarElement.textContent = inicial;
+    }
+
+    console.log(`✅ Página de recepción lista para: ${nombreCompleto} (${window.sessionData.rol})`);
 }
 
+function logout() {
+    confirmarCierreSesion(); // Función del sessionManager.js
+}
+
+
 // ==================== CARGAR PACIENTES ====================
+function filtrarPacientesEliminados(pacientes) {
+    const codigosEliminados = pacientesEliminados.map(p => p.codigo);
+    return pacientes.filter(p => !codigosEliminados.includes(p.codigo));
+}
+
 
 async function cargarPacientes() {
     try {
@@ -79,10 +52,13 @@ async function cargarPacientes() {
         
         const response = await fetch('/api/recepcion/pacientes', {
             method: 'GET',
-            headers: getAuthHeaders()
+            credentials: 'include'
         });
 
         const data = await response.json();
+        let pacientes=data.pacientes;
+        //FILTRAR LOS QUÉ ESTÁN EN PAPELERA
+        
 
         if (!response.ok) {
             container.innerHTML = `
@@ -94,7 +70,20 @@ async function cargarPacientes() {
             return;
         }
 
-        const medicos = data.medicos;
+        let medicos = data.medicos;
+
+        // 🔥 FILTRAR PACIENTES QUE ESTÁN EN PAPELERA
+        const codigosEliminados = pacientesEliminados.map(p => p.codigo);
+
+        medicos = medicos.map(medico => {
+            return {
+                ...medico,
+                pacientes: medico.pacientes.filter(p =>
+                    !codigosEliminados.includes(p.codigo)
+                )
+            };
+        });
+
 
         // Guardar datos para búsqueda
         pacientesData = {};
@@ -141,19 +130,23 @@ function crearSeccionMedico(medico) {
     const pacientesHTML = medico.pacientes.length === 0 
         ? '<div style="padding: 20px; text-align: center; color: #999;"><p>Sin pacientes registrados</p></div>'
         : medico.pacientes.map(paciente => `
-            <div class="paciente-item">
-                <div class="paciente-nombre">
-                    <strong>${paciente.nombre}</strong>
-                    <span class="paciente-motivo">${paciente.motivo || 'Sin motivo'}</span>
+            <div class="paciente-card" onclick="toggleBotonesPaciente('${paciente.codigo}', event)">
+    
+                <div class="codigo-display">
+                    ${paciente.codigo}
                 </div>
-                <div class="paciente-codigo-button" onclick="toggleBotonesPaciente('${paciente.codigo}', event)">
-                    <span class="codigo-display">${paciente.codigo}</span>
-                    <div class="botones-paciente" id="botones-${paciente.codigo}" style="display: none;">
-                        <button class="btn-llamar" onclick="llamarPaciente('${paciente.codigo}', event)">📞 Llamar</button>
-                        <button class="btn-eliminar" onclick="eliminarPaciente('${paciente.codigo}', '${paciente.nombre}', event)">🗑️ Eliminar</button>
-                    </div>
+
+                <div class="nombre-display">
+                    ${paciente.nombre}
                 </div>
+
+                <div class="botones-paciente" id="botones-${paciente.codigo}" style="display: none;">
+                    <button class="btn-llamar" onclick="llamarPaciente('${paciente.codigo}', event)">📞</button>
+                    <button class="btn-eliminar" onclick="eliminarPaciente('${paciente.codigo}', '${paciente.nombre}', event)">🗑️</button>
+                </div>
+
             </div>
+
         `).join('');
 
     return `
@@ -166,7 +159,7 @@ function crearSeccionMedico(medico) {
                 </div>
             </div>
             
-            <div class="pacientes-list">
+            <div class="pacientes-grid">
                 ${pacientesHTML}
             </div>
             
@@ -255,19 +248,10 @@ async function eliminarPaciente(codigo, nombre, event) {
     }
     
     try {
-        const response = await fetch(`/api/recepcion/paciente/${paciente.id}`, {
-            method: 'DELETE',
-            headers: getAuthHeaders()
-        });
+        // ✅ AQUÍ ESTÁ EL CAMBIO: NO deletear de la BD, solo agregar a papelera
+        // La papelera es LOCAL (localStorage), no elimina de la BD
         
-        const data = await response.json();
-        
-        if (!response.ok) {
-            alert(`❌ ${data.message || 'Error al eliminar'}`);
-            return;
-        }
-        
-        // Agregar a papelera
+        // Agregar a papelera LOCAL (sin eliminar de la BD)
         pacientesEliminados.push({
             codigo: codigo,
             nombre: nombre,
@@ -280,25 +264,18 @@ async function eliminarPaciente(codigo, nombre, event) {
         // Guardar en localStorage
         guardarEliminados();
         
-        // Eliminar del DOM
-        const itemElement = document.querySelector(`[data-codigo="${codigo}"]`);
-        if (itemElement) {
-            itemElement.style.opacity = '0';
-            itemElement.style.transition = 'opacity 0.3s';
-            setTimeout(() => itemElement.remove(), 300);
-        }
+        // Remover del DOM (pero no de la BD)
+        // Recargar la tabla para actualizar visualmente
+        cargarPacientes();
         
         // Mostrar notificación
-        mostrarNotificacion(`✅ ${nombre} eliminado`, 'success');
+        mostrarNotificacion(`🗑️ ${nombre} movido a papelera`, 'success');
         
-        // Recargar
-        setTimeout(() => {
-            cargarPacientes();
-        }, 1000);
+        console.log(`🗑️ Paciente movido a papelera (ID: ${paciente.id})`);
         
     } catch (error) {
-        console.error('Error al eliminar:', error);
-        alert('Error al eliminar paciente');
+        console.error('Error al mover a papelera:', error);
+        mostrarNotificacion('Error al eliminar', 'error');
     }
 }
 
@@ -311,6 +288,7 @@ function guardarEliminados() {
 function cargarEliminados() {
     const datos = localStorage.getItem('pacientesEliminados');
     pacientesEliminados = datos ? JSON.parse(datos) : [];
+    console.log(`📂 Papelera cargada: ${pacientesEliminados.length} pacientes`);
 }
 
 function abrirPapelera() {
@@ -364,21 +342,54 @@ function restaurarPaciente(index) {
     const paciente = pacientesEliminados[index];
     
     if (confirm(`¿Restaurar a ${paciente.nombre} (${paciente.codigo})?`)) {
+        // Remover de papelera
         pacientesEliminados.splice(index, 1);
         guardarEliminados();
-        mostrarNotificacion(`✅ ${paciente.nombre} restaurado`, 'success');
+        
+        // Recargar pacientes para mostrar el restaurado
+        cargarPacientes();
+        
+        // Actualizar papelera
         abrirPapelera();
+        
+        mostrarNotificacion(`✅ ${paciente.nombre} restaurado`, 'success');
+        console.log(`↩️ Paciente restaurado: ${paciente.codigo}`);
     }
 }
 
-function eliminarPermanente(index) {
+async function eliminarPermanente(index) {
     const paciente = pacientesEliminados[index];
     
     if (confirm(`¿Eliminar permanentemente a ${paciente.nombre}? Esta acción no se puede deshacer.`)) {
-        pacientesEliminados.splice(index, 1);
-        guardarEliminados();
-        mostrarNotificacion(`🗑️ ${paciente.nombre} eliminado permanentemente`, 'error');
-        abrirPapelera();
+        try {
+            console.log("Eliminado ID",paciente.id);
+            // ✅ AQUÍ SÍ ELIMINAMOS DE LA BD
+            const response = await fetch(`/api/recepcion/paciente/${paciente.id}`, {
+                method: 'DELETE',
+                credentials: 'include'
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                mostrarNotificacion(`Error: ${data.message || 'No se pudo eliminar'}`, 'error');
+                return;
+            }
+            
+            // Remover de papelera local
+            pacientesEliminados.splice(index, 1);
+            guardarEliminados();
+            
+            // Actualizar papelera
+            abrirPapelera();
+            
+            mostrarNotificacion(`🗑️ ${paciente.nombre} eliminado permanentemente`, 'error');
+            console.log(`🗑️ Paciente eliminado permanentemente de BD: ${paciente.id}`);
+            
+        } catch (error) {
+            console.error('Error al eliminar de BD:', error);
+            mostrarNotificacion('Error al eliminar permanentemente', 'error');
+        }
     }
 }
 
@@ -388,44 +399,6 @@ function vaciarPapelera() {
         guardarEliminados();
         mostrarNotificacion('🗑️ Papelera vaciada', 'error');
         cerrarPapelera();
-    }
-}
-
-// ==================== BÚSQUEDA ====================
-
-async function buscarPaciente() {
-    const codigo = document.getElementById('searchInput').value.trim().toUpperCase();
-
-    if (!codigo) {
-        alert('Por favor ingresa un código de paciente');
-        return;
-    }
-
-    // Si existe en datos cargados, mostrar
-    if (pacientesData[codigo]) {
-        mostrarDetalles(codigo);
-        return;
-    }
-
-    // Si no, buscar en el servidor
-    try {
-        const response = await fetch(`/api/recepcion/paciente/${codigo}`, {
-            method: 'GET',
-            headers: getAuthHeaders()
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            alert(`❌ ${data.message || 'Paciente no encontrado'}`);
-            return;
-        }
-
-        mostrarDetallesModal(data.paciente);
-
-    } catch (error) {
-        console.error('Error en búsqueda:', error);
-        alert('Error al buscar paciente');
     }
 }
 
@@ -561,18 +534,11 @@ function reproducirSonidoLlamada() {
 
 function logout() {
     if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
-        fetch('/logout', { method: 'POST', headers: getAuthHeaders() })
+        fetch('/logout', { method: 'POST', credentials: 'include' })
             .then(() => window.location.href = '/')
             .catch(err => console.error('Error al cerrar sesión:', err));
     }
 }
-
-// Permitir buscar con Enter
-document.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter' && e.target.id === 'searchInput') {
-        buscarPaciente();
-    }
-});
 
 // Cerrar papelera al hacer click fuera
 document.addEventListener('click', (e) => {

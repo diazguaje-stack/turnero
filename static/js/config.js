@@ -1,16 +1,3 @@
-function getAuthHeaders() {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-        window.location.href = "/";
-        return {};
-    }
-
-    return {
-        "Authorization": "Bearer " + token,
-        "Content-Type": "application/json"
-    };
-}
 // ==========================================
 // config.js — Variables globales y configuración compartida
 // Debe cargarse PRIMERO antes que cualquier otro módulo
@@ -88,7 +75,7 @@ function logout() {
     sessionStorage.removeItem('userSession');
     localStorage.removeItem('rememberedCredentials');
 
-    fetch(USUARIOS_API.logout, { method: 'POST', headers: getAuthHeaders() })
+    fetch(USUARIOS_API.logout, { method: 'POST', credentials: 'include' })
         .finally(() => { window.location.href = '/'; });
 }
 

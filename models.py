@@ -307,7 +307,7 @@ def init_db(app):
                     print('🔄 Creando usuario administrador...')
                     admin = Usuario(
                         usuario='admin',
-                        rol='admin',
+                        rol='administrador',
                         nombre_completo='Administrador del Sistema',
                         created_by='sistema'
                     )

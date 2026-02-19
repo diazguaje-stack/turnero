@@ -1,17 +1,3 @@
-function getAuthHeaders() {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-        window.location.href = "/";
-        return {};
-    }
-
-    return {
-        "Authorization": "Bearer " + token,
-        "Content-Type": "application/json"
-    };
-}
-
 // ==========================================
 // usuarios.js — Gestión completa de usuarios
 // (requiere config.js cargado antes)
@@ -36,7 +22,7 @@ function initUsuarios() {
 
 async function loadUsersFromBackend() {
     try {
-        const response = await fetch(USUARIOS_API.getAll, { headers: getAuthHeaders() });
+        const response = await fetch(USUARIOS_API.getAll, { credentials: 'include' });
         if (response.ok) {
             const data = await response.json();
             users = data.users;
@@ -142,7 +128,8 @@ async function handleCreateUser(e) {
     try {
         const response = await fetch(USUARIOS_API.create, {
             method:  'POST',
-            headers: getAuthHeaders(),
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body:    JSON.stringify(newUser)
         });
         const data = await response.json();
@@ -179,7 +166,7 @@ async function deleteUser() {
     try {
         const response = await fetch(USUARIOS_API.delete(selectedUserId), {
             method: 'DELETE',
-            headers: getAuthHeaders()
+            credentials: 'include'
         });
         const data = await response.json();
 
@@ -245,7 +232,8 @@ async function saveUserChanges() {
     try {
         const response = await fetch(USUARIOS_API.update(selectedUserId), {
             method:  'PUT',
-            headers: getAuthHeaders(),
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body:    JSON.stringify(updatedData)
         });
 
