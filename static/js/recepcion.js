@@ -1,3 +1,18 @@
+function getAuthHeaders() {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+        window.location.href = "/";
+        return {};
+    }
+
+    return {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json"
+    };
+}
+
+
 // Variables globales
 let pacientesData = {};
 let pacientesEliminados = [];
@@ -13,9 +28,17 @@ document.addEventListener("DOMContentLoaded", () => {
 // ==================== VERIFICAR SESIÓN ====================
 
 async function verificarSesion() {
+<<<<<<< HEAD
     // Validar que tiene rol 'recepcion' - de lo contrario, redirigirá a login
     const tieneAcceso = await verificarRol('recepcion');
     if (!tieneAcceso) return;
+=======
+    try {
+        const response = await fetch('/api/verify-session', {
+            method: 'GET',
+            headers:getAuthHeaders()
+        });
+>>>>>>> d4cd5e5 (updating project whole)
 
     // Si llegó aquí, tiene acceso. Mostrar nombre del usuario
     const nombreCompleto = window.sessionData.nombre_completo || window.sessionData.usuario || "Usuario";
@@ -52,7 +75,7 @@ async function cargarPacientes() {
         
         const response = await fetch('/api/recepcion/pacientes', {
             method: 'GET',
-            credentials: 'include'
+            headers: getAuthHeaders()
         });
 
         const data = await response.json();
@@ -248,8 +271,15 @@ async function eliminarPaciente(codigo, nombre, event) {
     }
     
     try {
+<<<<<<< HEAD
         // ✅ AQUÍ ESTÁ EL CAMBIO: NO deletear de la BD, solo agregar a papelera
         // La papelera es LOCAL (localStorage), no elimina de la BD
+=======
+        const response = await fetch(`/api/recepcion/paciente/${paciente.id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+>>>>>>> d4cd5e5 (updating project whole)
         
         // Agregar a papelera LOCAL (sin eliminar de la BD)
         pacientesEliminados.push({
@@ -402,6 +432,47 @@ function vaciarPapelera() {
     }
 }
 
+<<<<<<< HEAD
+=======
+// ==================== BÚSQUEDA ====================
+
+async function buscarPaciente() {
+    const codigo = document.getElementById('searchInput').value.trim().toUpperCase();
+
+    if (!codigo) {
+        alert('Por favor ingresa un código de paciente');
+        return;
+    }
+
+    // Si existe en datos cargados, mostrar
+    if (pacientesData[codigo]) {
+        mostrarDetalles(codigo);
+        return;
+    }
+
+    // Si no, buscar en el servidor
+    try {
+        const response = await fetch(`/api/recepcion/paciente/${codigo}`, {
+            method: 'GET',
+            headers: getAuthHeaders()
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            alert(`❌ ${data.message || 'Paciente no encontrado'}`);
+            return;
+        }
+
+        mostrarDetallesModal(data.paciente);
+
+    } catch (error) {
+        console.error('Error en búsqueda:', error);
+        alert('Error al buscar paciente');
+    }
+}
+
+>>>>>>> d4cd5e5 (updating project whole)
 // ==================== MOSTRAR DETALLES ====================
 
 function mostrarDetalles(codigo) {
@@ -534,7 +605,7 @@ function reproducirSonidoLlamada() {
 
 function logout() {
     if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
-        fetch('/logout', { method: 'POST', credentials: 'include' })
+        fetch('/logout', { method: 'POST', headers: getAuthHeaders() })
             .then(() => window.location.href = '/')
             .catch(err => console.error('Error al cerrar sesión:', err));
     }
