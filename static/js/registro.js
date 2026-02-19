@@ -213,16 +213,26 @@ async function registrarPaciente(event) {
         modalMessage.innerHTML = html;
 
         // Botón para cerrar
+  
+
         const btnCerrar = document.createElement('button');
         btnCerrar.type = 'button';
         btnCerrar.className = 'btn btn-primary';
         btnCerrar.textContent = 'Registrar Otro Paciente';
         btnCerrar.style.width = '100%';
         btnCerrar.onclick = () => {
+            // 1. Limpiar el formulario
+            document.getElementById('registroForm').style.display = 'block';
+            document.getElementById('registroForm').reset();
+            
+            // 2. Cerrar modal
             cerrarModal();
-            cargarMedicos();
+            
+            // 3. Recargar médicos CON delay para asegurar
+            setTimeout(() => {
+                cargarMedicos();
+            }, 200);
         };
-
         const btnContainer = document.createElement('div');
         btnContainer.style.marginTop = '20px';
         btnContainer.appendChild(btnCerrar);

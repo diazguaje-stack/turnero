@@ -913,45 +913,22 @@ def obtener_medicos():
 
 def generar_codigo_paciente(medico_id, motivo):
     """
-    Genera código único: INICIAL_MEDICO-INICIAL_MOTIVO-NÚMERO
-    Ejemplo: D-I-001 (Dr. Juan - Información - 001)
+    Alternativa POR MÉDICO: D-0001
+    Correlativo independiente por cada médico
     """
     try:
-        # Obtener médico
         medico = Usuario.query.filter_by(id=medico_id, rol='medico').first()
         if not medico:
             raise Exception("Médico no encontrado")
         
-        # Primera inicial del médico
         inicial_medico = (medico.nombre_completo or medico.usuario)[0].upper()
+        total_medico = Paciente.query.filter_by(medico_id=medico_id).count()
+        numero = total_medico + 1
         
-        # Primera inicial del motivo
-        inicial_motivo = motivo[0].upper() if motivo else 'X'
-        
-        # Obtener último número para este médico y motivo
-        ultimo_paciente = Paciente.query.filter(
-            Paciente.medico_id == medico_id,
-            Paciente.motivo == motivo
-        ).order_by(Paciente.created_at.desc()).first()
-        
-        # Calcular siguiente número
-        if ultimo_paciente and ultimo_paciente.codigo_paciente:
-            # Extraer el número del código (ej: "D-I-001" → 001)
-            partes = ultimo_paciente.codigo_paciente.split('-')
-            if len(partes) >= 3:
-                numero = int(partes[2]) + 1
-            else:
-                numero = 1
-        else:
-            numero = 1
-        
-        # Formato final
-        codigo = f"{inicial_medico}-{inicial_motivo}-{numero:03d}"
-        
+        codigo = f"{inicial_medico}-{numero:04d}"
         return codigo
-        
     except Exception as e:
-        print(f"Error generando código: {str(e)}")
+        print(f"Error: {str(e)}")
         raise
 
 
@@ -1223,26 +1200,25 @@ def buscar_paciente_codigo(codigo):
 # ELIMINAR PACIENTE (si es necesario)
 # ==========================================
 
-@app.route('/api/recepcion/paciente/<paciente_id>', methods=['DELETE'])
-def eliminar_paciente(paciente_id):
-    """Eliminar un paciente (solo admin o recepcionista)"""
+@app.route('/api/recepcion/paciente/<string:id>', methods=['DELETE'])
+def eliminar_paciente(id):
     try:
-        paciente = Paciente.query.filter_by(id=paciente_id).first()
-        
+        paciente = Paciente.query.filter_by(id=id).first()
+
         if not paciente:
             return jsonify({
                 'success': False,
                 'message': 'Paciente no encontrado'
             }), 404
-        
+
         db.session.delete(paciente)
         db.session.commit()
-        
+
         return jsonify({
             'success': True,
             'message': 'Paciente eliminado correctamente'
         }), 200
-        
+
     except Exception as e:
         db.session.rollback()
         print(f"Error al eliminar paciente: {str(e)}")
