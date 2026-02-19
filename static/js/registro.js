@@ -1,3 +1,17 @@
+function getAuthHeaders() {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+        window.location.href = "/";
+        return {};
+    }
+
+    return {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json"
+    };
+}
+
 // Variables globales
 let medicosData = [];
 
@@ -43,7 +57,7 @@ async function cargarMedicos() {
         
         const response = await fetch('/api/medicos', {
             method: 'GET',
-            credentials: 'include'
+            headers:getAuthHeaders()
         });
 
         const data = await response.json();
@@ -170,7 +184,7 @@ async function registrarPaciente(event) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            credentials: 'include',
+            headers:getAuthHeaders(),
             body: JSON.stringify({
                 nombre: nombre,
                 apellido: '',
@@ -210,7 +224,7 @@ async function registrarPaciente(event) {
             </div>
         `;
 
-        modalMessage.innerHTML = html;
+        
 
         // Botón para cerrar
   
@@ -252,7 +266,7 @@ async function registrarPaciente(event) {
 
 function logout() {
     if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
-        fetch('/logout', { method: 'POST', credentials: 'include' })
+        fetch('/logout', { method: 'POST', headers:getAuthHeaders() })
             .then(() => window.location.href = '/')
             .catch(err => console.error('Error al cerrar sesión:', err));
     }

@@ -6,3 +6,5 @@ gunicorn==21.2.0
 Werkzeug==3.0.1
 psycopg2-binary==2.9.10
 cryptography==41.0.7
+PyJWT==2.11.0
+flask-jwt-extended==4.7.1

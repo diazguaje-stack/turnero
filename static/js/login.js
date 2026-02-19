@@ -178,6 +178,7 @@ function showError(mensaje) {
     errorDiv.style.fontSize = '14px';
     errorDiv.style.fontWeight = '500';
     
+<<<<<<< HEAD
     // Scroll hasta el error
     errorDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
     
@@ -186,6 +187,44 @@ function showError(mensaje) {
         if (errorDiv.textContent === mensaje) {
             errorDiv.textContent = '';
             errorDiv.style.display = 'none';
+=======
+    try {
+        // Realizar peticion de login
+        const response = await fetch(API_ENDPOINTS.login, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                usuario: usuario,
+                password: password
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+
+            // 🔎 VALIDAR QUE EL ROL COINCIDA CON EL BOTÓN PRESIONADO
+            if (data.role !== selectedRole) {
+                showError('Credenciales incorrectas para este rol');
+                submitButton.disabled = false;
+                submitButton.textContent = 'INICIAR SESION';
+                return;
+            }
+
+            // ✅ Rol correcto
+            // Guardar JWT
+            localStorage.setItem("token", data.token);
+            localStorage.setItem("role", data.role);
+
+            // Redirigir
+            redirectToPanel(data.role);
+        } else {
+            showError(data.message || 'Credenciales incorrectas');
+            submitButton.disabled = false;
+            submitButton.textContent = 'INICIAR SESION';
+>>>>>>> d4cd5e5 (updating project whole)
         }
     }, 10000);
     
