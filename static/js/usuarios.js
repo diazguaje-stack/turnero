@@ -26,7 +26,7 @@ function getAuthHeaders() {
 
 // ==========================================
 let isEditMode = false;
-
+let usersTrash = [];
 // ── Inicialización ────────────────────────────────────────────────────────────
 
 function initUsuarios() {
@@ -60,7 +60,76 @@ async function loadUsersFromBackend() {
     loadUsers();
     updateStats();
 }
+function openUsersTrash() {
+    const modal = document.getElementById('usersTrashModal');
+    const body  = document.getElementById('usersTrashBody');
 
+    if (!modal || !body) return;
+
+    body.innerHTML = '';
+
+    if (!usersTrash.length) {
+        body.innerHTML = '<p>No hay usuarios en papelera</p>';
+    } else {
+        usersTrash.forEach(user => {
+            const div = document.createElement('div');
+            div.className = 'trash-item';
+            div.innerHTML = `
+                <strong>${user.usuario}</strong> (${user.nombre_completo})
+                <br>
+                <button onclick="restoreUser('${user.id}')">Restaurar</button>
+                <button onclick="deleteUserForever('${user.id}')">Eliminar definitivamente</button>
+                <hr>
+            `;
+            body.appendChild(div);
+        });
+    }
+
+    modal.classList.add('active');
+}
+
+function closeUsersTrash() {
+    document.getElementById('usersTrashModal').classList.remove('active');
+}
+
+function restoreUser(userId) {
+    const user = usersTrash.find(u => u.id === userId);
+    if (!user) return;
+
+    users.push(user);
+    usersTrash = usersTrash.filter(u => u.id !== userId);
+
+    loadUsers();
+    updateStats();
+    openUsersTrash();
+
+    showToast(`Usuario ${user.usuario} restaurado`, 'success');
+}
+
+async function deleteUserForever(userId) {
+    const user = usersTrash.find(u => u.id === userId);
+    if (!user) return;
+
+    if (!confirm(`Eliminar DEFINITIVAMENTE a ${user.usuario}?`)) return;
+
+    try {
+        const response = await fetch(USUARIOS_API.delete(userId), {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+
+        if (response.ok) {
+            usersTrash = usersTrash.filter(u => u.id !== userId);
+            openUsersTrash();
+            showToast('Usuario eliminado definitivamente', 'success');
+        } else {
+            showToast('Error al eliminar en BD', 'error');
+        }
+    } catch (error) {
+        console.error(error);
+        showToast('Error de conexión', 'error');
+    }
+}
 // ── Renderizado de la grilla ──────────────────────────────────────────────────
 
 function loadUsers() {
@@ -167,31 +236,36 @@ async function handleCreateUser(e) {
 
 // ── Eliminar usuario ──────────────────────────────────────────────────────────
 
-async function deleteUser() {
+function moveUserToTrash() {
     if (!selectedUserId) return;
+
     const user = users.find(u => u.id === selectedUserId);
     if (!user) return;
 
-    if (!confirm(`¿Eliminar al usuario "${user.usuario}"?\n\nEsta acción no se puede deshacer.`)) return;
+    if (!confirm(`¿Enviar a la papelera al usuario "${user.usuario}"?`)) return;
 
-    try {
-        const response = await fetch(USUARIOS_API.delete(selectedUserId), {
-            method:  'DELETE',
-            headers: getAuthHeaders()
-        });
-        const data = await response.json();
+    // Agregar a papelera
+    usersTrash.push(user);
 
-        if (response.ok) {
-            await loadUsersFromBackend();
-            closeUserDetailsModal();
-            showToast(`Usuario ${user.usuario} eliminado`, 'success');
-        } else {
-            showToast(data.message || 'Error al eliminar usuario', 'error');
-        }
-    } catch (error) {
-        console.error('Error al eliminar usuario:', error);
-        showToast('Error de conexión al eliminar usuario', 'error');
-    }
+    // Quitar de la lista visible
+    users = users.filter(u => u.id !== selectedUserId);
+
+    loadUsers();
+    updateStats();
+
+    closeUserDetailsModal();
+    showToast(`Usuario ${user.usuario} enviado a papelera`, 'warning');
+}
+
+function openCreateUserModal() {
+    const modal = document.getElementById('createUserModal');
+    if (!modal) return;
+    modal.classList.add('active');
+    document.getElementById('createUserForm').reset();
+    setTimeout(() => {
+        const input = document.getElementById('newUsername');
+        if (input) input.value = '';
+    }, 150);
 }
 
 // ── Guardar cambios ───────────────────────────────────────────────────────────
@@ -257,16 +331,6 @@ async function saveUserChanges() {
 
 // ── Modales ───────────────────────────────────────────────────────────────────
 
-function openCreateUserModal() {
-    const modal = document.getElementById('createUserModal');
-    if (!modal) return;
-    modal.classList.add('active');
-    document.getElementById('createUserForm').reset();
-    setTimeout(() => {
-        const input = document.getElementById('newUsername');
-        if (input) input.value = '';
-    }, 150);
-}
 
 function closeCreateUserModal() {
     document.getElementById('createUserModal').classList.remove('active');
