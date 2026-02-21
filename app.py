@@ -1,16 +1,16 @@
 """
-app.py - Backend Flask con SQLite/PostgreSQL
-Sistema de autenticacion y gestion de usuarios
-Autenticacion: JWT Tokens (sin cookies de sesion)
+tengo la siguiente lógica, en /administrador creo usuario médico, este médico pasa  a /registro, en /registro se generan cards con los usuarios médicos creados con ID_médico unico, estas cards son dinámicas y abre un modal para registrar con el nombre del paciente y el tipo de consulta, Información o consulta, Esté genera un código con ID_paciente. El sistema mira SI es tipo informativo pero con el mismo nombre =ID_paciente diferente y SI es de tipo consulta pero con el mismo nombre =ID_paciente diferente.
+LO QUE QUIERO¡¡
+QUÉ SI YA EL PACIENTE HA SIDO REGISTRADO Y TIENE SU TURNO (ID_PACIENTE), PERO ESTE PACIENTE PERDIÓ SU TURNO IMPRESO POR X MÓTIVO, LA PERSONA A CARGO DE REGISTRAR AL PACIENTE SÍ COLOCA EL MISMO NOMBRE Y EL MISMO TIPO DE CONSULTA, EL SISTEMA GENERA OTRO CÓDIGO PERO CON EL MISMO ID_PACIENTE, POR LO QUE EL SISTEMA DETECTA EL CAMBIO E INTERCAMBIA EL CÓDIGO EN /RECEPCION.
+¡¡OJO!! PERO SIGUE TENIENDO LA MISMA ID_PACIENTE SOLO CAMBIA EL CÓDIGO DE TURNO PARA QUE IMPRIMA Y SE LO MUESTRE AL RECEPSIONISTA CUANDO ESTÁ LLAMANDO EN PANTALLA
 """
-
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 import os
 import jwt
-from models import db, Usuario, init_db, Pantalla, Paciente, uuid
+from models import db, Usuario, init_db, Pantalla, Paciente,Turno, uuid
 from config import config
 
 
@@ -36,11 +36,12 @@ CORS(app, supports_credentials=True, origins=['*'])
 # ===================================
 
 def generar_token(usuario_id, usuario, rol, nombre_completo):
-    """Genera un JWT token firmado"""
+    """Genera un JWT token firmado. Normaliza administrador -> admin."""
+    rol_normalizado = normalizar_rol(rol)
     payload = {
         'user_id':        str(usuario_id),
         'usuario':        usuario,
-        'role':           rol,       # clave 'role' para consistencia con frontend
+        'role':           rol_normalizado,  # siempre 'admin', nunca 'administrador'
         'nombre_completo': nombre_completo,
         'iat':            datetime.now(timezone.utc),
         'exp':            datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
@@ -150,11 +151,12 @@ def api_login():
 
             print(f"[{datetime.now()}] Login exitoso: {usuario} (rol: {user.rol})")
 
+            rol_resp = normalizar_rol(user.rol)   # siempre 'admin', nunca 'administrador'
             return jsonify({
                 'success':         True,
                 'token':           token,
-                'role':            user.rol,   # para auth.js
-                'rol':             user.rol,   # para login.js (usa data.rol)
+                'role':            rol_resp,    # para auth.js  (normalizado)
+                'rol':             rol_resp,    # para login.js (normalizado)
                 'usuario':         usuario,
                 'nombre_completo': user.nombre_completo,
                 'message':         'Autenticacion exitosa',
@@ -551,106 +553,253 @@ def obtener_medicos():
 # ===================================
 
 def generar_codigo_paciente(medico_id, motivo):
+    """
+    Genera el código ESTABLE del paciente (no cambia en re-registros).
+    Formato: <Inicial_médico>-<Inicial_motivo>-<NNN>
+    Ejemplo: A-C-001  (médico=Ana, motivo=Consulta, número=1)
+    """
     medico = Usuario.query.filter_by(id=medico_id, rol='medico').first()
     if not medico:
-        raise Exception("Medico no encontrado")
+        raise Exception("Médico no encontrado")
 
     inicial_medico = (medico.nombre_completo or medico.usuario)[0].upper()
     inicial_motivo = motivo[0].upper() if motivo else 'X'
 
-    ultimo = Paciente.query.filter(
-        Paciente.medico_id == medico_id,
-        Paciente.motivo    == motivo
-    ).order_by(Paciente.created_at.desc()).first()
-
-    if ultimo and ultimo.codigo_paciente:
-        partes = ultimo.codigo_paciente.split('-')
-        numero = int(partes[2]) + 1 if len(partes) >= 3 else 1
-    else:
-        numero = 1
+    # Contar cuántos pacientes ya existen con este médico y motivo
+    total = Paciente.query.filter_by(medico_id=medico_id, motivo=motivo).count()
+    numero = total + 1
 
     return f"{inicial_medico}-{inicial_motivo}-{numero:03d}"
+
+def generar_codigo_turno(paciente_id, medico_id, motivo):
+    """
+    Genera el código de TURNO imprimible (cambia cada vez que se re-registra).
+    Formato: <codigo_paciente>-T<N>
+    Ejemplo: A-C-001-T1 (primer turno), A-C-001-T2 (re-registro), etc.
+
+    Si el paciente no tiene aún codigo_paciente asignado, se genera también aquí.
+    """
+    paciente = Paciente.query.get(paciente_id)
+    if not paciente:
+        raise Exception("Paciente no encontrado")
+
+    # Asegurar que el paciente tenga su código estable
+    if not paciente.codigo_paciente:
+        paciente.codigo_paciente = generar_codigo_paciente(medico_id, motivo)
+
+    # Contar turnos previos de este paciente (sin importar estado)
+    total_turnos = Turno.query.filter_by(paciente_id=paciente_id).count()
+    n = total_turnos + 1   # será el número del nuevo turno
+
+    return f"{paciente.codigo_paciente}-T{n}"
 
 
 @app.route('/api/pacientes/registrar', methods=['POST'])
 @rol_requerido('registro', 'admin')
 def registrar_paciente():
+    """
+    Registra un paciente y genera su código de turno imprimible.
+
+    LÓGICA DE RE-REGISTRO:
+    ─────────────────────
+    Si ya existe un paciente con el mismo nombre (normalizado),
+    mismo médico y mismo tipo de consulta → es el MISMO paciente
+    que perdió su turno.
+
+    En ese caso:
+      1. Se marca el turno anterior como 'reemplazado'.
+      2. Se crea un NUEVO turno con un nuevo codigo_turno.
+      3. El paciente_id NO cambia.
+      4. La respuesta indica 'tipo': 'reimpresion' para que el
+         frontend lo muestre de forma diferente.
+    """
     try:
         data      = request.get_json()
         nombre    = data.get('nombre', '').strip()
         medico_id = data.get('medico_id', '').strip()
         motivo    = data.get('motivo', '').strip()
-        documento = data.get('documento', '').strip() or str(uuid.uuid4())[:12]
 
         if not nombre or not medico_id or not motivo:
-            return jsonify({'success': False, 'message': 'Nombre, medico y motivo son obligatorios'}), 400
+            return jsonify({'success': False, 'message': 'Nombre, médico y motivo son obligatorios'}), 400
 
         medico = Usuario.query.filter_by(id=medico_id, rol='medico', activo=True).first()
         if not medico:
-            return jsonify({'success': False, 'message': 'Medico no encontrado'}), 404
+            return jsonify({'success': False, 'message': 'Médico no encontrado'}), 404
 
-        codigo_paciente = generar_codigo_paciente(medico_id, motivo)
+        # ── Normalización del nombre para comparación ──────────────
+        nombre_normalizado = nombre.lower().strip()
 
-        nuevo = Paciente(
-            id              = str(uuid.uuid4()),
-            nombre          = nombre,
-            apellido        = data.get('apellido', ''),
-            documento       = documento,
-            codigo_paciente = codigo_paciente,
-            motivo          = motivo,
-            medico_id       = medico_id,
-            created_at      = datetime.utcnow()
-        )
-        db.session.add(nuevo)
-        db.session.commit()
+        # ── Buscar si ya existe este paciente (mismo nombre + médico + motivo) ──
+        paciente_existente = Paciente.query.filter(
+            db.func.lower(db.func.trim(Paciente.nombre)) == nombre_normalizado,
+            Paciente.medico_id == medico_id,
+            Paciente.motivo    == motivo
+        ).first()
 
-        return jsonify({
-            'success': True,
-            'message': 'Paciente registrado exitosamente',
-            'paciente': {
-                'id':     nuevo.id,
-                'nombre': nuevo.nombre,
-                'codigo': codigo_paciente,
-                'medico': medico.nombre_completo,
-                'motivo': motivo
-            }
-        }), 201
+        ahora = datetime.utcnow()
+
+        if paciente_existente:
+            # ══════════════════════════════════════════════════════
+            # CASO: RE-REGISTRO — mismo paciente perdió su turno
+            # ══════════════════════════════════════════════════════
+
+            # 1. Marcar el turno pendiente anterior como 'reemplazado'
+            turno_anterior = (Turno.query
+                              .filter_by(paciente_id=paciente_existente.id, estado='pendiente')
+                              .order_by(Turno.created_at.desc())
+                              .first())
+
+            codigo_anterior = None
+            if turno_anterior:
+                codigo_anterior         = turno_anterior.codigo_turno
+                turno_anterior.estado   = 'reemplazado'
+
+            # 2. Generar nuevo código de turno
+            nuevo_codigo_turno = generar_codigo_turno(paciente_existente.id, medico_id, motivo)
+
+            # 3. Crear el nuevo turno
+            nuevo_turno = Turno(
+                id           = str(uuid.uuid4()),
+                codigo_turno = nuevo_codigo_turno,
+                paciente_id  = paciente_existente.id,
+                medico_id    = medico_id,
+                estado       = 'pendiente',
+                fecha        = ahora.date(),
+                hora         = ahora.time(),
+                motivo       = motivo,
+                created_at   = ahora
+            )
+            db.session.add(nuevo_turno)
+            db.session.commit()
+
+            print(f"♻️  Re-registro: paciente '{nombre}' | anterior={codigo_anterior} → nuevo={nuevo_codigo_turno}")
+
+            return jsonify({
+                'success':      True,
+                'tipo':         'reimpresion',          # ← frontend lo usa para avisar
+                'codigo_turno': nuevo_codigo_turno,
+                'codigo_anterior': codigo_anterior,
+                'paciente': {
+                    'id':     paciente_existente.id,
+                    'nombre': paciente_existente.nombre,
+                    'medico': medico.nombre_completo,
+                    'motivo': motivo,
+                    'codigo_paciente': paciente_existente.codigo_paciente
+                },
+                'message': f'Turno re-generado. Código anterior {codigo_anterior} fue reemplazado.'
+            }), 200
+
+        else:
+            # ══════════════════════════════════════════════════════
+            # CASO: NUEVO PACIENTE
+            # ══════════════════════════════════════════════════════
+
+            # 1. Crear el paciente
+            nuevo_paciente = Paciente(
+                id         = str(uuid.uuid4()),
+                nombre     = nombre,
+                apellido   = data.get('apellido', ''),
+                motivo     = motivo,
+                medico_id  = medico_id,
+                created_at = ahora
+            )
+            db.session.add(nuevo_paciente)
+            db.session.flush()  # necesario para obtener el id antes del commit
+
+            # 2. Asignar código estable al paciente
+            nuevo_paciente.codigo_paciente = generar_codigo_paciente(medico_id, motivo)
+
+            # 3. Generar código de turno (primer turno → siempre T1)
+            primer_codigo_turno = f"{nuevo_paciente.codigo_paciente}-T1"
+
+            # 4. Crear el turno
+            turno = Turno(
+                id           = str(uuid.uuid4()),
+                codigo_turno = primer_codigo_turno,
+                paciente_id  = nuevo_paciente.id,
+                medico_id    = medico_id,
+                estado       = 'pendiente',
+                fecha        = ahora.date(),
+                hora         = ahora.time(),
+                motivo       = motivo,
+                created_at   = ahora
+            )
+            db.session.add(turno)
+            db.session.commit()
+
+            print(f"✅ Nuevo paciente: '{nombre}' | código={primer_codigo_turno}")
+
+            return jsonify({
+                'success':      True,
+                'tipo':         'nuevo',
+                'codigo_turno': primer_codigo_turno,
+                'paciente': {
+                    'id':     nuevo_paciente.id,
+                    'nombre': nuevo_paciente.nombre,
+                    'medico': medico.nombre_completo,
+                    'motivo': motivo,
+                    'codigo_paciente': nuevo_paciente.codigo_paciente
+                }
+            }), 201
 
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
-
 @app.route('/api/recepcion/pacientes', methods=['GET'])
 @rol_requerido('recepcion', 'admin')
 def obtener_pacientes_recepcion():
+    """
+    Retorna la lista de médicos con sus pacientes pendientes.
+    Para cada paciente se incluye el código de turno ACTIVO (último pendiente).
+    Así, cuando un paciente fue re-registrado, recepción siempre ve el código nuevo.
+    """
     try:
         medicos   = Usuario.query.filter_by(rol='medico', activo=True).all()
         resultado = []
 
         for medico in medicos:
-            pacientes   = Paciente.query.filter_by(medico_id=medico.id).all()
+            # Solo pacientes con al menos un turno pendiente
+            pacientes = (Paciente.query
+                         .filter_by(medico_id=medico.id)
+                         .all())
+
+            pacientes_data = []
+            for p in pacientes:
+                turno_activo = (Turno.query
+                                .filter_by(paciente_id=p.id, estado='pendiente')
+                                .order_by(Turno.created_at.desc())
+                                .first())
+                if not turno_activo:
+                    continue  # paciente sin turno activo → no mostrar en recepción
+
+                pacientes_data.append({
+                    'id':         p.id,
+                    'nombre':     p.nombre,
+                    'codigo':     turno_activo.codigo_turno,   # código de turno ACTIVO
+                    'codigo_paciente': p.codigo_paciente,
+                    'motivo':     p.motivo,
+                    'created_at': p.created_at.isoformat() if p.created_at else None
+                })
+
             medico_data = {
                 'id':              medico.id,
                 'nombre':          medico.nombre_completo or medico.usuario,
                 'usuario':         medico.usuario,
                 'inicial':         (medico.nombre_completo or medico.usuario)[0].upper(),
-                'total_pacientes': len(pacientes),
-                'pacientes':       [{
-                    'id':         p.id,
-                    'nombre':     p.nombre,
-                    'codigo':     p.codigo_paciente,
-                    'motivo':     p.motivo,
-                    'created_at': p.created_at.isoformat() if p.created_at else None
-                } for p in pacientes]
+                'total_pacientes': len(pacientes_data),
+                'pacientes':       pacientes_data
             }
             resultado.append(medico_data)
 
-        return jsonify({'success': True, 'medicos': resultado, 'total_medicos': len(resultado)}), 200
+        return jsonify({
+            'success':       True,
+            'medicos':       resultado,
+            'total_medicos': len(resultado)
+        }), 200
 
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
-
 
 @app.route('/api/recepcion/medico/<medico_id>/pacientes', methods=['GET'])
 @rol_requerido('recepcion', 'admin')
@@ -686,12 +835,30 @@ def obtener_pacientes_por_medico(medico_id):
 @app.route('/api/recepcion/paciente/<codigo>', methods=['GET'])
 @rol_requerido('recepcion', 'admin')
 def buscar_paciente_codigo(codigo):
+    """
+    Busca por código de turno (ej. A-C-001-T2) O por código de paciente (ej. A-C-001).
+    Siempre retorna el turno activo del paciente encontrado.
+    """
     try:
-        paciente = Paciente.query.filter_by(codigo_paciente=codigo).first()
+        # Intentar buscar por código de turno exacto
+        turno = Turno.query.filter_by(codigo_turno=codigo).first()
+
+        if turno:
+            paciente = Paciente.query.get(turno.paciente_id)
+        else:
+            # Intentar buscar por código de paciente
+            paciente = Paciente.query.filter_by(codigo_paciente=codigo).first()
+
         if not paciente:
             return jsonify({'success': False, 'message': 'Paciente no encontrado'}), 404
 
-        medico = Usuario.query.filter_by(id=paciente.medico_id).first()
+        medico = Usuario.query.get(paciente.medico_id)
+
+        # Turno activo actual
+        turno_activo = (Turno.query
+                        .filter_by(paciente_id=paciente.id, estado='pendiente')
+                        .order_by(Turno.created_at.desc())
+                        .first())
 
         return jsonify({
             'success':  True,
@@ -699,11 +866,11 @@ def buscar_paciente_codigo(codigo):
                 'id':              paciente.id,
                 'nombre':          paciente.nombre,
                 'apellido':        paciente.apellido,
-                'nombre_completo': f"{paciente.nombre} {paciente.apellido}",
-                'codigo':          paciente.codigo_paciente,
+                'nombre_completo': f"{paciente.nombre} {paciente.apellido}".strip(),
+                'codigo_paciente': paciente.codigo_paciente,
+                'codigo':          turno_activo.codigo_turno if turno_activo else None,
                 'motivo':          paciente.motivo,
-                'documento':       paciente.documento,
-                'medico':          medico.nombre_completo if medico else 'Sin medico',
+                'medico':          medico.nombre_completo if medico else 'Sin médico',
                 'created_at':      paciente.created_at.isoformat() if paciente.created_at else None
             }
         }), 200
@@ -715,15 +882,28 @@ def buscar_paciente_codigo(codigo):
 @app.route('/api/recepcion/paciente/<paciente_id>', methods=['DELETE'])
 @rol_requerido('recepcion', 'admin')
 def eliminar_paciente(paciente_id):
+    """
+    Marca todos los turnos pendientes del paciente como 'cancelado'.
+    El registro del paciente se conserva (soft-delete de turnos).
+    """
     try:
-        paciente = Paciente.query.filter_by(id=paciente_id).first()
+        paciente = Paciente.query.get(paciente_id)
         if not paciente:
             return jsonify({'success': False, 'message': 'Paciente no encontrado'}), 404
 
-        db.session.delete(paciente)
+        turnos_pendientes = Turno.query.filter_by(
+            paciente_id=paciente_id, estado='pendiente'
+        ).all()
+
+        for t in turnos_pendientes:
+            t.estado = 'cancelado'
+
         db.session.commit()
 
-        return jsonify({'success': True, 'message': 'Paciente eliminado'}), 200
+        return jsonify({
+            'success': True,
+            'message': f'Paciente {paciente.nombre} retirado de la lista'
+        }), 200
 
     except Exception as e:
         db.session.rollback()

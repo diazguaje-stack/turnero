@@ -84,10 +84,12 @@ function getAuthHeaders() {
  * Exige rol 'admin' — redirige al login si no cumple.
  */
 async function checkAuth() {
-    const token = obtenerTokenAdmin();
+    const token = sessionStorage.getItem('jwt_token')
+               || localStorage.getItem('jwt_token_admin')
+               || localStorage.getItem('jwt_token_administrador');
 
     if (!token) {
-        console.warn('[Auth] Sin token de admin — redirigiendo al login');
+        console.warn('[Auth] Sin token — redirigiendo al login');
         window.location.href = '/';
         return;
     }
@@ -101,24 +103,34 @@ async function checkAuth() {
             }
         });
 
-        const data = await response.json();
-
-        if (!response.ok || !data.authenticated) {
+        if (!response.ok) {
             console.warn('[Auth] Token inválido o expirado — redirigiendo al login');
             limpiarTokenAdmin();
             window.location.href = '/';
             return;
         }
 
-        // Aceptar tanto 'admin' como 'administrador' (compatibilidad con registros existentes)
-        const esAdmin = data.role === 'admin' || data.role === 'administrador';
-        if (!esAdmin) {
-            console.warn(`[Auth] Rol insuficiente: "${data.role}" — se requiere "admin"`);
+        const data = await response.json();
+
+        if (!data.authenticated) {
+            limpiarTokenAdmin();
             window.location.href = '/';
             return;
         }
 
-        // ✅ Sesión válida — actualizar UI y estado global
+        // CRÍTICO: verificar que el rol sea admin/administrador
+        // Si el token es de otro rol (registro, recepcion), redirigir al login
+        const rolNorm = (data.role || '').toLowerCase().replace('administrador', 'admin');
+        if (rolNorm !== 'admin') {
+            console.warn(`[Auth] Rol insuficiente en /administrador: "${data.role}" — se requiere admin`);
+            // Limpiar SOLO el token actual de sessionStorage (no tocar localStorage de otros roles)
+            sessionStorage.removeItem('jwt_token');
+            sessionStorage.removeItem('jwt_role');
+            window.location.href = '/';
+            return;
+        }
+
+        // ✅ Sesión válida con rol correcto
         currentUser = {
             id:              data.id,
             usuario:         data.usuario,
@@ -126,10 +138,14 @@ async function checkAuth() {
             role:            data.role
         };
 
+        // Guardar el token correcto como token de admin
+        sessionStorage.setItem('jwt_token', token);
+        sessionStorage.setItem('jwt_role', data.role);
+
         const usernameEl = document.getElementById('username');
         if (usernameEl) usernameEl.textContent = data.nombre_completo || data.usuario;
 
-        console.log(`✅ Admin autenticado: ${data.usuario}`);
+        console.log(`✅ Admin autenticado: ${data.usuario} (${data.role})`);
 
     } catch (error) {
         console.error('[Auth] Error al verificar sesión:', error);

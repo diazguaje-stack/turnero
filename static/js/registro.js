@@ -16,9 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // ==================== VERIFICAR SESIÓN ====================
 
 async function verificarSesion() {
-    // Verifica que el usuario tenga rol 'registro' (o 'admin')
     const sessionData = await Auth.verificarSesion('registro');
-    if (!sessionData) return;  // Auth.verificarSesion ya redirige si falla
+    if (!sessionData) return;
 
     const nombreCompleto = sessionData.nombre_completo || sessionData.usuario || 'Usuario';
 
@@ -28,7 +27,7 @@ async function verificarSesion() {
     const userAvatarEl = document.getElementById('userAvatar');
     if (userAvatarEl) userAvatarEl.textContent = nombreCompleto.charAt(0).toUpperCase();
 
-    console.log(`✅ Página de registro lista para: ${nombreCompleto} (${sessionData.role || sessionData.rol})`);
+    console.log(`✅ Página de registro lista para: ${nombreCompleto}`);
 }
 
 function logout() {
@@ -87,9 +86,12 @@ async function cargarMedicos() {
 // ==================== CREAR CARD DE MÉDICO ====================
 
 function crearCardMedico(medico) {
-    const nombreSafe = medico.nombre_completo.replace(/'/g, "\\'");
+    // IMPORTANTE: usamos data-attributes en lugar de onclick con parámetros.
+    // Esto evita que IDs o nombres con caracteres especiales rompan el JS.
     return `
-        <div class="medico-card" onclick="abrirModal('${medico.id}', '${nombreSafe}')">
+        <div class="medico-card"
+             data-medico-id="${medico.id}"
+             data-medico-nombre="${medico.nombre_completo.replace(/"/g, '&quot;')}">
             <div class="medico-avatar-grande">${medico.inicial}</div>
             <h3>${medico.nombre_completo}</h3>
             <p>👨‍⚕️ Médico</p>
@@ -107,14 +109,15 @@ function abrirModal(medicoId, medicoNombre) {
 
     modalMessage.innerHTML = '';
 
-    document.getElementById('medicoId').value     = medicoId;
-    document.getElementById('medicoNombre').value = medicoNombre;
-
+    // Reset PRIMERO — luego setear los valores ocultos (reset los borraría)
     const form = document.getElementById('registroForm');
     if (form) {
         form.reset();
         form.style.display = 'block';
     }
+
+    document.getElementById('medicoId').value     = medicoId;
+    document.getElementById('medicoNombre').value = medicoNombre;
 
     const btn = document.getElementById('btnRegistrar');
     if (btn) {
@@ -139,10 +142,24 @@ function cerrarModal() {
     if (modalMessage) modalMessage.innerHTML = '';
 }
 
-// Cerrar modal al hacer clic fuera
-document.addEventListener('click', (e) => {
-    const modal = document.getElementById('registroModal');
-    if (modal && e.target === modal) cerrarModal();
+// ── Delegación de eventos: click en card de médico o en fondo del modal ──
+document.addEventListener("click", (e) => {
+    const modal = document.getElementById("registroModal");
+
+    // Cerrar modal al hacer clic en el fondo
+    if (modal && e.target === modal) {
+        cerrarModal();
+        return;
+    }
+
+    // Abrir modal al hacer clic en una card de médico (o un hijo suyo)
+    const card = e.target.closest(".medico-card[data-medico-id]");
+    if (card) {
+        const medicoId     = card.dataset.medicoId;
+        const medicoNombre = card.dataset.medicoNombre;
+        console.log("🩺 Card clic → medicoId:", medicoId, "| nombre:", medicoNombre);
+        abrirModal(medicoId, medicoNombre);
+    }
 });
 
 // ==================== REGISTRAR PACIENTE ====================
@@ -157,13 +174,16 @@ async function registrarPaciente(event) {
     btnRegistrar.textContent = 'Registrando...';
 
     try {
-        const medicoId    = document.getElementById('medicoId').value;
+        const medicoId     = document.getElementById('medicoId').value;
         const medicoNombre = document.getElementById('medicoNombre').value;
-        const nombre      = document.getElementById('pacienteNombre').value.trim();
-        const motivo      = document.getElementById('pacienteMotivo').value;
+        const nombre       = document.getElementById('pacienteNombre').value.trim();
+        const motivo       = document.getElementById('pacienteMotivo').value;
 
         if (!nombre || !motivo) {
-            modalMessage.innerHTML = '<div class="success-message" style="background:#f8d7da;color:#721c24;border-color:#f5c6cb;">❌ Completa todos los campos</div>';
+            modalMessage.innerHTML = `
+                <div class="success-message" style="background:#f8d7da;color:#721c24;border-color:#f5c6cb;">
+                    ❌ Completa todos los campos
+                </div>`;
             btnRegistrar.disabled    = false;
             btnRegistrar.textContent = 'Registrar Paciente';
             return;
@@ -183,30 +203,65 @@ async function registrarPaciente(event) {
         const data = await response.json();
 
         if (!response.ok) {
-            modalMessage.innerHTML = `<div class="success-message" style="background:#f8d7da;color:#721c24;border-color:#f5c6cb;">❌ ${data.message || 'Error al registrar'}</div>`;
+            modalMessage.innerHTML = `
+                <div class="success-message" style="background:#f8d7da;color:#721c24;border-color:#f5c6cb;">
+                    ❌ ${data.message || 'Error al registrar'}
+                </div>`;
             btnRegistrar.disabled    = false;
             btnRegistrar.textContent = 'Registrar Paciente';
             return;
         }
 
-        // ✅ Éxito
+        // ── Ocultar formulario ──────────────────────────────────────
         document.getElementById('registroForm').style.display = 'none';
 
+        // ── Distinguir NUEVO vs RE-REGISTRO ────────────────────────
+        const esReimpresion = data.tipo === 'reimpresion';
+
+        const bannerColor  = esReimpresion ? '#fff3cd' : '#d4edda';
+        const bannerBorder = esReimpresion ? '#ffc107' : '#28a745';
+        const bannerText   = esReimpresion ? '#856404' : '#155724';
+        const bannerIcono  = esReimpresion ? '♻️' : '✅';
+        const bannerTitulo = esReimpresion
+            ? '¡Turno re-generado!'
+            : '¡Paciente registrado exitosamente!';
+
+        const infoAdicional = esReimpresion ? `
+            <div style="
+                background:#fff8e1;
+                border:1px solid #ffd54f;
+                border-radius:6px;
+                padding:10px 14px;
+                margin-top:10px;
+                font-size:0.9em;
+                color:#5d4037;
+            ">
+                ⚠️ <strong>Re-impresión de turno</strong><br>
+                El paciente ya estaba registrado.<br>
+                Código anterior: <strong style="color:#c62828">${data.codigo_anterior || '—'}</strong>
+                fue <strong>reemplazado</strong> por el nuevo código.
+            </div>` : '';
+
         modalMessage.innerHTML = `
-            <div class="success-message">
-                ✅ ¡Paciente registrado exitosamente!
+            <div class="success-message"
+                 style="background:${bannerColor};color:${bannerText};border-color:${bannerBorder};">
+                ${bannerIcono} ${bannerTitulo}
             </div>
             <div class="codigo-display">
-                <div class="codigo-label">📌 CÓDIGO ÚNICO DEL PACIENTE</div>
-                <div class="codigo-valor">${data.paciente.codigo}</div>
+                <div class="codigo-label">📌 CÓDIGO DE TURNO</div>
+                <div class="codigo-valor">${data.codigo_turno}</div>
+                <div style="font-size:0.8em;color:#666;margin-top:4px;">
+                    ID Paciente: ${data.paciente.codigo_paciente || data.paciente.id.substring(0, 8) + '...'}
+                </div>
             </div>
+            ${infoAdicional}
             <div class="paciente-info">
                 <p><strong>👤 Paciente:</strong> ${data.paciente.nombre}</p>
                 <p><strong>👨‍⚕️ Médico:</strong> ${data.paciente.medico}</p>
                 <p><strong>📋 Motivo:</strong> ${data.paciente.motivo}</p>
-                <p><strong>🆔 ID Paciente:</strong> ${data.paciente.id}</p>
             </div>`;
 
+        // Botón para registrar otro
         const btnCerrar       = document.createElement('button');
         btnCerrar.type        = 'button';
         btnCerrar.className   = 'btn btn-primary';
@@ -224,12 +279,15 @@ async function registrarPaciente(event) {
         };
         modalMessage.appendChild(btnCerrar);
 
-        console.log('✅ Paciente registrado:', data.paciente);
+        console.log(`${esReimpresion ? '♻️ Re-registro' : '✅ Nuevo'} paciente:`, data.paciente);
 
     } catch (error) {
         console.error('Error:', error);
         if (modalMessage) {
-            modalMessage.innerHTML = `<div class="success-message" style="background:#f8d7da;color:#721c24;border-color:#f5c6cb;">❌ Error de conexión: ${error.message}</div>`;
+            modalMessage.innerHTML = `
+                <div class="success-message" style="background:#f8d7da;color:#721c24;border-color:#f5c6cb;">
+                    ❌ Error de conexión: ${error.message}
+                </div>`;
         }
         btnRegistrar.disabled    = false;
         btnRegistrar.textContent = 'Registrar Paciente';

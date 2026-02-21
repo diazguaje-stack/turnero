@@ -1,25 +1,47 @@
 /**
  * recepcion.js - Página de recepción
  * Requiere: auth.js cargado antes en el HTML
+ *
+ * CAMBIOS:
+ *  - Auto-refresco cada 15 segundos para detectar códigos de turno
+ *    actualizados (re-registros).
+ *  - Cuando un código cambia en pantalla, se resalta visualmente
+ *    para que el recepcionista lo note.
+ *  - La lista de pacientes eliminados (localmente) se mantiene
+ *    pero el "eliminar" ahora hace soft-delete en el servidor
+ *    (cancela el turno activo), no borra el registro.
  */
 
-// Variables globales
-let pacientesData      = {};
-let pacientesEliminados = [];
+// ── Estado global ────────────────────────────────────────────
+let pacientesData       = {};   // { medico_id: medicoObj }
+let pacientesEliminados = [];   // IDs de pacientes ocultos localmente
+let codigosAnteriores   = {};   // { paciente_id: codigo_turno } → detectar cambios
+let intervaloRefresco   = null;
+
+// ── Constantes ───────────────────────────────────────────────
+const INTERVALO_REFRESCO_MS = 15_000;   // 15 segundos
 
 // ==================== INICIALIZACIÓN ====================
 
 document.addEventListener('DOMContentLoaded', () => {
     verificarSesion();
-    cargarPacientes();
     cargarEliminados();
+    cargarPacientes();
+
+    // Auto-refresco para detectar re-registros
+    intervaloRefresco = setInterval(cargarPacientes, INTERVALO_REFRESCO_MS);
+});
+
+// Limpiar intervalo si el usuario abandona la página
+window.addEventListener('beforeunload', () => {
+    if (intervaloRefresco) clearInterval(intervaloRefresco);
 });
 
 // ==================== VERIFICAR SESIÓN ====================
 
 async function verificarSesion() {
     const sessionData = await Auth.verificarSesion('recepcion');
-    if (!sessionData) return;  // Auth redirige si falla
+    if (!sessionData) return;
 
     const nombreCompleto = sessionData.nombre_completo || sessionData.usuario || 'Usuario';
 
@@ -29,16 +51,17 @@ async function verificarSesion() {
     const userAvatarEl = document.getElementById('userAvatar');
     if (userAvatarEl) userAvatarEl.textContent = nombreCompleto.charAt(0).toUpperCase();
 
-    console.log(`✅ Página de recepción lista para: ${nombreCompleto} (${sessionData.role || sessionData.rol})`);
+    console.log(`✅ Recepción lista para: ${nombreCompleto}`);
 }
 
 function logout() {
     if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
+        if (intervaloRefresco) clearInterval(intervaloRefresco);
         Auth.logout();
     }
 }
 
-// ==================== CARGAR PACIENTES ====================
+// ==================== CARGAR / REFRESCO ====================
 
 function filtrarPacientesEliminados(pacientes) {
     if (!pacientes || !pacientesEliminados.length) return pacientes;
@@ -52,27 +75,56 @@ async function cargarPacientes() {
 
         if (!response.ok) {
             console.error('Error al cargar pacientes:', data.message);
-            mostrarErrorEnContenedor('medicosContainer', data.message || 'Error al cargar pacientes');
+            // Solo mostrar error si el contenedor está vacío (primer carga)
+            const container = document.getElementById('medicosContainer');
+            if (container && !container.querySelector('.medico-card')) {
+                mostrarErrorEnContenedor('medicosContainer', data.message || 'Error al cargar pacientes');
+            }
             return;
         }
-
-        pacientesData = {};
 
         if (!data.medicos || data.medicos.length === 0) {
             mostrarEmptyState('medicosContainer', 'No hay médicos con pacientes registrados');
+            pacientesData = {};
             return;
         }
 
+        // ── Detectar códigos que cambiaron (re-registros) ──────────
+        const codigosNuevos = {};   // { paciente_id: codigo_turno }
         data.medicos.forEach(medico => {
-            pacientesData[medico.id] = medico;
+            (medico.pacientes || []).forEach(p => {
+                codigosNuevos[p.id] = p.codigo;
+            });
         });
 
-        renderizarMedicos(data.medicos);
-        console.log(`✅ ${data.total_medicos} médicos cargados`);
+        const cambios = {};   // { paciente_id: { anterior, nuevo } }
+        Object.entries(codigosNuevos).forEach(([pid, codigoNuevo]) => {
+            const codigoAnterior = codigosAnteriores[pid];
+            if (codigoAnterior && codigoAnterior !== codigoNuevo) {
+                cambios[pid] = { anterior: codigoAnterior, nuevo: codigoNuevo };
+                console.log(`♻️  Código actualizado para paciente ${pid}: ${codigoAnterior} → ${codigoNuevo}`);
+            }
+        });
+
+        // Guardar snapshot actual de códigos
+        codigosAnteriores = codigosNuevos;
+
+        // Actualizar estado global
+        pacientesData = {};
+        data.medicos.forEach(m => { pacientesData[m.id] = m; });
+
+        // Renderizar (pasando los cambios detectados para resaltarlos)
+        renderizarMedicos(data.medicos, cambios);
+
+        if (Object.keys(cambios).length > 0) {
+            mostrarNotificacionCambio(cambios);
+        }
+
+        console.log(`🔄 ${data.total_medicos} médicos / ${Object.keys(codigosNuevos).length} pacientes activos`);
 
     } catch (error) {
         console.error('Error al cargar pacientes:', error);
-        mostrarErrorEnContenedor('medicosContainer', 'Error de conexión');
+        // No mostrar error en cada tick de refresco
     }
 }
 
@@ -89,7 +141,7 @@ async function cargarEliminados() {
 
 // ==================== RENDERIZAR MÉDICOS ====================
 
-function renderizarMedicos(medicos) {
+function renderizarMedicos(medicos, cambios = {}) {
     const container = document.getElementById('medicosContainer');
     if (!container) return;
 
@@ -114,7 +166,7 @@ function renderizarMedicos(medicos) {
                     </div>
                 </div>
                 <div class="pacientes-list" id="pacientes-${medico.id}">
-                    ${renderizarPacientes(pacientesFiltrados, medico.id)}
+                    ${renderizarPacientes(pacientesFiltrados, medico.id, cambios)}
                 </div>
             </div>`;
     }).join('');
@@ -122,60 +174,118 @@ function renderizarMedicos(medicos) {
     container.innerHTML = html;
 }
 
-function renderizarPacientes(pacientes, medicoId) {
+function renderizarPacientes(pacientes, medicoId, cambios = {}) {
     if (!pacientes || pacientes.length === 0) {
         return '<p class="no-pacientes">No hay pacientes pendientes</p>';
     }
 
-    return pacientes.map(p => `
-        <div class="paciente-item" id="paciente-row-${p.id}">
+    return pacientes.map(p => {
+        const cambiado = cambios[p.id];
+
+        // Estilo especial si este paciente tuvo un re-registro
+        const estiloFila     = cambiado ? 'border-left: 4px solid #ffc107; background: #fffbf0;' : '';
+        const badgeReimpresion = cambiado
+            ? `<span style="
+                background:#ffc107;color:#333;
+                font-size:0.72em;font-weight:bold;
+                padding:2px 7px;border-radius:10px;
+                margin-left:6px;">
+                ♻️ NUEVO CÓDIGO
+               </span>`
+            : '';
+
+        return `
+        <div class="paciente-item" id="paciente-row-${p.id}" style="${estiloFila}">
             <div class="paciente-info">
                 <span class="paciente-nombre">👤 ${p.nombre}</span>
-                <span class="paciente-codigo">🔖 ${p.codigo || '—'}</span>
+                <span class="paciente-codigo">
+                    🎫 <strong>${p.codigo || '—'}</strong>
+                    ${badgeReimpresion}
+                </span>
                 <span class="paciente-motivo">📋 ${p.motivo || '—'}</span>
+                ${cambiado ? `<span style="font-size:0.78em;color:#856404;">
+                    Código anterior: <s>${cambiado.anterior}</s>
+                </span>` : ''}
             </div>
-            <button class="btn btn-danger btn-sm" onclick="eliminarPaciente('${p.id}', '${medicoId}')">
-                🗑️ Eliminar
+            <button class="btn btn-danger btn-sm"
+                    onclick="eliminarPaciente('${p.id}', '${medicoId}')">
+                🗑️ Retirar
             </button>
-        </div>`).join('');
+        </div>`;
+    }).join('');
 }
 
-// ==================== ELIMINAR PACIENTE ====================
+// ==================== NOTIFICACIÓN VISUAL DE CAMBIO ====================
+
+function mostrarNotificacionCambio(cambios) {
+    const n = Object.keys(cambios).length;
+    const msg = n === 1
+        ? `♻️ 1 paciente re-registró su turno. El código fue actualizado.`
+        : `♻️ ${n} pacientes re-registraron su turno. Códigos actualizados.`;
+
+    // Toast simple en la parte superior
+    let toast = document.getElementById('toastCambio');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toastCambio';
+        toast.style.cssText = `
+            position: fixed; top: 16px; right: 16px; z-index: 9999;
+            background: #fff3cd; color: #856404;
+            border: 1px solid #ffc107; border-radius: 8px;
+            padding: 12px 20px; font-size: 0.9em; font-weight: 500;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transition: opacity 0.4s ease;
+        `;
+        document.body.appendChild(toast);
+    }
+
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+
+    clearTimeout(toast._timeout);
+    toast._timeout = setTimeout(() => {
+        toast.style.opacity = '0';
+    }, 5000);
+}
+
+// ==================== ELIMINAR / RETIRAR PACIENTE ====================
 
 async function eliminarPaciente(pacienteId, medicoId) {
-    if (!confirm('¿Eliminar este paciente de la lista?')) return;
+    if (!confirm('¿Retirar a este paciente de la lista de recepción?')) return;
 
     try {
         const response = await Auth.fetch(`/api/recepcion/paciente/${pacienteId}`, { method: 'DELETE' });
         const data     = await response.json();
 
         if (response.ok && data.success) {
-            // Registrar eliminación localmente
+            // Ocultar localmente
             if (!pacientesEliminados.includes(pacienteId)) {
                 pacientesEliminados.push(pacienteId);
                 localStorage.setItem('pacientes_eliminados', JSON.stringify(pacientesEliminados));
             }
 
-            // Eliminar del DOM
             const row = document.getElementById(`paciente-row-${pacienteId}`);
             if (row) row.remove();
 
-            console.log(`✅ Paciente ${pacienteId} eliminado`);
+            // Eliminar del snapshot de códigos para no generar falsa alerta
+            delete codigosAnteriores[pacienteId];
+
+            console.log(`✅ Paciente ${pacienteId} retirado`);
         } else {
-            alert(data.message || 'Error al eliminar paciente');
+            alert(data.message || 'Error al retirar paciente');
         }
 
     } catch (error) {
         console.error('Error al eliminar:', error);
-        alert('Error de conexión al eliminar paciente');
+        alert('Error de conexión al retirar paciente');
     }
 }
 
 // ==================== BUSCAR PACIENTE POR CÓDIGO ====================
 
 async function buscarPaciente() {
-    const input   = document.getElementById('buscarCodigo');
-    const codigo  = input ? input.value.trim() : '';
+    const input    = document.getElementById('buscarCodigo');
+    const codigo   = input ? input.value.trim() : '';
     const resultEl = document.getElementById('resultadoBusqueda');
 
     if (!codigo) {
@@ -188,7 +298,8 @@ async function buscarPaciente() {
         const data     = await response.json();
 
         if (!response.ok || !data.success) {
-            if (resultEl) resultEl.innerHTML = `<p style="color:#dc3545">❌ ${data.message || 'Paciente no encontrado'}</p>`;
+            if (resultEl) resultEl.innerHTML =
+                `<p style="color:#dc3545">❌ ${data.message || 'Paciente no encontrado'}</p>`;
             return;
         }
 
@@ -197,7 +308,10 @@ async function buscarPaciente() {
             resultEl.innerHTML = `
                 <div class="paciente-resultado">
                     <p><strong>👤 Nombre:</strong> ${p.nombre_completo || p.nombre}</p>
-                    <p><strong>🔖 Código:</strong> ${p.codigo}</p>
+                    <p><strong>🎫 Código de turno activo:</strong>
+                        <strong style="color:#1565c0">${p.codigo || '—'}</strong>
+                    </p>
+                    <p><strong>🔖 Código paciente:</strong> ${p.codigo_paciente || '—'}</p>
                     <p><strong>📋 Motivo:</strong> ${p.motivo || '—'}</p>
                     <p><strong>👨‍⚕️ Médico:</strong> ${p.medico || '—'}</p>
                 </div>`;

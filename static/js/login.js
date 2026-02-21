@@ -69,9 +69,14 @@ document.addEventListener('DOMContentLoaded', function () {
                     const rolDelUsuario = (data.rol || data.role || '').toLowerCase();
                     const rolSolicitado = rol.toLowerCase();
 
-                    console.log(`[Login] Rol solicitado: ${rolSolicitado} | Rol usuario: ${rolDelUsuario}`);
+                    // Normalizar: 'administrador' y 'admin' son equivalentes
+                    const normalizar = r => r === 'administrador' ? 'admin' : r;
+                    const rolUserNorm = normalizar(rolDelUsuario);
+                    const rolSolNorm  = normalizar(rolSolicitado);
 
-                    if (rolDelUsuario !== rolSolicitado) {
+                    console.log(`[Login] Rol solicitado: ${rolSolicitado}(${rolSolNorm}) | Rol usuario: ${rolDelUsuario}(${rolUserNorm})`);
+
+                    if (rolUserNorm !== rolSolNorm) {
                         showError(`Este usuario no tiene rol de ${rolSolicitado}`);
                         this.disabled = false;
                         this.textContent = textoBtnOriginal;
@@ -103,8 +108,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     clearError();
 
                     // Redirigir al panel correspondiente
-                    // 'administrador' → /administrador, otros roles → /rol
-                    const rutaDestino = rolDelUsuario === 'administrador' ? 'administrador' : rolSolicitado;
+                    // Tanto 'admin' como 'administrador' → /administrador
+                    const rutaDestino = (rolUserNorm === 'admin') ? 'administrador' : rolSolicitado;
                     console.log(`[Login] ✅ Redirigiendo a /${rutaDestino}`);
                     setTimeout(() => {
                         window.location.href = `/${rutaDestino}`;

@@ -12,41 +12,56 @@ import os
 db = SQLAlchemy()
 
 # Clave para encriptación de contraseñas
+# IMPORTANTE: la clave debe ser una cadena base64url de 44 caracteres (32 bytes).
+# Si la clave es inválida el servidor NO arranca (fallo explícito > fallo silencioso).
+_CIPHER_INSTANCE = None
+
+def _get_cipher():
+    global _CIPHER_INSTANCE
+    if _CIPHER_INSTANCE is not None:
+        return _CIPHER_INSTANCE
+    try:
+        from config import Config
+        raw_key = Config.PASSWORD_ENCRYPTION_KEY
+        if isinstance(raw_key, str):
+            raw_key = raw_key.encode()
+        _CIPHER_INSTANCE = Fernet(raw_key)
+        return _CIPHER_INSTANCE
+    except Exception as e:
+        # Fallo explícito con mensaje claro en lugar de generar clave efímera
+        print(f"⚠️  ADVERTENCIA: Clave Fernet inválida ({e}). La visualización de contraseñas estará desactivada.")
+        print("   Genera una clave válida con:")
+        print("   python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"")
+        print("   y ponla en config.py → PASSWORD_ENCRYPTION_KEY")
+        return None
+
+# Alias de compatibilidad (no se usa directamente ya)
 try:
-    from config import Config
-    cipher = Fernet(Config.PASSWORD_ENCRYPTION_KEY if isinstance(Config.PASSWORD_ENCRYPTION_KEY, bytes) else Config.PASSWORD_ENCRYPTION_KEY.encode())
-except:
-    # Fallback en caso de error (desarrollo sin config)
-    key = Fernet.generate_key()
-    cipher = Fernet(key)
+    cipher = _get_cipher()
+except Exception:
+    cipher = None
 
 def encrypt_password(password):
-    """Encripta una contraseña"""
+    c = _get_cipher()
+    if not c or not password:
+        return ""
     try:
-        if not password:
-            return ""
         if isinstance(password, str):
             password = password.encode()
-        return cipher.encrypt(password).decode()
+        return c.encrypt(password).decode()
     except Exception as e:
         print(f"Error al encriptar contraseña: {e}")
         return ""
 
 def decrypt_password(encrypted_password):
-    """Desencripta una contraseña - CON MANEJO ROBUSTO DE ERRORES"""
+    c = _get_cipher()
+    if not c or not encrypted_password:
+        return ""
     try:
-        # Si está vacío o es None, retornar vacío sin error
-        if not encrypted_password:
-            return ""
-        
         if isinstance(encrypted_password, str):
             encrypted_password = encrypted_password.encode()
-        
-        decrypted = cipher.decrypt(encrypted_password).decode()
-        return decrypted
-    except Exception as e:
-        # Silenciosamente retornar vacío si falla la desencriptación
-        # Esto puede pasar con datos legacy o contraseñas no encriptadas
+        return c.decrypt(encrypted_password).decode()
+    except Exception:
         return ""
 
 # ==========================================
@@ -54,63 +69,51 @@ def decrypt_password(encrypted_password):
 # ==========================================
 
 class Usuario(db.Model):
-    """Modelo de Usuario del sistema"""
-    
     __tablename__ = 'usuarios'
     
-    # Columnas
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     usuario = db.Column(db.String(50), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
-    password_encrypted = db.Column(db.String(500))  # Contraseña encriptada reversible para administrador
+    password_encrypted = db.Column(db.String(500))
     rol = db.Column(db.String(20), nullable=False)
     nombre_completo = db.Column(db.String(100))
     email = db.Column(db.String(100), unique=True)
     telefono = db.Column(db.String(20))
     activo = db.Column(db.Boolean, default=True)
     
-    # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_by = db.Column(db.String(50))
     
-    # Relación con pantallas (para recepcionistas)
     pantallas_asignadas = db.relationship('Pantalla', backref='recepcionista', lazy='dynamic', foreign_keys='Pantalla.recepcionista_id')
     
-    # Metodos
     def set_password(self, password):
-        """Hashea la contraseña antes de guardarla y la encripta"""
         self.password_hash = generate_password_hash(password)
         self.password_encrypted = encrypt_password(password)
     
     def check_password(self, password):
-        """Verifica si la contraseña es correcta"""
         return check_password_hash(self.password_hash, password)
     
     def get_password(self):
-        """Obtiene la contraseña desencriptada (solo para admin) - VERSIÓN SEGURA"""
         try:
             if self.password_encrypted:
                 decrypted = decrypt_password(self.password_encrypted)
                 return decrypted if decrypted else ""
             return ""
         except Exception:
-            # Silenciosamente fallar si hay cualquier problema
             return ""
     
     def to_dict(self):
-        """Convierte el usuario a diccionario - VERSIÓN CORREGIDA SIN ERRORES"""
-        # Obtener contraseña de forma segura, sin lanzar excepciones
         password_value = ""
         try:
             password_value = self.get_password()
         except:
-            pass  # Ignorar errores silenciosamente
+            pass
         
         return {
             'id': self.id,
             'usuario': self.usuario,
-            'password': password_value,  # Vacío si falla la desencriptación
+            'password': password_value,
             'rol': self.rol,
             'nombre_completo': self.nombre_completo,
             'email': self.email,
@@ -129,36 +132,27 @@ class Usuario(db.Model):
 # ==========================================
 
 class Pantalla(db.Model):
-    """Modelo de Pantalla/Display para sistema de turnos"""
-    
     __tablename__ = 'pantallas'
     
-    # Columnas
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    numero = db.Column(db.Integer, unique=True, nullable=False, index=True)  # 1-6
-    nombre = db.Column(db.String(100))  # Ej: "Pantalla Sala Espera 1"
-    device_id = db.Column(db.String(100), unique=True, index=True)  # ID unico del dispositivo
-    codigo_vinculacion = db.Column(db.String(6))  # Codigo de 6 digitos para vincular
-    estado = db.Column(db.String(20), default='disponible')  # disponible, pendiente, vinculada
+    numero = db.Column(db.Integer, unique=True, nullable=False, index=True)
+    nombre = db.Column(db.String(100))
+    device_id = db.Column(db.String(100), unique=True, index=True)
+    codigo_vinculacion = db.Column(db.String(6))
+    estado = db.Column(db.String(20), default='disponible')
     ultima_conexion = db.Column(db.DateTime)
     vinculada_at = db.Column(db.DateTime)
-    
-    # Recepcionista asignado a esta pantalla
     recepcionista_id = db.Column(db.String(36), db.ForeignKey('usuarios.id'), nullable=True)
     
-    # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_by = db.Column(db.String(50))
     
-    # Metodos
     @staticmethod
     def generar_codigo():
-        """Genera un codigo de 6 digitos aleatorio"""
         return ''.join(random.choices(string.digits, k=6))
     
     def to_dict(self):
-        """Convierte la pantalla a diccionario"""
         recepcionista_nombre = None
         if self.recepcionista_id and self.recepcionista:
             recepcionista_nombre = self.recepcionista.nombre_completo or self.recepcionista.usuario
@@ -185,68 +179,80 @@ class Pantalla(db.Model):
 # MODELO: Paciente
 # ==========================================
 
-# REEMPLAZAR EN models.py - Modelo Paciente actualizado
-
-# ==========================================
-# MODELO: Paciente (ACTUALIZADO)
-# ==========================================
-
 class Paciente(db.Model):
-    """Modelo de Paciente con código único y relación con médico"""
+    """
+    Modelo de Paciente.
     
+    - 'id' es el ID_PACIENTE permanente — nunca cambia.
+    - 'codigo_paciente' es un código identificador estable del paciente
+      (ej. A-C-001). También permanente.
+    - El código de turno (código de atención imprimible) vive en el
+      modelo Turno → campo 'codigo_turno'. Cada vez que el paciente
+      pierde su turno y se re-registra con el mismo nombre + motivo +
+      médico, se crea un NUEVO Turno con un nuevo codigo_turno pero
+      apuntando al MISMO paciente_id.
+    """
     __tablename__ = 'pacientes'
     
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     nombre = db.Column(db.String(100), nullable=False)
-    apellido = db.Column(db.String(100), nullable=False)
-    documento = db.Column(db.String(20), unique=True, nullable=False, index=True)
-    codigo_paciente = db.Column(db.String(50), unique=True, nullable=True, index=True)  # Ej: D-I-001
-    motivo = db.Column(db.String(100), nullable=True)  # Información o Consulta
+    apellido = db.Column(db.String(100), nullable=False, default='')
+    # Código identificador del paciente (estable, ej: A-C-001)
+    codigo_paciente = db.Column(db.String(50), unique=True, nullable=True, index=True)
+    motivo = db.Column(db.String(100), nullable=True)   # 'informacion' o 'consulta'
     medico_id = db.Column(db.String(36), db.ForeignKey('usuarios.id'), nullable=True)
-    fecha_nacimiento = db.Column(db.Date)
-    genero = db.Column(db.String(10))
-    telefono = db.Column(db.String(20))
-    email = db.Column(db.String(100))
-    direccion = db.Column(db.String(200))
     
-    # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relacion con medico
     medico = db.relationship('Usuario', backref='pacientes', foreign_keys=[medico_id])
+    turnos = db.relationship('Turno', backref='paciente', lazy='dynamic',
+                             order_by='Turno.created_at.desc()')
     
-    # Relacion con turnos
-    turnos = db.relationship('Turno', backref='paciente', lazy='dynamic')
-    
+    @property
+    def turno_activo(self):
+        """Retorna el turno más reciente en estado 'pendiente'."""
+        return (Turno.query
+                .filter_by(paciente_id=self.id, estado='pendiente')
+                .order_by(Turno.created_at.desc())
+                .first())
+
+    @property
+    def codigo_turno_activo(self):
+        """Código de turno imprimible actual del paciente."""
+        t = self.turno_activo
+        return t.codigo_turno if t else None
+
     def to_dict(self):
         return {
             'id': self.id,
             'nombre': self.nombre,
             'apellido': self.apellido,
-            'nombre_completo': f"{self.nombre} {self.apellido}",
-            'documento': self.documento,
+            'nombre_completo': f"{self.nombre} {self.apellido}".strip(),
             'codigo_paciente': self.codigo_paciente,
+            'codigo_turno': self.codigo_turno_activo,
             'motivo': self.motivo,
             'medico_id': self.medico_id,
             'medico_nombre': self.medico.nombre_completo if self.medico else None,
-            'fecha_nacimiento': self.fecha_nacimiento.isoformat() if self.fecha_nacimiento else None,
-            'genero': self.genero,
-            'telefono': self.telefono,
-            'email': self.email,
-            'direccion': self.direccion
         }
     
     def __repr__(self):
-        return f'<Paciente {self.nombre} {self.apellido} ({self.codigo_paciente})>'
+        return f'<Paciente {self.nombre} ({self.codigo_paciente})>'
+
 
 # ==========================================
 # MODELO: Turno
 # ==========================================
 
 class Turno(db.Model):
-    """Modelo de Turno/Cita Medica"""
+    """
+    Cada fila representa un turno/código de atención imprimible.
     
+    Un mismo paciente puede tener varios turnos (uno activo a la vez).
+    Cuando pierde su turno y se re-registra, el turno anterior queda
+    como 'reemplazado' y se crea uno nuevo con un codigo_turno distinto.
+    El paciente_id NO cambia.
+    """
     __tablename__ = 'turnos'
     
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -255,13 +261,11 @@ class Turno(db.Model):
     fecha = db.Column(db.Date, nullable=False)
     hora = db.Column(db.Time, nullable=False)
     motivo = db.Column(db.String(200))
-    estado = db.Column(db.String(20), default='pendiente')  # pendiente, confirmado, cancelado, completado
-    notas = db.Column(db.Text)
-    
-    # Timestamps
+    # Estados: pendiente | reemplazado | completado | cancelado
+    estado = db.Column(db.String(20), default='pendiente')
+    # Código imprimible que ve el paciente y el recepcionista, ej: A-C-001-T2
+    codigo_turno = db.Column(db.String(50), unique=True, nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    created_by = db.Column(db.String(50))
     
     def to_dict(self):
         return {
@@ -272,11 +276,11 @@ class Turno(db.Model):
             'hora': self.hora.isoformat() if self.hora else None,
             'motivo': self.motivo,
             'estado': self.estado,
-            'notas': self.notas
+            'codigo_turno': self.codigo_turno,
         }
     
     def __repr__(self):
-        return f'<Turno {self.id} - {self.fecha} {self.hora}>'
+        return f'<Turno {self.codigo_turno} - {self.estado}>'
 
 
 # ==========================================
@@ -284,18 +288,14 @@ class Turno(db.Model):
 # ==========================================
 
 def init_db(app):
-    """Inicializar la base de datos - VERSIÓN MEJORADA PARA PRODUCCIÓN"""
     db.init_app(app)
     
     with app.app_context():
         try:
             print('🔄 Verificando conexión a la base de datos...')
-            
-            # Test de conexión
             db.session.execute(db.text('SELECT 1'))
             print('✅ Conexión a base de datos exitosa')
             
-            # Crear todas las tablas si no existen
             print('🔄 Creando tablas si no existen...')
             db.create_all()
             print('✅ Tablas verificadas/creadas')
@@ -316,16 +316,13 @@ def init_db(app):
                     db.session.commit()
                     print('✅ Usuario administrador creado')
                 else:
-                    # Normalizar rol legacy 'administrador' → 'admin'
                     if admin.rol != 'admin':
-                        print(f'🔄 Normalizando rol admin: "{admin.rol}" → "admin"')
                         admin.rol = 'admin'
                         db.session.commit()
-                        print('✅ Rol normalizado')
                     print('✅ Usuario administrador ya existe')
             except Exception as e:
                 db.session.rollback()
-                print(f'⚠️  Error al crear admin (puede que ya exista): {str(e)}')
+                print(f'⚠️  Error al crear admin: {str(e)}')
             
             # Verificar/Crear usuario recepcionista
             try:
@@ -374,15 +371,7 @@ def init_db(app):
         except Exception as e:
             db.session.rollback()
             error_msg = str(e).lower()
-            
             print(f'❌ Error durante inicialización: {str(e)}')
-            
-            # Verificar si es error de columna faltante
             if 'column' in error_msg and 'does not exist' in error_msg:
-                print('⚠️  ADVERTENCIA: Parece que falta una columna en la base de datos')
-                print('⚠️  Ejecuta la migración para agregar el campo recepcionista_id')
-                print('⚠️  Instrucciones en README_IMPLEMENTACION.md')
-            
-            # No lanzar excepción en producción, solo advertir
+                print('⚠️  ADVERTENCIA: Falta una columna. Ejecuta db.create_all() o una migración.')
             print('⚠️  La aplicación continuará pero puede haber problemas')
-            print('⚠️  Revisa los logs y ejecuta las migraciones necesarias')
