@@ -1,23 +1,14 @@
-function getAuthHeaders() {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-        window.location.href = "/";
-        return {};
-    }
-
-    return {
-        "Authorization": "Bearer " + token,
-        "Content-Type": "application/json"
-    };
-}
+/**
+ * registro.js - Página de registro de pacientes
+ * Requiere: auth.js cargado antes en el HTML
+ */
 
 // Variables globales
 let medicosData = [];
 
 // ==================== INICIALIZACIÓN ====================
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener('DOMContentLoaded', () => {
     verificarSesion();
     cargarMedicos();
 });
@@ -25,50 +16,42 @@ document.addEventListener("DOMContentLoaded", () => {
 // ==================== VERIFICAR SESIÓN ====================
 
 async function verificarSesion() {
-    // Validar que tiene rol 'registro' - de lo contrario, redirigirá a login
-    const tieneAcceso = await estaAutenticado();
-    if (!tieneAcceso) return;
+    // Verifica que el usuario tenga rol 'registro' (o 'admin')
+    const sessionData = await Auth.verificarSesion('registro');
+    if (!sessionData) return;  // Auth.verificarSesion ya redirige si falla
 
-    // Si llegó aquí, tiene acceso. Mostrar nombre del usuario
-    const nombreCompleto = window.sessionData.nombre_completo || window.sessionData.usuario || "Usuario";
-    
-    const userNameElement = document.getElementById("userName");
-    if (userNameElement) {
-        userNameElement.textContent = nombreCompleto;
-    }
+    const nombreCompleto = sessionData.nombre_completo || sessionData.usuario || 'Usuario';
 
-    const userAvatarElement = document.getElementById("userAvatar");
-    if (userAvatarElement) {
-        const inicial = nombreCompleto.charAt(0).toUpperCase();
-        userAvatarElement.textContent = inicial;
-    }
+    const userNameEl = document.getElementById('userName');
+    if (userNameEl) userNameEl.textContent = nombreCompleto;
 
-    console.log(`✅ Página de registro lista para: ${nombreCompleto} (${window.sessionData.rol})`);
+    const userAvatarEl = document.getElementById('userAvatar');
+    if (userAvatarEl) userAvatarEl.textContent = nombreCompleto.charAt(0).toUpperCase();
+
+    console.log(`✅ Página de registro lista para: ${nombreCompleto} (${sessionData.role || sessionData.rol})`);
 }
 
 function logout() {
-    confirmarCierreSesion(); // Función del sessionManager.js
+    if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
+        Auth.logout();
+    }
 }
+
 // ==================== CARGAR MÉDICOS ====================
 
 async function cargarMedicos() {
     try {
         const container = document.getElementById('medicosContainer');
-        
-        const response = await fetch('/api/medicos', {
-            method: 'GET',
-            headers:getAuthHeaders()
-        });
 
-        const data = await response.json();
+        const response = await Auth.fetch('/api/medicos', { method: 'GET' });
+        const data     = await response.json();
 
         if (!response.ok) {
             container.innerHTML = `
                 <div class="empty-state">
                     <h3>⚠️ Error</h3>
                     <p>${data.message || 'Error al cargar médicos'}</p>
-                </div>
-            `;
+                </div>`;
             return;
         }
 
@@ -79,12 +62,10 @@ async function cargarMedicos() {
                 <div class="empty-state">
                     <h3>😕 No hay médicos disponibles</h3>
                     <p>Debes crear médicos desde el panel de administrador</p>
-                </div>
-            `;
+                </div>`;
             return;
         }
 
-        // Generar cards
         const html = medicosData.map(medico => crearCardMedico(medico)).join('');
         container.innerHTML = `<div class="medicos-grid">${html}</div>`;
 
@@ -92,65 +73,76 @@ async function cargarMedicos() {
 
     } catch (error) {
         console.error('Error al cargar médicos:', error);
-        document.getElementById('medicosContainer').innerHTML = `
-            <div class="empty-state">
-                <h3>❌ Error de conexión</h3>
-                <p>No se pudieron cargar los médicos. Intenta recargar la página.</p>
-            </div>
-        `;
+        const container = document.getElementById('medicosContainer');
+        if (container) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <h3>❌ Error de conexión</h3>
+                    <p>No se pudieron cargar los médicos. Intenta recargar la página.</p>
+                </div>`;
+        }
     }
 }
 
 // ==================== CREAR CARD DE MÉDICO ====================
 
 function crearCardMedico(medico) {
+    const nombreSafe = medico.nombre_completo.replace(/'/g, "\\'");
     return `
-        <div class="medico-card" onclick="abrirModal('${medico.id}', '${medico.nombre_completo.replace(/'/g, "\\'")}')">
+        <div class="medico-card" onclick="abrirModal('${medico.id}', '${nombreSafe}')">
             <div class="medico-avatar-grande">${medico.inicial}</div>
             <h3>${medico.nombre_completo}</h3>
             <p>👨‍⚕️ Médico</p>
             <div class="medico-card-footer">
                 Haz clic para registrar paciente
             </div>
-        </div>
-    `;
+        </div>`;
 }
 
 // ==================== MODAL ====================
 
 function abrirModal(medicoId, medicoNombre) {
-    const modal = document.getElementById('registroModal');
+    const modal        = document.getElementById('registroModal');
     const modalMessage = document.getElementById('modalMessage');
-    
-    // Limpiar mensaje
+
     modalMessage.innerHTML = '';
-    
-    // Llenar datos del médico
-    document.getElementById('medicoId').value = medicoId;
+
+    document.getElementById('medicoId').value     = medicoId;
     document.getElementById('medicoNombre').value = medicoNombre;
-    
-    // Limpiar formulario
-    document.getElementById('registroForm').reset();
-    document.getElementById('btnRegistrar').disabled = false;
-    document.getElementById('btnRegistrar').textContent = 'Registrar Paciente';
-    
-    // Mostrar modal
+
+    const form = document.getElementById('registroForm');
+    if (form) {
+        form.reset();
+        form.style.display = 'block';
+    }
+
+    const btn = document.getElementById('btnRegistrar');
+    if (btn) {
+        btn.disabled    = false;
+        btn.textContent = 'Registrar Paciente';
+    }
+
     modal.classList.add('active');
 }
 
 function cerrarModal() {
     const modal = document.getElementById('registroModal');
     modal.classList.remove('active');
-    document.getElementById('registroForm').reset();
-    document.getElementById('modalMessage').innerHTML = '';
+
+    const form = document.getElementById('registroForm');
+    if (form) {
+        form.reset();
+        form.style.display = 'block';
+    }
+
+    const modalMessage = document.getElementById('modalMessage');
+    if (modalMessage) modalMessage.innerHTML = '';
 }
 
-// Cerrar modal al hacer click fuera
+// Cerrar modal al hacer clic fuera
 document.addEventListener('click', (e) => {
     const modal = document.getElementById('registroModal');
-    if (e.target === modal) {
-        cerrarModal();
-    }
+    if (modal && e.target === modal) cerrarModal();
 });
 
 // ==================== REGISTRAR PACIENTE ====================
@@ -160,114 +152,86 @@ async function registrarPaciente(event) {
 
     const btnRegistrar = document.getElementById('btnRegistrar');
     const modalMessage = document.getElementById('modalMessage');
-    
-    btnRegistrar.disabled = true;
+
+    btnRegistrar.disabled    = true;
     btnRegistrar.textContent = 'Registrando...';
 
     try {
-        const medicoId = document.getElementById('medicoId').value;
+        const medicoId    = document.getElementById('medicoId').value;
         const medicoNombre = document.getElementById('medicoNombre').value;
-        const nombre = document.getElementById('pacienteNombre').value.trim();
-        const motivo = document.getElementById('pacienteMotivo').value;
+        const nombre      = document.getElementById('pacienteNombre').value.trim();
+        const motivo      = document.getElementById('pacienteMotivo').value;
 
-        // Validación
         if (!nombre || !motivo) {
-            modalMessage.innerHTML = '<div class="success-message" style="background: #f8d7da; color: #721c24; border-color: #f5c6cb;">❌ Completa todos los campos</div>';
-            btnRegistrar.disabled = false;
+            modalMessage.innerHTML = '<div class="success-message" style="background:#f8d7da;color:#721c24;border-color:#f5c6cb;">❌ Completa todos los campos</div>';
+            btnRegistrar.disabled    = false;
             btnRegistrar.textContent = 'Registrar Paciente';
             return;
         }
 
-        // Hacer request
-        const response = await fetch('/api/pacientes/registrar', {
+        const response = await Auth.fetch('/api/pacientes/registrar', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            headers:getAuthHeaders(),
-            body: JSON.stringify({
-                nombre: nombre,
-                apellido: '',
+            body:   JSON.stringify({
+                nombre:    nombre,
+                apellido:  '',
                 documento: '',
                 medico_id: medicoId,
-                motivo: motivo
+                motivo:    motivo
             })
         });
 
         const data = await response.json();
 
         if (!response.ok) {
-            modalMessage.innerHTML = `<div class="success-message" style="background: #f8d7da; color: #721c24; border-color: #f5c6cb;">❌ ${data.message || 'Error al registrar'}</div>`;
-            btnRegistrar.disabled = false;
+            modalMessage.innerHTML = `<div class="success-message" style="background:#f8d7da;color:#721c24;border-color:#f5c6cb;">❌ ${data.message || 'Error al registrar'}</div>`;
+            btnRegistrar.disabled    = false;
             btnRegistrar.textContent = 'Registrar Paciente';
             return;
         }
 
         // ✅ Éxito
         document.getElementById('registroForm').style.display = 'none';
-        
-        const html = `
+
+        modalMessage.innerHTML = `
             <div class="success-message">
                 ✅ ¡Paciente registrado exitosamente!
             </div>
-            
             <div class="codigo-display">
                 <div class="codigo-label">📌 CÓDIGO ÚNICO DEL PACIENTE</div>
                 <div class="codigo-valor">${data.paciente.codigo}</div>
             </div>
-            
             <div class="paciente-info">
                 <p><strong>👤 Paciente:</strong> ${data.paciente.nombre}</p>
                 <p><strong>👨‍⚕️ Médico:</strong> ${data.paciente.medico}</p>
                 <p><strong>📋 Motivo:</strong> ${data.paciente.motivo}</p>
                 <p><strong>🆔 ID Paciente:</strong> ${data.paciente.id}</p>
-            </div>
-        `;
+            </div>`;
 
-        
-
-        // Botón para cerrar
-  
-
-        const btnCerrar = document.createElement('button');
-        btnCerrar.type = 'button';
-        btnCerrar.className = 'btn btn-primary';
+        const btnCerrar       = document.createElement('button');
+        btnCerrar.type        = 'button';
+        btnCerrar.className   = 'btn btn-primary';
         btnCerrar.textContent = 'Registrar Otro Paciente';
         btnCerrar.style.width = '100%';
+        btnCerrar.style.marginTop = '20px';
         btnCerrar.onclick = () => {
-            // 1. Limpiar el formulario
-            document.getElementById('registroForm').style.display = 'block';
-            document.getElementById('registroForm').reset();
-            
-            // 2. Cerrar modal
+            const form = document.getElementById('registroForm');
+            if (form) {
+                form.style.display = 'block';
+                form.reset();
+            }
             cerrarModal();
-            
-            // 3. Recargar médicos CON delay para asegurar
-            setTimeout(() => {
-                cargarMedicos();
-            }, 200);
+            setTimeout(() => cargarMedicos(), 200);
         };
-        const btnContainer = document.createElement('div');
-        btnContainer.style.marginTop = '20px';
-        btnContainer.appendChild(btnCerrar);
-        modalMessage.appendChild(btnContainer);
+        modalMessage.appendChild(btnCerrar);
 
         console.log('✅ Paciente registrado:', data.paciente);
 
     } catch (error) {
         console.error('Error:', error);
-        modalMessage.innerHTML = `<div class="success-message" style="background: #f8d7da; color: #721c24; border-color: #f5c6cb;">❌ Error de conexión: ${error.message}</div>`;
-        btnRegistrar.disabled = false;
+        if (modalMessage) {
+            modalMessage.innerHTML = `<div class="success-message" style="background:#f8d7da;color:#721c24;border-color:#f5c6cb;">❌ Error de conexión: ${error.message}</div>`;
+        }
+        btnRegistrar.disabled    = false;
         btnRegistrar.textContent = 'Registrar Paciente';
-    }
-}
-
-// ==================== LOGOUT ====================
-
-function logout() {
-    if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
-        fetch('/logout', { method: 'POST', headers:getAuthHeaders() })
-            .then(() => window.location.href = '/')
-            .catch(err => console.error('Error al cerrar sesión:', err));
     }
 }

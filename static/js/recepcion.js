@@ -1,25 +1,15 @@
-function getAuthHeaders() {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-        window.location.href = "/";
-        return {};
-    }
-
-    return {
-        "Authorization": "Bearer " + token,
-        "Content-Type": "application/json"
-    };
-}
-
+/**
+ * recepcion.js - Página de recepción
+ * Requiere: auth.js cargado antes en el HTML
+ */
 
 // Variables globales
-let pacientesData = {};
+let pacientesData      = {};
 let pacientesEliminados = [];
 
 // ==================== INICIALIZACIÓN ====================
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener('DOMContentLoaded', () => {
     verificarSesion();
     cargarPacientes();
     cargarEliminados();
@@ -28,593 +18,217 @@ document.addEventListener("DOMContentLoaded", () => {
 // ==================== VERIFICAR SESIÓN ====================
 
 async function verificarSesion() {
-<<<<<<< HEAD
-    // Validar que tiene rol 'recepcion' - de lo contrario, redirigirá a login
-    const tieneAcceso = await verificarRol('recepcion');
-    if (!tieneAcceso) return;
-=======
-    try {
-        const response = await fetch('/api/verify-session', {
-            method: 'GET',
-            headers:getAuthHeaders()
-        });
->>>>>>> d4cd5e5 (updating project whole)
+    const sessionData = await Auth.verificarSesion('recepcion');
+    if (!sessionData) return;  // Auth redirige si falla
 
-    // Si llegó aquí, tiene acceso. Mostrar nombre del usuario
-    const nombreCompleto = window.sessionData.nombre_completo || window.sessionData.usuario || "Usuario";
-    
-    const userNameElement = document.getElementById("userName");
-    if (userNameElement) {
-        userNameElement.textContent = nombreCompleto;
-    }
+    const nombreCompleto = sessionData.nombre_completo || sessionData.usuario || 'Usuario';
 
-    const userAvatarElement = document.getElementById("userAvatar");
-    if (userAvatarElement) {
-        const inicial = nombreCompleto.charAt(0).toUpperCase();
-        userAvatarElement.textContent = inicial;
-    }
+    const userNameEl = document.getElementById('userName');
+    if (userNameEl) userNameEl.textContent = nombreCompleto;
 
-    console.log(`✅ Página de recepción lista para: ${nombreCompleto} (${window.sessionData.rol})`);
+    const userAvatarEl = document.getElementById('userAvatar');
+    if (userAvatarEl) userAvatarEl.textContent = nombreCompleto.charAt(0).toUpperCase();
+
+    console.log(`✅ Página de recepción lista para: ${nombreCompleto} (${sessionData.role || sessionData.rol})`);
 }
 
 function logout() {
-    confirmarCierreSesion(); // Función del sessionManager.js
+    if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
+        Auth.logout();
+    }
 }
-
 
 // ==================== CARGAR PACIENTES ====================
-function filtrarPacientesEliminados(pacientes) {
-    const codigosEliminados = pacientesEliminados.map(p => p.codigo);
-    return pacientes.filter(p => !codigosEliminados.includes(p.codigo));
-}
 
+function filtrarPacientesEliminados(pacientes) {
+    if (!pacientes || !pacientesEliminados.length) return pacientes;
+    return pacientes.filter(p => !pacientesEliminados.includes(p.id));
+}
 
 async function cargarPacientes() {
     try {
-        const container = document.getElementById('medicosContainer');
-        
-        const response = await fetch('/api/recepcion/pacientes', {
-            method: 'GET',
-            headers: getAuthHeaders()
-        });
-
-        const data = await response.json();
-        let pacientes=data.pacientes;
-        //FILTRAR LOS QUÉ ESTÁN EN PAPELERA
-        
+        const response = await Auth.fetch('/api/recepcion/pacientes', { method: 'GET' });
+        const data     = await response.json();
 
         if (!response.ok) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <h3>⚠️ Error</h3>
-                    <p>${data.message || 'Error al cargar pacientes'}</p>
-                </div>
-            `;
+            console.error('Error al cargar pacientes:', data.message);
+            mostrarErrorEnContenedor('medicosContainer', data.message || 'Error al cargar pacientes');
             return;
         }
 
-        let medicos = data.medicos;
-
-        // 🔥 FILTRAR PACIENTES QUE ESTÁN EN PAPELERA
-        const codigosEliminados = pacientesEliminados.map(p => p.codigo);
-
-        medicos = medicos.map(medico => {
-            return {
-                ...medico,
-                pacientes: medico.pacientes.filter(p =>
-                    !codigosEliminados.includes(p.codigo)
-                )
-            };
-        });
-
-
-        // Guardar datos para búsqueda
         pacientesData = {};
-        medicos.forEach(medico => {
-            medico.pacientes.forEach(paciente => {
-                pacientesData[paciente.codigo] = {
-                    ...paciente,
-                    medico_id: medico.id,
-                    medico_nombre: medico.nombre
-                };
-            });
-        });
 
-        if (!medicos || medicos.length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <h3>😕 No hay pacientes registrados</h3>
-                    <p>Los pacientes aparecerán aquí una vez sean registrados en /registro</p>
-                </div>
-            `;
+        if (!data.medicos || data.medicos.length === 0) {
+            mostrarEmptyState('medicosContainer', 'No hay médicos con pacientes registrados');
             return;
         }
 
-        // Generar HTML
-        const html = medicos.map(medico => crearSeccionMedico(medico)).join('');
-        container.innerHTML = `<div class="medicos-container">${html}</div>`;
+        data.medicos.forEach(medico => {
+            pacientesData[medico.id] = medico;
+        });
 
-        console.log(`✅ ${medicos.length} médicos cargados con pacientes`);
+        renderizarMedicos(data.medicos);
+        console.log(`✅ ${data.total_medicos} médicos cargados`);
 
     } catch (error) {
         console.error('Error al cargar pacientes:', error);
-        document.getElementById('medicosContainer').innerHTML = `
-            <div class="empty-state">
-                <h3>❌ Error de conexión</h3>
-                <p>No se pudieron cargar los pacientes. Intenta recargar la página.</p>
-            </div>
-        `;
+        mostrarErrorEnContenedor('medicosContainer', 'Error de conexión');
     }
 }
 
-// ==================== CREAR SECCIÓN DE MÉDICO ====================
-
-function crearSeccionMedico(medico) {
-    const pacientesHTML = medico.pacientes.length === 0 
-        ? '<div style="padding: 20px; text-align: center; color: #999;"><p>Sin pacientes registrados</p></div>'
-        : medico.pacientes.map(paciente => `
-            <div class="paciente-card" onclick="toggleBotonesPaciente('${paciente.codigo}', event)">
-    
-                <div class="codigo-display">
-                    ${paciente.codigo}
-                </div>
-
-                <div class="nombre-display">
-                    ${paciente.nombre}
-                </div>
-
-                <div class="botones-paciente" id="botones-${paciente.codigo}" style="display: none;">
-                    <button class="btn-llamar" onclick="llamarPaciente('${paciente.codigo}', event)">📞</button>
-                    <button class="btn-eliminar" onclick="eliminarPaciente('${paciente.codigo}', '${paciente.nombre}', event)">🗑️</button>
-                </div>
-
-            </div>
-
-        `).join('');
-
-    return `
-        <div class="medico-section">
-            <div class="medico-header">
-                <div class="medico-avatar">${medico.inicial}</div>
-                <div class="medico-info">
-                    <h3>${medico.nombre}</h3>
-                    <p>👨‍⚕️ Médico</p>
-                </div>
-            </div>
-            
-            <div class="pacientes-grid">
-                ${pacientesHTML}
-            </div>
-            
-            <div class="medico-footer">
-                📊 Total: ${medico.total_pacientes} paciente${medico.total_pacientes !== 1 ? 's' : ''}
-            </div>
-        </div>
-    `;
-}
-
-// ==================== TOGGLE BOTONES DINÁMICOS ====================
-
-function toggleBotonesPaciente(codigo, event) {
-    event.stopPropagation();
-    
-    const botonElement = document.getElementById(`botones-${codigo}`);
-    
-    // Ocultar otros botones abiertos
-    document.querySelectorAll('.botones-paciente').forEach(el => {
-        if (el.id !== `botones-${codigo}`) {
-            el.style.display = 'none';
+async function cargarEliminados() {
+    const guardados = localStorage.getItem('pacientes_eliminados');
+    if (guardados) {
+        try {
+            pacientesEliminados = JSON.parse(guardados);
+        } catch (_) {
+            pacientesEliminados = [];
         }
-    });
-    
-    // Toggle del botón actual
-    if (botonElement.style.display === 'none') {
-        botonElement.style.display = 'flex';
-    } else {
-        botonElement.style.display = 'none';
     }
 }
 
-// ==================== LLAMAR PACIENTE ====================
+// ==================== RENDERIZAR MÉDICOS ====================
 
-function llamarPaciente(codigo, event) {
-    event.stopPropagation();
-    
-    const paciente = pacientesData[codigo];
-    
-    if (!paciente) {
-        alert('Paciente no encontrado');
+function renderizarMedicos(medicos) {
+    const container = document.getElementById('medicosContainer');
+    if (!container) return;
+
+    if (!medicos || medicos.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <h3>😕 Sin médicos</h3>
+                <p>No hay médicos con pacientes registrados</p>
+            </div>`;
         return;
     }
-    
-    // Mostrar notificación
-    const notificacion = document.createElement('div');
-    notificacion.className = 'notificacion-llamada';
-    notificacion.innerHTML = `
-        <div class="notificacion-contenido">
-            <h3>📞 Llamando Paciente</h3>
-            <p><strong>${paciente.nombre}</strong></p>
-            <p style="margin-top: 10px; font-size: 13px; color: #999;">
-                Código: ${codigo}
-            </p>
-            <p style="margin-top: 15px; color: #667eea; font-weight: bold;">
-                Llamando...
-            </p>
-        </div>
-    `;
-    
-    document.body.appendChild(notificacion);
-    
-    // Reproducir sonido de llamada (opcional)
-    reproducirSonidoLlamada();
-    
-    // Ocultar después de 3 segundos
-    setTimeout(() => {
-        notificacion.remove();
-    }, 3000);
-    
-    // Ocultar botones
-    document.getElementById(`botones-${codigo}`).style.display = 'none';
-    
-    console.log(`📞 Llamando a ${paciente.nombre} (${codigo})`);
+
+    const html = medicos.map(medico => {
+        const pacientesFiltrados = filtrarPacientesEliminados(medico.pacientes || []);
+        return `
+            <div class="medico-card">
+                <div class="medico-header">
+                    <div class="medico-avatar">${medico.inicial || medico.nombre[0].toUpperCase()}</div>
+                    <div>
+                        <h3>${medico.nombre}</h3>
+                        <span class="badge">${pacientesFiltrados.length} paciente(s)</span>
+                    </div>
+                </div>
+                <div class="pacientes-list" id="pacientes-${medico.id}">
+                    ${renderizarPacientes(pacientesFiltrados, medico.id)}
+                </div>
+            </div>`;
+    }).join('');
+
+    container.innerHTML = html;
+}
+
+function renderizarPacientes(pacientes, medicoId) {
+    if (!pacientes || pacientes.length === 0) {
+        return '<p class="no-pacientes">No hay pacientes pendientes</p>';
+    }
+
+    return pacientes.map(p => `
+        <div class="paciente-item" id="paciente-row-${p.id}">
+            <div class="paciente-info">
+                <span class="paciente-nombre">👤 ${p.nombre}</span>
+                <span class="paciente-codigo">🔖 ${p.codigo || '—'}</span>
+                <span class="paciente-motivo">📋 ${p.motivo || '—'}</span>
+            </div>
+            <button class="btn btn-danger btn-sm" onclick="eliminarPaciente('${p.id}', '${medicoId}')">
+                🗑️ Eliminar
+            </button>
+        </div>`).join('');
 }
 
 // ==================== ELIMINAR PACIENTE ====================
 
-async function eliminarPaciente(codigo, nombre, event) {
-    event.stopPropagation();
-    
-    const paciente = pacientesData[codigo];
-    
-    if (!confirm(`¿Estás seguro de que deseas eliminar el código ${codigo} de ${nombre}?`)) {
-        return;
-    }
-    
+async function eliminarPaciente(pacienteId, medicoId) {
+    if (!confirm('¿Eliminar este paciente de la lista?')) return;
+
     try {
-<<<<<<< HEAD
-        // ✅ AQUÍ ESTÁ EL CAMBIO: NO deletear de la BD, solo agregar a papelera
-        // La papelera es LOCAL (localStorage), no elimina de la BD
-=======
-        const response = await fetch(`/api/recepcion/paciente/${paciente.id}`, {
-            method: 'DELETE',
-            headers: getAuthHeaders()
-        });
->>>>>>> d4cd5e5 (updating project whole)
-        
-        // Agregar a papelera LOCAL (sin eliminar de la BD)
-        pacientesEliminados.push({
-            codigo: codigo,
-            nombre: nombre,
-            medico: paciente.medico_nombre,
-            motivo: paciente.motivo,
-            id: paciente.id,
-            fecha_eliminacion: new Date().toISOString()
-        });
-        
-        // Guardar en localStorage
-        guardarEliminados();
-        
-        // Remover del DOM (pero no de la BD)
-        // Recargar la tabla para actualizar visualmente
-        cargarPacientes();
-        
-        // Mostrar notificación
-        mostrarNotificacion(`🗑️ ${nombre} movido a papelera`, 'success');
-        
-        console.log(`🗑️ Paciente movido a papelera (ID: ${paciente.id})`);
-        
-    } catch (error) {
-        console.error('Error al mover a papelera:', error);
-        mostrarNotificacion('Error al eliminar', 'error');
-    }
-}
+        const response = await Auth.fetch(`/api/recepcion/paciente/${pacienteId}`, { method: 'DELETE' });
+        const data     = await response.json();
 
-// ==================== PAPELERA DE ELIMINADOS ====================
-
-function guardarEliminados() {
-    localStorage.setItem('pacientesEliminados', JSON.stringify(pacientesEliminados));
-}
-
-function cargarEliminados() {
-    const datos = localStorage.getItem('pacientesEliminados');
-    pacientesEliminados = datos ? JSON.parse(datos) : [];
-    console.log(`📂 Papelera cargada: ${pacientesEliminados.length} pacientes`);
-}
-
-function abrirPapelera() {
-    const modal = document.getElementById('papelaModal');
-    
-    if (pacientesEliminados.length === 0) {
-        modal.querySelector('.modal-body').innerHTML = `
-            <div style="text-align: center; padding: 40px; color: #999;">
-                <h3>🗂️ Papelera Vacía</h3>
-                <p>No hay códigos eliminados</p>
-            </div>
-        `;
-        modal.classList.add('active');
-        return;
-    }
-    
-    const html = pacientesEliminados.map((paciente, index) => `
-        <div class="papelera-item">
-            <div class="papelera-info">
-                <strong>${paciente.nombre}</strong>
-                <p style="font-size: 12px; color: #999;">
-                    Código: ${paciente.codigo}
-                </p>
-                <p style="font-size: 12px; color: #999;">
-                    Médico: ${paciente.medico}
-                </p>
-                <p style="font-size: 11px; color: #ccc; margin-top: 5px;">
-                    Eliminado: ${new Date(paciente.fecha_eliminacion).toLocaleString('es-ES')}
-                </p>
-            </div>
-            <div class="papelera-acciones">
-                <button class="btn-restaurar" onclick="restaurarPaciente(${index})">
-                    ↩️ Restaurar
-                </button>
-                <button class="btn-eliminar-permanente" onclick="eliminarPermanente(${index})">
-                    🗑️ Eliminar Permanente
-                </button>
-            </div>
-        </div>
-    `).join('');
-    
-    modal.querySelector('.modal-body').innerHTML = html;
-    modal.classList.add('active');
-}
-
-function cerrarPapelera() {
-    document.getElementById('papelaModal').classList.remove('active');
-}
-
-function restaurarPaciente(index) {
-    const paciente = pacientesEliminados[index];
-    
-    if (confirm(`¿Restaurar a ${paciente.nombre} (${paciente.codigo})?`)) {
-        // Remover de papelera
-        pacientesEliminados.splice(index, 1);
-        guardarEliminados();
-        
-        // Recargar pacientes para mostrar el restaurado
-        cargarPacientes();
-        
-        // Actualizar papelera
-        abrirPapelera();
-        
-        mostrarNotificacion(`✅ ${paciente.nombre} restaurado`, 'success');
-        console.log(`↩️ Paciente restaurado: ${paciente.codigo}`);
-    }
-}
-
-async function eliminarPermanente(index) {
-    const paciente = pacientesEliminados[index];
-    
-    if (confirm(`¿Eliminar permanentemente a ${paciente.nombre}? Esta acción no se puede deshacer.`)) {
-        try {
-            console.log("Eliminado ID",paciente.id);
-            // ✅ AQUÍ SÍ ELIMINAMOS DE LA BD
-            const response = await fetch(`/api/recepcion/paciente/${paciente.id}`, {
-                method: 'DELETE',
-                credentials: 'include'
-            });
-            
-            const data = await response.json();
-            
-            if (!response.ok) {
-                mostrarNotificacion(`Error: ${data.message || 'No se pudo eliminar'}`, 'error');
-                return;
+        if (response.ok && data.success) {
+            // Registrar eliminación localmente
+            if (!pacientesEliminados.includes(pacienteId)) {
+                pacientesEliminados.push(pacienteId);
+                localStorage.setItem('pacientes_eliminados', JSON.stringify(pacientesEliminados));
             }
-            
-            // Remover de papelera local
-            pacientesEliminados.splice(index, 1);
-            guardarEliminados();
-            
-            // Actualizar papelera
-            abrirPapelera();
-            
-            mostrarNotificacion(`🗑️ ${paciente.nombre} eliminado permanentemente`, 'error');
-            console.log(`🗑️ Paciente eliminado permanentemente de BD: ${paciente.id}`);
-            
-        } catch (error) {
-            console.error('Error al eliminar de BD:', error);
-            mostrarNotificacion('Error al eliminar permanentemente', 'error');
+
+            // Eliminar del DOM
+            const row = document.getElementById(`paciente-row-${pacienteId}`);
+            if (row) row.remove();
+
+            console.log(`✅ Paciente ${pacienteId} eliminado`);
+        } else {
+            alert(data.message || 'Error al eliminar paciente');
         }
+
+    } catch (error) {
+        console.error('Error al eliminar:', error);
+        alert('Error de conexión al eliminar paciente');
     }
 }
 
-function vaciarPapelera() {
-    if (confirm('¿Vaciar toda la papelera? Esta acción no se puede deshacer.')) {
-        pacientesEliminados = [];
-        guardarEliminados();
-        mostrarNotificacion('🗑️ Papelera vaciada', 'error');
-        cerrarPapelera();
-    }
-}
-
-<<<<<<< HEAD
-=======
-// ==================== BÚSQUEDA ====================
+// ==================== BUSCAR PACIENTE POR CÓDIGO ====================
 
 async function buscarPaciente() {
-    const codigo = document.getElementById('searchInput').value.trim().toUpperCase();
+    const input   = document.getElementById('buscarCodigo');
+    const codigo  = input ? input.value.trim() : '';
+    const resultEl = document.getElementById('resultadoBusqueda');
 
     if (!codigo) {
-        alert('Por favor ingresa un código de paciente');
+        if (resultEl) resultEl.innerHTML = '<p style="color:#dc3545">Ingresa un código para buscar</p>';
         return;
     }
 
-    // Si existe en datos cargados, mostrar
-    if (pacientesData[codigo]) {
-        mostrarDetalles(codigo);
-        return;
-    }
-
-    // Si no, buscar en el servidor
     try {
-        const response = await fetch(`/api/recepcion/paciente/${codigo}`, {
-            method: 'GET',
-            headers: getAuthHeaders()
-        });
+        const response = await Auth.fetch(`/api/recepcion/paciente/${codigo}`, { method: 'GET' });
+        const data     = await response.json();
 
-        const data = await response.json();
-
-        if (!response.ok) {
-            alert(`❌ ${data.message || 'Paciente no encontrado'}`);
+        if (!response.ok || !data.success) {
+            if (resultEl) resultEl.innerHTML = `<p style="color:#dc3545">❌ ${data.message || 'Paciente no encontrado'}</p>`;
             return;
         }
 
-        mostrarDetallesModal(data.paciente);
+        const p = data.paciente;
+        if (resultEl) {
+            resultEl.innerHTML = `
+                <div class="paciente-resultado">
+                    <p><strong>👤 Nombre:</strong> ${p.nombre_completo || p.nombre}</p>
+                    <p><strong>🔖 Código:</strong> ${p.codigo}</p>
+                    <p><strong>📋 Motivo:</strong> ${p.motivo || '—'}</p>
+                    <p><strong>👨‍⚕️ Médico:</strong> ${p.medico || '—'}</p>
+                </div>`;
+        }
 
     } catch (error) {
         console.error('Error en búsqueda:', error);
-        alert('Error al buscar paciente');
+        if (resultEl) resultEl.innerHTML = '<p style="color:#dc3545">❌ Error de conexión</p>';
     }
 }
 
->>>>>>> d4cd5e5 (updating project whole)
-// ==================== MOSTRAR DETALLES ====================
+// ==================== HELPERS DE UI ====================
 
-function mostrarDetalles(codigo) {
-    const paciente = pacientesData[codigo];
-    
-    if (!paciente) {
-        alert('Paciente no encontrado');
-        return;
-    }
-
-    mostrarDetallesModal(paciente);
-}
-
-function mostrarDetallesModal(paciente) {
-    const modal = document.getElementById('detallesModal');
-    const contenido = document.getElementById('detallesContent');
-
-    const fechaRegistro = new Date(paciente.created_at);
-    const fechaFormato = fechaRegistro.toLocaleDateString('es-ES', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-
-    contenido.innerHTML = `
-        <p>
-            <strong>👤 Nombre:</strong>
-            <span class="valor">${paciente.nombre || 'N/A'}</span>
-        </p>
-        
-        <p>
-            <strong>📌 Código:</strong>
-            <span class="valor" style="font-family: 'Courier New', monospace; font-size: 16px;">${paciente.codigo}</span>
-        </p>
-        
-        <p>
-            <strong>🆔 ID Paciente:</strong>
-            <span class="valor" style="font-size: 12px; font-family: monospace;">${paciente.id.substring(0, 8)}...</span>
-        </p>
-        
-        <p>
-            <strong>👨‍⚕️ Médico:</strong>
-            <span class="valor">${paciente.medico_nombre || 'Sin asignar'}</span>
-        </p>
-        
-        <p>
-            <strong>📋 Motivo:</strong>
-            <span class="valor">${paciente.motivo || 'N/A'}</span>
-        </p>
-        
-        <p>
-            <strong>📄 Documento:</strong>
-            <span class="valor">${paciente.documento || 'N/A'}</span>
-        </p>
-        
-        <p>
-            <strong>📅 Fecha de Registro:</strong>
-            <span class="valor">${fechaFormato}</span>
-        </p>
-    `;
-
-    modal.classList.add('active');
-}
-
-function cerrarModal() {
-    const modal = document.getElementById('detallesModal');
-    modal.classList.remove('active');
-}
-
-// Cerrar modal al hacer click fuera
-document.addEventListener('click', (e) => {
-    const modal = document.getElementById('detallesModal');
-    if (e.target === modal) {
-        cerrarModal();
-    }
-});
-
-// ==================== NOTIFICACIONES ====================
-
-function mostrarNotificacion(mensaje, tipo = 'success') {
-    const notificacion = document.createElement('div');
-    notificacion.className = `notificacion ${tipo}`;
-    notificacion.textContent = mensaje;
-    notificacion.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        padding: 15px 20px;
-        background: ${tipo === 'success' ? '#d4edda' : '#f8d7da'};
-        color: ${tipo === 'success' ? '#155724' : '#721c24'};
-        border-radius: 4px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        z-index: 999;
-        animation: slideInRight 0.3s ease;
-    `;
-    
-    document.body.appendChild(notificacion);
-    
-    setTimeout(() => {
-        notificacion.remove();
-    }, 3000);
-}
-
-// ==================== SONIDO DE LLAMADA ====================
-
-function reproducirSonidoLlamada() {
-    // Crear sonido de timbre (beep-beep)
-    try {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        oscillator.frequency.value = 800;
-        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
-        
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.5);
-    } catch (e) {
-        console.log('Audio no disponible');
+function mostrarErrorEnContenedor(containerId, mensaje) {
+    const container = document.getElementById(containerId);
+    if (container) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <h3>❌ Error</h3>
+                <p>${mensaje}</p>
+            </div>`;
     }
 }
 
-// ==================== LOGOUT ====================
-
-function logout() {
-    if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
-        fetch('/logout', { method: 'POST', headers: getAuthHeaders() })
-            .then(() => window.location.href = '/')
-            .catch(err => console.error('Error al cerrar sesión:', err));
+function mostrarEmptyState(containerId, mensaje) {
+    const container = document.getElementById(containerId);
+    if (container) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <h3>😕 Sin datos</h3>
+                <p>${mensaje}</p>
+            </div>`;
     }
 }
-
-// Cerrar papelera al hacer click fuera
-document.addEventListener('click', (e) => {
-    const modal = document.getElementById('papelaModal');
-    if (e.target === modal) {
-        cerrarPapelera();
-    }
-});

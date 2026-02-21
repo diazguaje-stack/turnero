@@ -316,6 +316,12 @@ def init_db(app):
                     db.session.commit()
                     print('✅ Usuario administrador creado')
                 else:
+                    # Normalizar rol legacy 'administrador' → 'admin'
+                    if admin.rol != 'admin':
+                        print(f'🔄 Normalizando rol admin: "{admin.rol}" → "admin"')
+                        admin.rol = 'admin'
+                        db.session.commit()
+                        print('✅ Rol normalizado')
                     print('✅ Usuario administrador ya existe')
             except Exception as e:
                 db.session.rollback()

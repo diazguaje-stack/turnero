@@ -1,7 +1,7 @@
 /**
  * auth.js — Helper JWT compartido
- * Incluir este script ANTES que registro.js, recepcion.js, usuarios.js
- * 
+ * Incluir ANTES que registro.js, recepcion.js, usuarios.js, pantallas.js
+ *
  * Uso en HTML:
  *   <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
  *   <script src="{{ url_for('static', filename='js/registro.js') }}"></script>
@@ -12,36 +12,42 @@ const Auth = {
     // ── Token storage ──────────────────────────────────────────────
 
     /**
-     * Guarda el token en localStorage con clave por rol.
-     * Cada rol tiene su propio espacio — no se pisan.
+     * Guarda el token. Usa sessionStorage (por pestaña) como fuente principal.
+     * También persiste en localStorage por rol para recuperación entre sesiones.
      */
     guardarToken(token, role) {
+        sessionStorage.setItem('jwt_token', token);
+        sessionStorage.setItem('jwt_role', role);
         localStorage.setItem(`jwt_token_${role}`, token);
-        // También guardamos el token activo de esta pestaña
-        sessionStorage.setItem('jwt_token_active', token);
-        sessionStorage.setItem('jwt_role_active', role);
     },
 
-    /**
-     * Obtiene el token activo de esta pestaña (sessionStorage).
-     * sessionStorage es EXCLUSIVO por pestaña — no se comparte.
-     */
+    /** Obtiene el token activo de esta pestaña. */
     obtenerToken() {
-        return sessionStorage.getItem('jwt_token_active');
+        return sessionStorage.getItem('jwt_token');
     },
 
-    /**
-     * Elimina el token de esta pestaña (logout).
-     */
+    /** Elimina el token de esta pestaña (logout). */
     eliminarToken() {
-        const role = sessionStorage.getItem('jwt_role_active');
+        const role = sessionStorage.getItem('jwt_role');
         if (role) localStorage.removeItem(`jwt_token_${role}`);
-        sessionStorage.removeItem('jwt_token_active');
-        sessionStorage.removeItem('jwt_role_active');
+        sessionStorage.removeItem('jwt_token');
+        sessionStorage.removeItem('jwt_role');
+        // Limpiar también las claves usadas por login.js
+        sessionStorage.removeItem('usuario');
+        sessionStorage.removeItem('rol');
+        sessionStorage.removeItem('nombre_completo');
     },
 
     obtenerRole() {
-        return sessionStorage.getItem('jwt_role_active');
+        return sessionStorage.getItem('jwt_role');
+    },
+
+    obtenerNombreCompleto() {
+        return sessionStorage.getItem('nombre_completo') || '';
+    },
+
+    obtenerUsuario() {
+        return sessionStorage.getItem('usuario') || '';
     },
 
     estaAutenticado() {
@@ -51,7 +57,7 @@ const Auth = {
     // ── Fetch con JWT automático ───────────────────────────────────
 
     /**
-     * Reemplaza fetch() — agrega Authorization: Bearer <token> automáticamente.
+     * Wrapper de fetch() — agrega Authorization: Bearer <token> automáticamente.
      * Uso: await Auth.fetch('/api/algo', { method: 'GET' })
      */
     async fetch(url, options = {}) {
@@ -73,7 +79,7 @@ const Auth = {
 
         // Si el token expiró, redirigir al login
         if (response.status === 401) {
-            console.warn('Token expirado o inválido — redirigiendo al login');
+            console.warn('[Auth] Token expirado o inválido — redirigiendo al login');
             this.eliminarToken();
             window.location.href = '/';
             return response;
@@ -86,20 +92,28 @@ const Auth = {
 
     /**
      * Verifica el token con el backend y valida el rol esperado.
-     * @param {string} rolEsperado - 'registro', 'recepcion', 'admin'
-     * @returns {object|null} datos del usuario o null si falla
+     * @param {string|null} rolEsperado - 'registro', 'recepcion', 'admin', o null para cualquier rol
+     * @returns {object|null} datos del usuario, o null si la verificación falla
      */
     async verificarSesion(rolEsperado = null) {
         const token = this.obtenerToken();
 
         if (!token) {
+            console.warn('[Auth] No hay token — redirigiendo al login');
             window.location.href = '/';
             return null;
         }
 
         try {
             const response = await this.fetch('/api/verify-session');
-            const data     = await response.json();
+
+            if (!response.ok) {
+                this.eliminarToken();
+                window.location.href = '/';
+                return null;
+            }
+
+            const data = await response.json();
 
             if (!data.authenticated) {
                 this.eliminarToken();
@@ -109,7 +123,7 @@ const Auth = {
 
             // Validar rol si se especificó
             if (rolEsperado && data.role !== rolEsperado && data.role !== 'admin') {
-                console.warn(`Rol incorrecto: esperado "${rolEsperado}", recibido "${data.role}"`);
+                console.warn(`[Auth] Rol incorrecto: esperado "${rolEsperado}", recibido "${data.role}"`);
                 window.location.href = '/';
                 return null;
             }
@@ -117,7 +131,7 @@ const Auth = {
             return data;
 
         } catch (error) {
-            console.error('Error verificando sesión:', error);
+            console.error('[Auth] Error al verificar sesión:', error);
             window.location.href = '/';
             return null;
         }
@@ -135,7 +149,13 @@ const Auth = {
         const data = await response.json();
 
         if (data.success && data.token) {
-            this.guardarToken(data.token, data.role.toLowerCase());
+            const role = (data.role || data.rol || '').toLowerCase();
+            this.guardarToken(data.token, role);
+
+            // Guardar datos del usuario en sessionStorage (compatible con login.js)
+            sessionStorage.setItem('usuario', data.usuario || usuario);
+            sessionStorage.setItem('rol', role);
+            sessionStorage.setItem('nombre_completo', data.nombre_completo || '');
         }
 
         return data;
@@ -146,7 +166,7 @@ const Auth = {
     async logout() {
         try {
             await this.fetch('/api/logout', { method: 'POST' });
-        } catch (_) {}
+        } catch (_) { /* ignorar errores de red en logout */ }
         this.eliminarToken();
         window.location.href = '/';
     },

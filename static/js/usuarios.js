@@ -1,22 +1,30 @@
+/**
+ * usuarios.js — Gestión completa de usuarios
+ * Requiere: auth.js cargado antes en el HTML
+ */
+
+// ── getAuthHeaders: lee el token del lugar correcto ───────────────────────────
+
 function getAuthHeaders() {
-    const token = localStorage.getItem("token");
+    // auth.js guarda el token en sessionStorage con clave 'jwt_token'
+    // login.js también lo guarda ahí (y en localStorage como jwt_token_<rol>)
+    const token = sessionStorage.getItem('jwt_token')
+               || localStorage.getItem('jwt_token_admin')
+               || localStorage.getItem('jwt_token_recepcion')
+               || localStorage.getItem('jwt_token_registro');
 
     if (!token) {
-        window.location.href = "/";
+        window.location.href = '/';
         return {};
     }
 
     return {
-        "Authorization": "Bearer " + token,
-        "Content-Type": "application/json"
+        'Authorization': 'Bearer ' + token,
+        'Content-Type':  'application/json'
     };
 }
 
 // ==========================================
-// usuarios.js — Gestión completa de usuarios
-// (requiere config.js cargado antes)
-// ==========================================
-
 let isEditMode = false;
 
 // ── Inicialización ────────────────────────────────────────────────────────────
@@ -73,12 +81,12 @@ function loadUsers() {
 }
 
 function createUserCard(user) {
-    const card         = document.createElement('div');
-    card.className     = 'user-card';
-    const nombre       = user.nombre_completo || user.usuario;
-    const initial      = nombre.charAt(0).toUpperCase();
-    const roleClass    = `role-${(user.rol || '').toLowerCase()}`;
-    const roleLabel    = getRoleLabel(user.rol);
+    const card      = document.createElement('div');
+    card.className  = 'user-card';
+    const nombre    = user.nombre_completo || user.usuario;
+    const initial   = nombre.charAt(0).toUpperCase();
+    const roleClass = `role-${(user.rol || '').toLowerCase()}`;
+    const roleLabel = getRoleLabel(user.rol);
 
     card.innerHTML = `
         <div class="user-card-header">
@@ -91,10 +99,7 @@ function createUserCard(user) {
         </div>
     `;
 
-    // Clic normal → abrir detalles
     card.addEventListener('click', () => showUserDetails(user.id));
-
-    // Clic derecho → menú de contexto
     card.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         showContextMenu(e.clientX, e.clientY, user.id);
@@ -130,7 +135,6 @@ async function handleCreateUser(e) {
     }
 
     const newUser = {
-        id:              generateUserId(),
         usuario:         username,
         nombre_completo: name,
         password,
@@ -156,14 +160,8 @@ async function handleCreateUser(e) {
             showToast(data.message || 'Error al crear usuario', 'error');
         }
     } catch (error) {
-        // Fallback local
-        users.push(newUser);
-        localStorage.setItem('systemUsers', JSON.stringify(users));
-        loadUsers();
-        updateStats();
-        closeCreateUserModal();
-        showToast(`Usuario ${username} creado localmente`, 'success');
-        document.getElementById('createUserForm').reset();
+        console.error('Error al crear usuario:', error);
+        showToast('Error de conexión al crear usuario', 'error');
     }
 }
 
@@ -178,7 +176,7 @@ async function deleteUser() {
 
     try {
         const response = await fetch(USUARIOS_API.delete(selectedUserId), {
-            method: 'DELETE',
+            method:  'DELETE',
             headers: getAuthHeaders()
         });
         const data = await response.json();
@@ -191,12 +189,8 @@ async function deleteUser() {
             showToast(data.message || 'Error al eliminar usuario', 'error');
         }
     } catch (error) {
-        users = users.filter(u => u.id !== selectedUserId);
-        localStorage.setItem('systemUsers', JSON.stringify(users));
-        loadUsers();
-        updateStats();
-        closeUserDetailsModal();
-        showToast(`Usuario ${user.usuario} eliminado localmente`, 'success');
+        console.error('Error al eliminar usuario:', error);
+        showToast('Error de conexión al eliminar usuario', 'error');
     }
 }
 
@@ -218,24 +212,21 @@ async function saveUserChanges() {
 
     const originalPassword = user.password || '';
 
-    // 🔎 Detectar si hubo cambios reales
     const huboCambios =
         newUsername !== user.usuario ||
         newName !== (user.nombre_completo || '') ||
         newRole !== user.rol ||
         (newPassword && newPassword !== originalPassword);
 
-    // 🟢 SI NO HUBO CAMBIOS → solo cerrar modal
     if (!huboCambios) {
         closeUserDetailsModal();
         return;
     }
 
-    // 🟣 SI HUBO CAMBIOS → enviar al backend
     const updatedData = {
-        usuario: newUsername,
+        usuario:         newUsername,
         nombre_completo: newName,
-        rol: newRole
+        rol:             newRole
     };
 
     if (newPassword && newPassword !== originalPassword) {
@@ -259,22 +250,22 @@ async function saveUserChanges() {
             showToast(data.message || 'Error al actualizar usuario', 'error');
         }
     } catch (error) {
-        showToast('Error al actualizar usuario', 'error');
+        console.error('Error al actualizar usuario:', error);
+        showToast('Error de conexión al actualizar usuario', 'error');
     }
 }
 
 // ── Modales ───────────────────────────────────────────────────────────────────
 
 function openCreateUserModal() {
-    document.getElementById('createUserModal').classList.add('active');
-    const form = document.getElementById('createUserForm');
-    form.reset();
-
+    const modal = document.getElementById('createUserModal');
+    if (!modal) return;
+    modal.classList.add('active');
+    document.getElementById('createUserForm').reset();
     setTimeout(() => {
-        document.getElementById('newUsername').value = '';
+        const input = document.getElementById('newUsername');
+        if (input) input.value = '';
     }, 150);
-
-    document.getElementById('createUserModal').classList.add('active');
 }
 
 function closeCreateUserModal() {
@@ -293,20 +284,19 @@ function showUserDetails(userId) {
     document.getElementById('detailUsername').textContent = user.usuario;
     document.getElementById('detailName').textContent     = user.nombre_completo || 'Sin especificar';
 
-    const passwordEl = document.getElementById('detailPassword');
+    const passwordEl   = document.getElementById('detailPassword');
     const userPassword = user.password || '';
-    
-    // Mostrar indicador si la contraseña está vacía o disponible
+
     if (!userPassword) {
-        passwordEl.textContent = '[No disponible]';
-        passwordEl.dataset.password = '';
-        passwordEl.style.color = '#9ca3af';
-        passwordEl.style.fontStyle = 'italic';
+        passwordEl.textContent          = '[No disponible]';
+        passwordEl.dataset.password     = '';
+        passwordEl.style.color          = '#9ca3af';
+        passwordEl.style.fontStyle      = 'italic';
     } else {
-        passwordEl.textContent = '••••••••';
-        passwordEl.dataset.password = userPassword;
-        passwordEl.style.color = '';
-        passwordEl.style.fontStyle = '';
+        passwordEl.textContent          = '••••••••';
+        passwordEl.dataset.password     = userPassword;
+        passwordEl.style.color          = '';
+        passwordEl.style.fontStyle      = '';
     }
 
     const roleEl       = document.getElementById('detailRole');
@@ -326,9 +316,11 @@ function showUserDetails(userId) {
 function closeUserDetailsModal() {
     document.getElementById('userDetailsModal').classList.remove('active');
     const passwordEl = document.getElementById('detailPassword');
-    passwordEl.textContent = '••••••••';
-    passwordEl.style.color = '';
-    passwordEl.style.fontStyle = '';
+    if (passwordEl) {
+        passwordEl.textContent     = '••••••••';
+        passwordEl.style.color     = '';
+        passwordEl.style.fontStyle = '';
+    }
     selectedUserId = null;
     isEditMode     = false;
 }
@@ -349,94 +341,85 @@ function enterEditMode() {
     document.getElementById('userDetailsModal').classList.add('active');
     document.getElementById('editUsername').value = user.usuario;
     document.getElementById('editName').value     = user.nombre_completo || '';
-    
-    // Manejar contraseña vacía en modo edición
+
     const userPassword = user.password || '';
-    if (!userPassword) {
-        document.getElementById('editPassword').value = '';
-        document.getElementById('editPassword').placeholder = 'Establecer nueva contraseña';
-    } else {
-        document.getElementById('editPassword').value = userPassword;
-        document.getElementById('editPassword').placeholder = 'Contraseña actual';
-    }
-    
-    document.getElementById('editPassword').type  = 'password';
-    document.getElementById('editRole').value     = user.rol;
+    const passInput    = document.getElementById('editPassword');
+    passInput.value       = userPassword;
+    passInput.placeholder = userPassword ? 'Contraseña actual' : 'Establecer nueva contraseña';
+    passInput.type        = 'password';
+
+    document.getElementById('editRole').value = user.rol;
 
     _setModoEdicion();
 }
 
 function cancelEditMode() {
     isEditMode = false;
-    
-    // Restaurar datos originales del usuario
+
     const user = users.find(u => u.id === selectedUserId);
     if (user) {
-        // Restaurar valores de lectura
         document.getElementById('detailUsername').textContent = user.usuario;
-        document.getElementById('detailName').textContent = user.nombre_completo || 'Sin especificar';
-        
-        const passwordEl = document.getElementById('detailPassword');
+        document.getElementById('detailName').textContent     = user.nombre_completo || 'Sin especificar';
+
+        const passwordEl   = document.getElementById('detailPassword');
         const userPassword = user.password || '';
-        
+
         if (!userPassword) {
-            passwordEl.textContent = '[No disponible]';
+            passwordEl.textContent      = '[No disponible]';
             passwordEl.dataset.password = '';
-            passwordEl.style.color = '#9ca3af';
-            passwordEl.style.fontStyle = 'italic';
+            passwordEl.style.color      = '#9ca3af';
+            passwordEl.style.fontStyle  = 'italic';
         } else {
-            passwordEl.textContent = '••••••••';
+            passwordEl.textContent      = '••••••••';
             passwordEl.dataset.password = userPassword;
-            passwordEl.style.color = '';
-            passwordEl.style.fontStyle = '';
+            passwordEl.style.color      = '';
+            passwordEl.style.fontStyle  = '';
         }
-        
-        const roleEl = document.getElementById('detailRole');
+
+        const roleEl       = document.getElementById('detailRole');
         roleEl.textContent = getRoleLabel(user.rol);
-        roleEl.className = `detail-value detail-role role-${(user.rol || '').toLowerCase()}`;
+        roleEl.className   = `detail-value detail-role role-${(user.rol || '').toLowerCase()}`;
     }
-    
+
     _setModoLectura();
 }
 
 // ── Contraseñas ───────────────────────────────────────────────────────────────
 
 function toggleDetailPassword() {
-    const el = document.getElementById('detailPassword');
+    const el             = document.getElementById('detailPassword');
     const storedPassword = el.dataset.password;
-    
-    // Si no hay contraseña almacenada, no hacer nada
+
     if (!storedPassword) {
-        showToast('Esta contraseña no está disponible. Edita el usuario para establecer una nueva.', 'warning');
+        showToast('Contraseña no disponible. Edita el usuario para establecer una nueva.', 'warning');
         return;
     }
-    
-    // Toggle entre oculta y visible
+
     if (el.textContent === '••••••••') {
-        el.textContent = storedPassword;
-        el.style.color = '#059669';
+        el.textContent      = storedPassword;
+        el.style.color      = '#059669';
         el.style.fontWeight = '500';
     } else {
-        el.textContent = '••••••••';
-        el.style.color = '';
+        el.textContent      = '••••••••';
+        el.style.color      = '';
         el.style.fontWeight = '';
     }
 }
 
 function togglePasswordVisibility(inputId) {
     const input = document.getElementById(inputId);
-    input.type = input.type === 'password' ? 'text' : 'password';
+    if (input) input.type = input.type === 'password' ? 'text' : 'password';
 }
 
 function toggleEditPassword() {
     const input = document.getElementById('editPassword');
-    input.type = input.type === 'password' ? 'text' : 'password';
+    if (input) input.type = input.type === 'password' ? 'text' : 'password';
 }
 
 // ── Menú de contexto ──────────────────────────────────────────────────────────
 
 function showContextMenu(x, y, userId) {
-    const menu        = document.getElementById('contextMenu');
+    const menu         = document.getElementById('contextMenu');
     menu.style.display = 'block';
     menu.style.left    = x + 'px';
     menu.style.top     = y + 'px';
@@ -453,14 +436,14 @@ function hideContextMenu() {
 // ── Helpers internos ──────────────────────────────────────────────────────────
 
 function _setModoLectura() {
-    document.getElementById('detailUsername').style.display      = '';
-    document.getElementById('editUsername').style.display        = 'none';
-    document.getElementById('detailName').style.display          = '';
-    document.getElementById('editName').style.display            = 'none';
-    document.getElementById('detailPasswordView').style.display  = 'flex';
+    document.getElementById('detailUsername').style.display        = '';
+    document.getElementById('editUsername').style.display          = 'none';
+    document.getElementById('detailName').style.display            = '';
+    document.getElementById('editName').style.display              = 'none';
+    document.getElementById('detailPasswordView').style.display    = 'flex';
     document.getElementById('editPasswordContainer').style.display = 'none';
-    document.getElementById('detailRole').style.display          = '';
-    document.getElementById('editRole').style.display            = 'none';
+    document.getElementById('detailRole').style.display            = '';
+    document.getElementById('editRole').style.display              = 'none';
 
     document.getElementById('deleteBtn').style.display = 'block';
     document.getElementById('saveBtn').style.display   = 'none';
@@ -469,14 +452,14 @@ function _setModoLectura() {
 }
 
 function _setModoEdicion() {
-    document.getElementById('detailUsername').style.display      = 'none';
-    document.getElementById('editUsername').style.display        = 'block';
-    document.getElementById('detailName').style.display          = 'none';
-    document.getElementById('editName').style.display            = 'block';
-    document.getElementById('detailPasswordView').style.display  = 'none';
+    document.getElementById('detailUsername').style.display        = 'none';
+    document.getElementById('editUsername').style.display          = 'block';
+    document.getElementById('detailName').style.display            = 'none';
+    document.getElementById('editName').style.display              = 'block';
+    document.getElementById('detailPasswordView').style.display    = 'none';
     document.getElementById('editPasswordContainer').style.display = 'flex';
-    document.getElementById('detailRole').style.display          = 'none';
-    document.getElementById('editRole').style.display            = 'block';
+    document.getElementById('detailRole').style.display            = 'none';
+    document.getElementById('editRole').style.display              = 'block';
 
     document.getElementById('deleteBtn').style.display = 'none';
     document.getElementById('saveBtn').style.display   = 'block';

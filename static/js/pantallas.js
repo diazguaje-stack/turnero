@@ -1,25 +1,33 @@
+/**
+ * pantallas.js — Gestión completa de pantallas
+ * Requiere: auth.js cargado antes en el HTML
+ */
+
+// ── getAuthHeaders: lee el token del lugar correcto ───────────────────────────
+
 function getAuthHeaders() {
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem('jwt_token')
+               || localStorage.getItem('jwt_token_admin')
+               || localStorage.getItem('jwt_token_recepcion')
+               || localStorage.getItem('jwt_token_registro');
 
     if (!token) {
-        window.location.href = "/";
+        window.location.href = '/';
         return {};
     }
 
     return {
-        "Authorization": "Bearer " + token,
-        "Content-Type": "application/json"
+        'Authorization': 'Bearer ' + token,
+        'Content-Type':  'application/json'
     };
 }
-// ==========================================
-// pantallas.js — Gestión completa de pantallas
-// (requiere config.js cargado antes)
-// ==========================================
+
+// ── Estado ────────────────────────────────────────────────────────────────────
 
 let pantallasList             = [];
 let pantallasInterval         = null;
 let recepcionistasDisponibles = [];
-let usuarioEscribiendo        = false; // 🔒 Pausa el polling mientras se escribe un código
+let usuarioEscribiendo        = false;
 
 // ── Inicializar / limpiar ─────────────────────────────────────────────────────
 
@@ -27,8 +35,6 @@ function inicializarPantallas() {
     cargarRecepcionistas();
     cargarPantallas();
 
-    // Polling: refrescar cada 5 s mientras la sección esté activa
-    // Se pausa automáticamente si el usuario está escribiendo un código
     if (!pantallasInterval) {
         pantallasInterval = setInterval(() => {
             const section = document.getElementById('section-pantallas');
@@ -195,22 +201,11 @@ function agregarEventListenersPantallas() {
             )));
 
     document.querySelectorAll('.codigo-input').forEach(input => {
-        // Solo dígitos, máx 6 caracteres
         input.addEventListener('input', e => {
             e.target.value = e.target.value.replace(/[^0-9]/g, '').substring(0, 6);
         });
-
-        // 🔒 Al enfocar el input → pausar el polling para que no destruya el DOM
-        input.addEventListener('focus', () => {
-            usuarioEscribiendo = true;
-        });
-
-        // 🔓 Al salir del input → reanudar el polling
-        input.addEventListener('blur', () => {
-            usuarioEscribiendo = false;
-        });
-
-        // Enter para vincular
+        input.addEventListener('focus', () => { usuarioEscribiendo = true; });
+        input.addEventListener('blur',  () => { usuarioEscribiendo = false; });
         input.addEventListener('keypress', e => {
             if (e.key === 'Enter') {
                 usuarioEscribiendo = false;
@@ -232,12 +227,12 @@ async function vincularPantallaAdmin(pantallaId) {
         return;
     }
 
-    usuarioEscribiendo = false; // 🔓 Liberar antes del fetch
+    usuarioEscribiendo = false;
 
     try {
+        // ✅ headers sin duplicar — usa getAuthHeaders() que ya incluye Content-Type
         const response = await fetch(PANTALLAS_API.vincular(pantallaId), {
             method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
             headers: getAuthHeaders(),
             body:    JSON.stringify({ codigo })
         });
@@ -262,7 +257,7 @@ function confirmarDesvincularPantalla(pantallaId, numero) {
 async function desvincularPantallaAdmin(pantallaId) {
     try {
         const response = await fetch(PANTALLAS_API.desvincular(pantallaId), {
-            method: 'POST',
+            method:  'POST',
             headers: getAuthHeaders()
         });
         const data = await response.json();
@@ -281,7 +276,6 @@ async function asignarRecepcionista(pantallaId, recepcionistaId) {
     try {
         const response = await fetch(PANTALLAS_API.asignarRecepcionista(pantallaId), {
             method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
             headers: getAuthHeaders(),
             body:    JSON.stringify({ recepcionista_id: recepcionistaId })
         });
@@ -302,24 +296,35 @@ async function asignarRecepcionista(pantallaId, recepcionistaId) {
 // ── Modal recepcionista ───────────────────────────────────────────────────────
 
 function mostrarModalAsignarRecepcionista(pantallaId, pantallaNumero, recepcionistaActualId) {
+    // Eliminar modal anterior si existe
+    document.getElementById('modalAsignarRecepcionista')?.remove();
+
     const opciones = recepcionistasDisponibles.map(r =>
         `<option value="${r.id}" ${r.id === recepcionistaActualId ? 'selected' : ''}>
-            ${r.nombre_completo || r.usuario} (ID: ${r.id})
+            ${r.nombre_completo || r.usuario}
         </option>`
     ).join('');
 
     document.body.insertAdjacentHTML('beforeend', `
-        <div class="modal-asignar-recepcionista" id="modalAsignarRecepcionista">
-            <div class="modal-content-small">
-                <h3>Asignar Recepcionista</h3>
-                <p>Pantalla ${pantallaNumero}</p>
-                <select id="selectRecepcionista" class="form-select">
+        <div class="modal-asignar-recepcionista" id="modalAsignarRecepcionista"
+             style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;">
+            <div class="modal-content-small"
+                 style="background:#fff;padding:24px;border-radius:12px;min-width:320px;box-shadow:0 4px 24px rgba(0,0,0,.2);">
+                <h3 style="margin:0 0 8px">Asignar Recepcionista</h3>
+                <p style="color:#6b7280;margin:0 0 16px">Pantalla ${pantallaNumero}</p>
+                <select id="selectRecepcionista" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:16px;">
                     <option value="">Sin asignar</option>
                     ${opciones}
                 </select>
-                <div class="modal-buttons">
-                    <button onclick="cerrarModalRecepcionista()" class="btn btn-secondary">Cancelar</button>
-                    <button onclick="confirmarAsignacionRecepcionista('${pantallaId}')" class="btn btn-primary">Asignar</button>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button onclick="cerrarModalRecepcionista()"
+                        style="padding:8px 16px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;">
+                        Cancelar
+                    </button>
+                    <button onclick="confirmarAsignacionRecepcionista('${pantallaId}')"
+                        style="padding:8px 16px;background:#6366f1;color:#fff;border:none;border-radius:6px;cursor:pointer;">
+                        Asignar
+                    </button>
                 </div>
             </div>
         </div>
@@ -361,7 +366,7 @@ function mostrarMensajePantallas(mensaje, tipo) {
     setTimeout(() => { container.innerHTML = ''; }, tipo === 'error' ? 5000 : 3000);
 }
 
-// Exponer funciones usadas desde el HTML inline (onclick=)
-window.mostrarModalAsignarRecepcionista = mostrarModalAsignarRecepcionista;
-window.cerrarModalRecepcionista         = cerrarModalRecepcionista;
-window.confirmarAsignacionRecepcionista = confirmarAsignacionRecepcionista;
+// Exponer funciones usadas desde onclick en HTML inline
+window.mostrarModalAsignarRecepcionista  = mostrarModalAsignarRecepcionista;
+window.cerrarModalRecepcionista          = cerrarModalRecepcionista;
+window.confirmarAsignacionRecepcionista  = confirmarAsignacionRecepcionista;
