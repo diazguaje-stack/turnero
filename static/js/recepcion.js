@@ -14,10 +14,9 @@
 
 // ── Estado global ────────────────────────────────────────────
 let pacientesData       = {};   // { medico_id: medicoObj }
-let pacientesEliminados = [];   // IDs de pacientes ocultos localmente
+let papelera = [];   // IDs de pacientes ocultos localmente
 let codigosAnteriores   = {};   // { paciente_id: codigo_turno } → detectar cambios
 let intervaloRefresco   = null;
-
 // ── Constantes ───────────────────────────────────────────────
 const INTERVALO_REFRESCO_MS = 15_000;   // 15 segundos
 
@@ -25,8 +24,9 @@ const INTERVALO_REFRESCO_MS = 15_000;   // 15 segundos
 
 document.addEventListener('DOMContentLoaded', () => {
     verificarSesion();
-    cargarEliminados();
+    
     cargarPacientes();
+    cargarPapelera();
 
     // Auto-refresco para detectar re-registros
     intervaloRefresco = setInterval(cargarPacientes, INTERVALO_REFRESCO_MS);
@@ -64,8 +64,8 @@ function logout() {
 // ==================== CARGAR / REFRESCO ====================
 
 function filtrarPacientesEliminados(pacientes) {
-    if (!pacientes || !pacientesEliminados.length) return pacientes;
-    return pacientes.filter(p => !pacientesEliminados.includes(p.id));
+    if (!pacientes || !papelera.length) return pacientes;
+    return pacientes.filter(p => !papelera.some(x => x.id == p.id));
 }
 
 async function cargarPacientes() {
@@ -128,16 +128,6 @@ async function cargarPacientes() {
     }
 }
 
-async function cargarEliminados() {
-    const guardados = localStorage.getItem('pacientes_eliminados');
-    if (guardados) {
-        try {
-            pacientesEliminados = JSON.parse(guardados);
-        } catch (_) {
-            pacientesEliminados = [];
-        }
-    }
-}
 
 // ==================== RENDERIZAR MÉDICOS ====================
 
@@ -208,13 +198,123 @@ function renderizarPacientes(pacientes, medicoId, cambios = {}) {
                 </span>` : ''}
             </div>
             <button class="btn btn-danger btn-sm"
-                    onclick="eliminarPaciente('${p.id}', '${medicoId}')">
+                    onclick="retirarPaciente('${p.id}', '${medicoId}')">
                 🗑️ Retirar
             </button>
         </div>`;
     }).join('');
 }
 
+function retirarPaciente(pacienteId, medicoId) {
+
+    const medico = pacientesData[medicoId];
+    if (!medico) return;
+
+    const paciente = medico.pacientes.find(p => p.id == pacienteId);
+    if (!paciente) return;
+
+    // Agregar a papelera
+    papelera.push({
+        id: paciente.id,
+        nombre: paciente.nombre,
+        codigo: paciente.codigo,
+        medicoId: medicoId
+    });
+
+    localStorage.setItem('papelera', JSON.stringify(papelera));
+
+    // Quitar visualmente
+    const row = document.getElementById(`paciente-row-${pacienteId}`);
+    if (row) row.remove();
+
+    console.log("📦 Movido a papelera:", paciente.codigo);
+}
+
+function cargarPapelera() {
+    const guardado = localStorage.getItem('papelera');
+    if (guardado) {
+        papelera = JSON.parse(guardado);
+    }
+}
+
+function abrirPapelera() {
+
+    const modal = document.getElementById('papeleraModal');
+    const body  = document.getElementById('papeleraBody');
+
+    if (!papelera.length) {
+        body.innerHTML = "<p>No hay códigos en la papelera</p>";
+    } else {
+        body.innerHTML = papelera.map(p => `
+            <div class="papelera-item">
+                <span>🎫 ${p.codigo} - ${p.nombre}</span>
+                <div>
+                    <button onclick="restaurarPaciente('${p.id}')">Restaurar</button>
+                    <button onclick="eliminarDefinitivo('${p.id}')">Eliminar</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    modal.style.display = "flex";
+}
+
+function restaurarPaciente(pacienteId) {
+
+    papelera = papelera.filter(p => p.id != pacienteId);
+    localStorage.setItem('papelera', JSON.stringify(papelera));
+
+    cerrarPapelera();
+    cargarPacientes(); // vuelve a renderizar
+}
+
+async function eliminarDefinitivo(pacienteId) {
+
+    if (!confirm("¿Eliminar definitivamente este código?")) return;
+
+    try {
+        const response = await Auth.fetch(`/api/recepcion/paciente/${pacienteId}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+
+            papelera = papelera.filter(p => p.id != pacienteId);
+            localStorage.setItem('papelera', JSON.stringify(papelera));
+
+            abrirPapelera();
+
+            console.log("🗑️ Eliminado definitivamente");
+        } else {
+            alert(data.message || "Error al eliminar");
+        }
+
+    } catch (error) {
+        alert("Error de conexión");
+    }
+}
+
+function cerrarPapelera() {
+    document.getElementById('papeleraModal').style.display = "none";
+}
+
+async function vaciarPapelera() {
+
+    if (!confirm("¿Eliminar todos definitivamente?")) return;
+
+    for (let p of papelera) {
+        await Auth.fetch(`/api/recepcion/paciente/${p.id}`, {
+            method: 'DELETE'
+        });
+    }
+
+    papelera = [];
+    localStorage.removeItem('papelera');
+
+    abrirPapelera();
+}
 // ==================== NOTIFICACIÓN VISUAL DE CAMBIO ====================
 
 function mostrarNotificacionCambio(cambios) {
@@ -246,39 +346,6 @@ function mostrarNotificacionCambio(cambios) {
     toast._timeout = setTimeout(() => {
         toast.style.opacity = '0';
     }, 5000);
-}
-
-// ==================== ELIMINAR / RETIRAR PACIENTE ====================
-
-async function eliminarPaciente(pacienteId, medicoId) {
-    if (!confirm('¿Retirar a este paciente de la lista de recepción?')) return;
-
-    try {
-        const response = await Auth.fetch(`/api/recepcion/paciente/${pacienteId}`, { method: 'DELETE' });
-        const data     = await response.json();
-
-        if (response.ok && data.success) {
-            // Ocultar localmente
-            if (!pacientesEliminados.includes(pacienteId)) {
-                pacientesEliminados.push(pacienteId);
-                localStorage.setItem('pacientes_eliminados', JSON.stringify(pacientesEliminados));
-            }
-
-            const row = document.getElementById(`paciente-row-${pacienteId}`);
-            if (row) row.remove();
-
-            // Eliminar del snapshot de códigos para no generar falsa alerta
-            delete codigosAnteriores[pacienteId];
-
-            console.log(`✅ Paciente ${pacienteId} retirado`);
-        } else {
-            alert(data.message || 'Error al retirar paciente');
-        }
-
-    } catch (error) {
-        console.error('Error al eliminar:', error);
-        alert('Error de conexión al retirar paciente');
-    }
 }
 
 // ==================== BUSCAR PACIENTE POR CÓDIGO ====================
