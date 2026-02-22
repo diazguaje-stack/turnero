@@ -28,6 +28,38 @@ function conectarSocket() {
     socket.on('disconnect', () => {
         console.log('🔌 Socket desconectado');
     });
+        // ── Médico nuevo o editado → recargar cards ──
+    socket.on('usuario_actualizado', (data) => {
+        if (data.usuario.rol === 'medico') {
+            console.log('📨 Médico actualizado, recargando cards...');
+            cargarMedicos();
+
+            const msg = data.tipo === 'nuevo'
+                ? `👨‍⚕️ Nuevo médico disponible: ${data.usuario.nombre_completo}`
+                : `✏️ Médico actualizado: ${data.usuario.nombre_completo}`;
+
+            // Toast simple sin librería
+            mostrarToastRegistro(msg);
+        }
+    });
+}
+function mostrarToastRegistro(msg) {
+    let toast = document.getElementById('toastRegistro');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toastRegistro';
+        toast.style.cssText = `
+            position:fixed; top:16px; right:16px; z-index:9999;
+            background:#d4edda; color:#155724; border:1px solid #28a745;
+            border-radius:8px; padding:12px 20px; font-size:0.9em;
+            font-weight:500; box-shadow:0 4px 12px rgba(0,0,0,0.15);
+            transition:opacity 0.4s ease; max-width:320px;`;
+        document.body.appendChild(toast);
+    }
+    toast.textContent   = msg;
+    toast.style.opacity = '1';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { toast.style.opacity = '0'; }, 4000);
 }
 
 // ==================== VERIFICAR SESIÓN ====================
@@ -102,20 +134,21 @@ async function cargarMedicos() {
 
 // ==================== CREAR CARD DE MÉDICO ====================
 
+// Reemplaza crearCardMedico completo:
 function crearCardMedico(medico) {
+    const nombreDisplay = medico.nombre_completo; // ya incluye "Dr. juan"
     return `
         <div class="medico-card"
              data-medico-id="${medico.id}"
-             data-medico-nombre="${medico.nombre_completo.replace(/"/g, '&quot;')}">
+             data-medico-nombre="${nombreDisplay.replace(/"/g, '&quot;')}">
             <div class="medico-avatar-grande">${medico.inicial}</div>
-            <h3>${medico.nombre_completo}</h3>
+            <h3>${nombreDisplay}</h3>
             <p>👨‍⚕️ Médico</p>
             <div class="medico-card-footer">
                 Haz clic para registrar paciente
             </div>
         </div>`;
 }
-
 // ==================== MODAL ====================
 
 function abrirModal(medicoId, medicoNombre) {

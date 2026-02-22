@@ -39,6 +39,15 @@ function initUsuarios() {
         });
     });
 }
+// ── Agregar después de initUsuarios() ────────────────────────────────────────
+
+function onRoleChange() {
+    const role        = document.getElementById('newRole').value;
+    const prefixGroup = document.getElementById('prefixGroup');
+    if (prefixGroup) {
+        prefixGroup.style.display = role === 'medico' ? 'flex' : 'none';
+    }
+}
 
 // ── Cargar desde backend ──────────────────────────────────────────────────────
 
@@ -193,7 +202,9 @@ async function handleCreateUser(e) {
     const name     = document.getElementById('newName').value.trim();
     const password = document.getElementById('newPassword').value;
     const role     = document.getElementById('newRole').value;
-
+    const prefijo = role === 'medico'
+        ? (document.getElementById('newPrefijo')?.value || 'Dr.')
+        : '';
     if (!username || !name || !password || !role) {
         showToast('Por favor completa todos los campos', 'error');
         return;
@@ -203,9 +214,10 @@ async function handleCreateUser(e) {
         return;
     }
 
+    const nombreConPrefijo = prefijo ? `${prefijo} ${name}` : name;
     const newUser = {
         usuario:         username,
-        nombre_completo: name,
+        nombre_completo: nombreConPrefijo, //Ahora incluye Dr.nombre
         password,
         rol:             role,
         created_at:      new Date().toISOString(),
@@ -530,3 +542,36 @@ function _setModoEdicion() {
     document.getElementById('cancelBtn').style.display = 'block';
     document.getElementById('closeBtn').style.display  = 'none';
 }
+// ==================== WEBSOCKET ====================
+
+let socketAdmin = null;
+
+function conectarSocketAdmin() {
+    socketAdmin = io();
+
+    socketAdmin.on('connect', () => {
+        console.log('🔌 Socket admin conectado:', socketAdmin.id);
+        socketAdmin.emit('join', { room: 'admin' });
+    });
+
+    socketAdmin.on('disconnect', () => {
+        console.log('🔌 Socket admin desconectado');
+    });
+
+    // ── Nuevo usuario creado (desde otra sesión admin) ──
+    socketAdmin.on('usuario_creado', (data) => {
+        console.log('📨 Nuevo usuario creado en tiempo real:', data);
+        loadUsersFromBackend();
+        showToast(`👤 Nuevo usuario: ${data.usuario.nombre_completo} (${getRoleLabel(data.usuario.rol)})`, 'success');
+    });
+
+    // ── Usuario editado ──
+    socketAdmin.on('usuario_actualizado', (data) => {
+        if (data.tipo === 'edicion') {
+            console.log('📨 Usuario actualizado en tiempo real:', data);
+            loadUsersFromBackend();
+            showToast(`✏️ Usuario actualizado: ${data.usuario.nombre_completo}`, 'success');
+        }
+    });
+}
+conectarSocketAdmin();

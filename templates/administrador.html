@@ -211,13 +211,20 @@
                 </div>
                 <div class="form-group">
                     <label for="newRole">Rol</label>
-                    <select id="newRole" required>
+                    <select id="newRole" required onchange="onRoleChange()">
                         <option value="">Selecciona un rol</option>
                         <option value="administrador">Administrador</option>
                         <option value="recepcion">Recepción</option>
                         <option value="registro">Registro</option>
                         <option value="medico">Médico</option>
                     </select>
+                    <div id="prefixGroup" style="display:none; flex-direction:column; gap:6px; margin-top:10px;">
+                        <label for="newPrefijo">Prefijo del médico</label>
+                        <select id="newPrefijo">
+                            <option value="Dr.">Dr.</option>
+                            <option value="Dra.">Dra.</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="modal-actions">
                     <button type="submit" class="btn-primary">Crear Usuario</button>

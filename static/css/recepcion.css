@@ -636,3 +636,101 @@ body {
     background: #e53935;
     transform: scale(1.05);
 }
+/* ── Layout horizontal de pacientes ── */
+.pacientes-horizontal {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 0;
+}
+
+.paciente-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #f8f9fa;
+    border: 2px solid #dee2e6;
+    border-radius: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    min-width: 90px;
+    max-width: 110px;
+    transition: border-color 0.2s, background 0.2s;
+    user-select: none;
+}
+
+.paciente-chip:hover {
+    border-color: #6c63ff;
+    background: #f0eeff;
+}
+
+.paciente-chip.chip-activo {
+    border-color: #1565c0;
+    background: #e3f2fd;
+}
+
+.chip-codigo {
+    font-size: 1em;
+    font-weight: 700;
+    color: #1565c0;
+    text-align: center;
+}
+
+.chip-nombre {
+    font-size: 0.75em;
+    color: #555;
+    text-align: center;
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100px;
+}
+
+.chip-acciones {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    flex-direction: column;
+    width: 100%;
+}
+
+.btn-llamar {
+    background: #1565c0;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.78em;
+    cursor: pointer;
+    width: 100%;
+}
+
+.btn-llamar:hover { background: #0d47a1; }
+
+.btn-retirar {
+    background: #dc3545;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.78em;
+    cursor: pointer;
+    width: 100%;
+}
+
+.btn-retirar:hover { background: #b02a37; }
+
+.badge-reimpresion {
+    font-size: 0.7em;
+    margin-left: 3px;
+}
+
+.nuevo-ingreso {
+    animation: fadeInChip 0.5s ease;
+}
+
+@keyframes fadeInChip {
+    from { opacity: 0; transform: scale(0.8); }
+    to   { opacity: 1; transform: scale(1); }
+}

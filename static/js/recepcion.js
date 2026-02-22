@@ -65,6 +65,14 @@ function conectarSocket() {
             actualizarCodigoEnTiempoReal(data);
         }
     });
+    socket.on('usuario_actualizado', (data) => {
+    if (data.usuario.rol === 'medico') {
+        console.log('📨 Médico actualizado en recepción');
+        cargarPacientes(); // recarga todo incluyendo nombre del médico
+        mostrarToast(`👨‍⚕️ Datos de médico actualizados`, 'nuevo');
+        }
+    });
+
 }
 
 // ── Agregar paciente nuevo sin recargar la página ──────────
@@ -84,27 +92,35 @@ function agregarPacienteEnTiempoReal(data) {
 
     // Crear fila del nuevo paciente con animación
     const nuevaFila = document.createElement('div');
-    nuevaFila.className  = 'paciente-item nuevo-ingreso';
-    nuevaFila.id         = `paciente-row-${data.paciente.id}`;
-    nuevaFila.innerHTML  = `
-        <div class="paciente-info">
-            <span class="paciente-nombre">👤 ${data.paciente.nombre}</span>
-            <span class="paciente-codigo">
-                🎫 <strong>${data.codigo_turno}</strong>
-                <span style="background:#28a745;color:#fff;
-                             font-size:0.72em;font-weight:bold;
-                             padding:2px 7px;border-radius:10px;margin-left:6px;">
-                    🆕 NUEVO
-                </span>
-            </span>
-            <span class="paciente-motivo">📋 ${data.paciente.motivo || '—'}</span>
+    nuevaFila.className = 'paciente-chip nuevo-ingreso';
+    nuevaFila.id        = `paciente-row-${data.paciente.id}`;
+    nuevaFila.setAttribute('onclick', `toggleAcciones('${data.paciente.id}', '${medicoId}')`);
+    nuevaFila.innerHTML = `
+        <div class="chip-codigo">
+            ${data.codigo_turno}
+            <span class="badge-reimpresion" style="background:#28a745;">🆕</span>
         </div>
-        <button class="btn btn-danger btn-sm"
-                onclick="retirarPaciente('${data.paciente.id}', '${medicoId}')">
-            🗑️ Retirar
-        </button>`;
+        <div class="chip-nombre">${data.paciente.nombre}</div>
+        <div class="chip-acciones" id="acciones-${data.paciente.id}" style="display:none;">
+            <button class="btn-llamar"
+                    onclick="event.stopPropagation(); llamarPaciente('${data.paciente.id}', '${data.codigo_turno}', '${data.paciente.nombre}')">
+                📢 Llamar
+            </button>
+            <button class="btn-retirar"
+                    onclick="event.stopPropagation(); retirarPaciente('${data.paciente.id}', '${medicoId}')">
+                🗑️ Retirar
+            </button>
+        </div>`;
 
-    listaEl.appendChild(nuevaFila);
+    // Agregar al contenedor horizontal (no a listaEl directamente)
+    let horizontalEl = listaEl.querySelector('.pacientes-horizontal');
+    if (!horizontalEl) {
+        horizontalEl = document.createElement('div');
+        horizontalEl.className = 'pacientes-horizontal';
+        listaEl.appendChild(horizontalEl);
+    }
+    horizontalEl.appendChild(nuevaFila);
+        listaEl.appendChild(nuevaFila);
 
     // Actualizar estado global
     if (pacientesData[medicoId]) {
@@ -301,37 +317,75 @@ function renderizarPacientes(pacientes, medicoId, cambios = {}) {
         return '<p class="no-pacientes">No hay pacientes pendientes</p>';
     }
 
-    return pacientes.map(p => {
-        const cambiado = cambios[p.id];
-        const estiloFila = cambiado ? 'border-left: 4px solid #ffc107; background: #fffbf0;' : '';
-        const badgeReimpresion = cambiado
-            ? `<span style="background:#ffc107;color:#333;font-size:0.72em;font-weight:bold;
-                            padding:2px 7px;border-radius:10px;margin-left:6px;">
-                ♻️ NUEVO CÓDIGO
-               </span>`
-            : '';
+    return `
+        <div class="pacientes-horizontal">
+            ${pacientes.map(p => {
+                const cambiado = cambios[p.id];
+                const badgeNuevo = cambiado
+                    ? `<span class="badge-reimpresion">♻️</span>`
+                    : '';
 
-        return `
-        <div class="paciente-item" id="paciente-row-${p.id}" style="${estiloFila}">
-            <div class="paciente-info">
-                <span class="paciente-nombre">👤 ${p.nombre}</span>
-                <span class="paciente-codigo">
-                    🎫 <strong>${p.codigo || '—'}</strong>
-                    ${badgeReimpresion}
-                </span>
-                <span class="paciente-motivo">📋 ${p.motivo || '—'}</span>
-                ${cambiado ? `<span style="font-size:0.78em;color:#856404;">
-                    Código anterior: <s>${cambiado.anterior}</s>
-                </span>` : ''}
-            </div>
-            <button class="btn btn-danger btn-sm"
-                    onclick="retirarPaciente('${p.id}', '${medicoId}')">
-                🗑️ Retirar
-            </button>
+                return `
+                <div class="paciente-chip" id="paciente-row-${p.id}"
+                     onclick="toggleAcciones('${p.id}', '${medicoId}')">
+                    <div class="chip-codigo">
+                        ${p.codigo || '—'} ${badgeNuevo}
+                    </div>
+                    <div class="chip-nombre">${p.nombre}</div>
+
+                    <div class="chip-acciones" id="acciones-${p.id}" style="display:none;">
+                        <button class="btn-llamar"
+                                onclick="event.stopPropagation(); llamarPaciente('${p.id}', '${p.codigo}', '${p.nombre}')">
+                            📢 Llamar
+                        </button>
+                        <button class="btn-retirar"
+                                onclick="event.stopPropagation(); retirarPaciente('${p.id}', '${medicoId}')">
+                            🗑️ Retirar
+                        </button>
+                    </div>
+                </div>`;
+            }).join('')}
         </div>`;
-    }).join('');
 }
 
+// ── Toggle botones al hacer clic en el chip ────────────────
+function toggleAcciones(pacienteId, medicoId) {
+    const accionesEl = document.getElementById(`acciones-${pacienteId}`);
+    if (!accionesEl) return;
+
+    // Cerrar todos los demás chips abiertos
+    document.querySelectorAll('.chip-acciones').forEach(el => {
+        if (el.id !== `acciones-${pacienteId}`) {
+            el.style.display = 'none';
+            el.closest('.paciente-chip')?.classList.remove('chip-activo');
+        }
+    });
+
+    const estaAbierto = accionesEl.style.display === 'flex';
+    accionesEl.style.display = estaAbierto ? 'none' : 'flex';
+    accionesEl.closest('.paciente-chip')?.classList.toggle('chip-activo', !estaAbierto);
+}
+
+// ── Llamar paciente ────────────────────────────────────────
+function llamarPaciente(pacienteId, codigo, nombre) {
+    mostrarToast(`📢 Llamando: ${codigo} — ${nombre}`, 'nuevo');
+
+    // Emitir por socket para que la pantalla lo muestre
+    if (socket) {
+        socket.emit('llamar_paciente', { pacienteId, codigo, nombre });
+    }
+
+    // Resaltar chip visualmente
+    const chip = document.getElementById(`paciente-row-${pacienteId}`);
+    if (chip) {
+        chip.style.borderColor = '#1565c0';
+        chip.style.background  = '#e3f2fd';
+        setTimeout(() => {
+            chip.style.borderColor = '';
+            chip.style.background  = '';
+        }, 4000);
+    }
+}
 // ==================== PAPELERA ====================
 
 function retirarPaciente(pacienteId, medicoId) {

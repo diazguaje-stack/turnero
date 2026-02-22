@@ -309,7 +309,29 @@ def create_user():
         )
         new_user.set_password(password)
         db.session.add(new_user)
+        # ── En create_user, justo ANTES del return final ──────────────
         db.session.commit()
+
+        # AÑADIR ESTO:
+        socketio.emit('usuario_creado', {
+            'tipo':   'nuevo',
+            'usuario': {
+                'id':              str(new_user.id),
+                'usuario':         new_user.usuario,
+                'nombre_completo': new_user.nombre_completo,
+                'rol':             new_user.rol,
+            }
+        }, room='admin')
+
+        # También notificar a la sala del rol correspondiente
+        socketio.emit('usuario_actualizado', {
+            'tipo':   'nuevo',
+            'usuario': {
+                'id':              str(new_user.id),
+                'nombre_completo': new_user.nombre_completo,
+                'rol':             new_user.rol,
+            }
+        }, room=new_user.rol)   # sala 'medico', 'recepcion', 'registro', etc.
 
         print(f"[{datetime.now()}] Usuario creado: {usuario} - Rol: {rol}")
 
@@ -370,7 +392,28 @@ def update_user(user_id):
             user.set_password(data['password'])
 
         user.updated_at = datetime.utcnow()
+        # ── En update_user, justo ANTES del return final ──────────────
         db.session.commit()
+
+        # AÑADIR ESTO:
+        socketio.emit('usuario_actualizado', {
+            'tipo':    'edicion',
+            'usuario': {
+                'id':              str(user.id),
+                'usuario':         user.usuario,
+                'nombre_completo': user.nombre_completo,
+                'rol':             user.rol,
+            }
+        }, room='admin')
+
+        socketio.emit('usuario_actualizado', {
+            'tipo':    'edicion',
+            'usuario': {
+                'id':              str(user.id),
+                'nombre_completo': user.nombre_completo,
+                'rol':             user.rol,
+            }
+        }, room=user.rol)
 
         return jsonify({
             'success': True,
@@ -564,50 +607,81 @@ def screen_status():
 def obtener_medicos():
     try:
         medicos      = Usuario.query.filter_by(rol='medico', activo=True).all()
-        medicos_data = [{
-            'id':              medico.id,
-            'nombre_completo': medico.nombre_completo or medico.usuario,
-            'usuario':         medico.usuario,
-            'inicial':         (medico.nombre_completo or medico.usuario)[0].upper()
-        } for medico in medicos]
+        medicos_data = []
+
+        for medico in medicos:
+            nombre_completo = medico.nombre_completo or medico.usuario
+
+            # Detectar prefijo: "Dr." o "Dra." al inicio
+            prefijo = ''
+            nombre_sin_prefijo = nombre_completo
+            for p in ['Dr. ', 'Dra. ']:
+                if nombre_completo.startswith(p):
+                    prefijo            = p.strip()   # "Dr." o "Dra."
+                    nombre_sin_prefijo = nombre_completo[len(p):]
+                    break
+
+            # Inicial SOLO del nombre (sin prefijo) para los códigos
+            inicial_codigo = nombre_sin_prefijo[0].upper() if nombre_sin_prefijo else 'X'
+
+            medicos_data.append({
+                'id':                medico.id,
+                'nombre_completo':   nombre_completo,       # "Dr. juan"
+                'nombre_sin_prefijo': nombre_sin_prefijo,   # "juan"
+                'prefijo':           prefijo,               # "Dr."
+                'usuario':           medico.usuario,
+                'inicial':           nombre_completo[0].upper(),      # para avatar
+                'inicial_codigo':    inicial_codigo,        # para generar códigos
+            })
 
         return jsonify({'success': True, 'medicos': medicos_data, 'total': len(medicos_data)}), 200
 
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
-
 # ===================================
 # RUTAS DE PACIENTES
 # ===================================
 
 def generar_codigo_paciente(medico_id, motivo):
-    """
-    Genera el código ESTABLE del paciente (no cambia en re-registros).
-    Formato: <Inicial_médico>-<Inicial_motivo>-<NNN>
-    Ejemplo: A-C-001  (médico=Ana, motivo=Consulta, número=1)
-    """
     medico = Usuario.query.filter_by(id=medico_id, rol='medico').first()
     if not medico:
         raise Exception("Médico no encontrado")
 
-    inicial_medico = (medico.nombre_completo or medico.usuario)[0].upper()
+    nombre_completo = medico.nombre_completo or medico.usuario
+
+    # Quitar prefijo para obtener la inicial real del nombre
+    nombre_sin_prefijo = nombre_completo
+    for p in ['Dr. ', 'Dra. ']:
+        if nombre_completo.startswith(p):
+            nombre_sin_prefijo = nombre_completo[len(p):]
+            break
+
+    inicial_medico = nombre_sin_prefijo[0].upper() if nombre_sin_prefijo else 'X'
     inicial_motivo = motivo[0].upper() if motivo else 'X'
+    prefijo        = f"{inicial_medico}-{inicial_motivo}-"
 
-    # Contar cuántos pacientes ya existen con este médico y motivo
-    total = Paciente.query.filter_by(medico_id=medico_id, motivo=motivo).count()
-    numero = total + 1
+    existentes = (Paciente.query
+                  .filter(Paciente.codigo_paciente.like(f"{prefijo}%"))
+                  .with_entities(Paciente.codigo_paciente)
+                  .all())
 
-    return f"{inicial_medico}-{inicial_motivo}-{numero:03d}"
+    numeros_usados = set()
+    for (cod,) in existentes:
+        if cod:
+            try:
+                numeros_usados.add(int(cod[len(prefijo):]))
+            except ValueError:
+                pass
+
+    numero = 1
+    while numero in numeros_usados:
+        numero += 1
+
+    return f"{prefijo}{numero:03d}"
 
 def generar_codigo_turno(paciente_id, medico_id, motivo):
-    """
-    Genera el código de TURNO imprimible (cambia cada vez que se re-registra).
-    Formato: <codigo_paciente>-T<N>
-    Ejemplo: A-C-001-T1 (primer turno), A-C-001-T2 (re-registro), etc.
-
-    Si el paciente no tiene aún codigo_paciente asignado, se genera también aquí.
-    """
+    
     paciente = db.session.get(Paciente, paciente_id)
     if not paciente:
         raise Exception("Paciente no encontrado")
@@ -616,11 +690,7 @@ def generar_codigo_turno(paciente_id, medico_id, motivo):
     if not paciente.codigo_paciente:
         paciente.codigo_paciente = generar_codigo_paciente(medico_id, motivo)
 
-    # Contar turnos previos de este paciente (sin importar estado)
-    total_turnos = Turno.query.filter_by(paciente_id=paciente_id).count()
-    n = total_turnos + 1   # será el número del nuevo turno
-
-    return f"{paciente.codigo_paciente}-T{n}"
+    return paciente.codigo_paciente
 
 
 @app.route('/api/pacientes/registrar', methods=['POST'])
@@ -732,14 +802,15 @@ def registrar_paciente():
                 medico_id  = medico_id,
                 created_at = ahora
             )
+            nuevo_paciente.codigo_paciente = generar_codigo_paciente(medico_id, motivo)
+            
             db.session.add(nuevo_paciente)
             db.session.flush()  # necesario para obtener el id antes del commit
 
             # 2. Asignar código estable al paciente
-            nuevo_paciente.codigo_paciente = generar_codigo_paciente(medico_id, motivo)
 
             # 3. Generar código de turno (primer turno → siempre T1)
-            primer_codigo_turno = f"{nuevo_paciente.codigo_paciente}-T1"
+            primer_codigo_turno = nuevo_paciente.codigo_paciente
 
             # 4. Crear el turno
             turno = Turno(
