@@ -12,7 +12,7 @@ import os
 import jwt
 from models import db, Usuario, init_db, Pantalla, Paciente,Turno, uuid
 from config import config
-
+from flask_socketio  import SocketIO, emit, join_room
 
 # ===================================
 # CONFIGURACION
@@ -29,7 +29,7 @@ JWT_EXPIRATION_HOURS = 8  # Token expira en 8 horas
 
 init_db(app)
 CORS(app, supports_credentials=True, origins=['*'])
-
+socketio=SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # ===================================
 # HELPERS JWT
@@ -757,7 +757,17 @@ def registrar_paciente():
             db.session.commit()
 
             print(f"✅ Nuevo paciente: '{nombre}' | código={primer_codigo_turno}")
-
+            socketio.emit('nuevo_codigo',{
+                'tipo':         'nuevo',
+                'codigo_turno': primer_codigo_turno,
+                'paciente': {
+                    'id':     nuevo_paciente.id,
+                    'nombre': nuevo_paciente.nombre,
+                    'medico': medico.nombre_completo,
+                    'motivo': motivo,
+                    'codigo_paciente': nuevo_paciente.codigo_paciente
+                }
+            },room='recepcion')
             return jsonify({
                 'success':      True,
                 'tipo':         'nuevo',
@@ -1001,6 +1011,22 @@ def internal_error(error):
 # INICIALIZACION
 # ===================================
 
+@socketio.on('connect')
+def on_connect():
+    print(f"[WS] Cliente conectado: {request.sid}")
+
+@socketio.on('disconnect')
+def on_disconnect():
+    print(f"[WS] Cliente desconectado: {request.sid}")
+
+@socketio.on('join')
+def on_join(data):
+    room = data.get('room', '')
+    join_room(room)
+    print(f"[WS] Cliente {request.sid} entró a sala: {room}")
+    emit('joined', {'room': room, 'status': 'ok'})
+
+
 if __name__ == '__main__':
     port  = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
@@ -1017,4 +1043,4 @@ if __name__ == '__main__':
     print("   recepcion / recep123")
     print("=" * 60 + "\n")
 
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    socketio.run(app, host='0.0.0.0', port=port, debug=debug)

@@ -1,17 +1,34 @@
 /**
  * registro.js - Página de registro de pacientes
  * Requiere: auth.js cargado antes en el HTML
+ * Requiere: socket.io cargado antes en el HTML
  */
 
-// Variables globales
 let medicosData = [];
+let socket      = null;
 
 // ==================== INICIALIZACIÓN ====================
 
 document.addEventListener('DOMContentLoaded', () => {
     verificarSesion();
     cargarMedicos();
+    conectarSocket();
 });
+
+// ==================== WEBSOCKET ====================
+
+function conectarSocket() {
+    socket = io();
+
+    socket.on('connect', () => {
+        console.log('🔌 Socket conectado:', socket.id);
+        socket.emit('join', { room: 'registro' });
+    });
+
+    socket.on('disconnect', () => {
+        console.log('🔌 Socket desconectado');
+    });
+}
 
 // ==================== VERIFICAR SESIÓN ====================
 
@@ -86,8 +103,6 @@ async function cargarMedicos() {
 // ==================== CREAR CARD DE MÉDICO ====================
 
 function crearCardMedico(medico) {
-    // IMPORTANTE: usamos data-attributes en lugar de onclick con parámetros.
-    // Esto evita que IDs o nombres con caracteres especiales rompan el JS.
     return `
         <div class="medico-card"
              data-medico-id="${medico.id}"
@@ -109,7 +124,6 @@ function abrirModal(medicoId, medicoNombre) {
 
     modalMessage.innerHTML = '';
 
-    // Reset PRIMERO — luego setear los valores ocultos (reset los borraría)
     const form = document.getElementById('registroForm');
     if (form) {
         form.reset();
@@ -142,22 +156,18 @@ function cerrarModal() {
     if (modalMessage) modalMessage.innerHTML = '';
 }
 
-// ── Delegación de eventos: click en card de médico o en fondo del modal ──
 document.addEventListener("click", (e) => {
     const modal = document.getElementById("registroModal");
 
-    // Cerrar modal al hacer clic en el fondo
     if (modal && e.target === modal) {
         cerrarModal();
         return;
     }
 
-    // Abrir modal al hacer clic en una card de médico (o un hijo suyo)
     const card = e.target.closest(".medico-card[data-medico-id]");
     if (card) {
         const medicoId     = card.dataset.medicoId;
         const medicoNombre = card.dataset.medicoNombre;
-        console.log("🩺 Card clic → medicoId:", medicoId, "| nombre:", medicoNombre);
         abrirModal(medicoId, medicoNombre);
     }
 });
@@ -212,30 +222,20 @@ async function registrarPaciente(event) {
             return;
         }
 
-        // ── Ocultar formulario ──────────────────────────────────────
+        // ── Ocultar formulario ──────────────────────────────────
         document.getElementById('registroForm').style.display = 'none';
 
-        // ── Distinguir NUEVO vs RE-REGISTRO ────────────────────────
         const esReimpresion = data.tipo === 'reimpresion';
 
         const bannerColor  = esReimpresion ? '#fff3cd' : '#d4edda';
         const bannerBorder = esReimpresion ? '#ffc107' : '#28a745';
         const bannerText   = esReimpresion ? '#856404' : '#155724';
         const bannerIcono  = esReimpresion ? '♻️' : '✅';
-        const bannerTitulo = esReimpresion
-            ? '¡Turno re-generado!'
-            : '¡Paciente registrado exitosamente!';
+        const bannerTitulo = esReimpresion ? '¡Turno re-generado!' : '¡Paciente registrado exitosamente!';
 
         const infoAdicional = esReimpresion ? `
-            <div style="
-                background:#fff8e1;
-                border:1px solid #ffd54f;
-                border-radius:6px;
-                padding:10px 14px;
-                margin-top:10px;
-                font-size:0.9em;
-                color:#5d4037;
-            ">
+            <div style="background:#fff8e1;border:1px solid #ffd54f;border-radius:6px;
+                        padding:10px 14px;margin-top:10px;font-size:0.9em;color:#5d4037;">
                 ⚠️ <strong>Re-impresión de turno</strong><br>
                 El paciente ya estaba registrado.<br>
                 Código anterior: <strong style="color:#c62828">${data.codigo_anterior || '—'}</strong>
@@ -261,7 +261,6 @@ async function registrarPaciente(event) {
                 <p><strong>📋 Motivo:</strong> ${data.paciente.motivo}</p>
             </div>`;
 
-        // Botón para registrar otro
         const btnCerrar       = document.createElement('button');
         btnCerrar.type        = 'button';
         btnCerrar.className   = 'btn btn-primary';
@@ -270,10 +269,7 @@ async function registrarPaciente(event) {
         btnCerrar.style.marginTop = '20px';
         btnCerrar.onclick = () => {
             const form = document.getElementById('registroForm');
-            if (form) {
-                form.style.display = 'block';
-                form.reset();
-            }
+            if (form) { form.style.display = 'block'; form.reset(); }
             cerrarModal();
             setTimeout(() => cargarMedicos(), 200);
         };
