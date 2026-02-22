@@ -111,10 +111,17 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Tanto 'admin' como 'administrador' → /administrador
                     const rutaDestino = (rolUserNorm === 'admin') ? 'administrador' : rolSolicitado;
                     console.log(`[Login] ✅ Redirigiendo a /${rutaDestino}`);
-                    setTimeout(() => {
-                        window.location.href = `/${rutaDestino}`;
-                    }, 400);
-
+                    const rutaFinal = `/${rutaDestino}`;
+                    // Verificar que el token quedó guardado antes de redirigir
+                    const tokenGuardado = sessionStorage.getItem('jwt_token');
+                    if (tokenGuardado) {
+                        window.location.href = rutaFinal;
+                    } else {
+                        // Segundo intento con pequeño delay
+                        setTimeout(() => {
+                            window.location.href = rutaFinal;
+                        }, 200);
+                    }
                 } else {
                     showError(data.message || 'Credenciales incorrectas');
                     this.disabled = false;

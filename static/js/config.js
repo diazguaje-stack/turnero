@@ -84,10 +84,18 @@ function getAuthHeaders() {
  * Exige rol 'admin' — redirige al login si no cumple.
  */
 async function checkAuth() {
+    
+    
     const token = sessionStorage.getItem('jwt_token')
                || localStorage.getItem('jwt_token_admin')
                || localStorage.getItem('jwt_token_administrador');
+    
+    // AGREGAR ESTAS 3 LÍNEAS:
+    console.log('🔑 jwt_token en session:', sessionStorage.getItem('jwt_token'));
+    console.log('🔑 jwt_role en session:', sessionStorage.getItem('jwt_role'));
+    console.log('🔑 Token encontrado:', token ? token.substring(0,30)+'...' : 'NINGUNO');
 
+    
     if (!token) {
         console.warn('[Auth] Sin token — redirigiendo al login');
         window.location.href = '/';
@@ -111,6 +119,8 @@ async function checkAuth() {
         }
 
         const data = await response.json();
+        console.log('🔍 verify-session response:', JSON.stringify(data)); // AGREGAR
+
 
         if (!data.authenticated) {
             limpiarTokenAdmin();
@@ -151,6 +161,7 @@ async function checkAuth() {
         console.error('[Auth] Error al verificar sesión:', error);
         window.location.href = '/';
     }
+
 }
 
 /**

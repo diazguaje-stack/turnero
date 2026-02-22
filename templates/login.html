@@ -14,9 +14,6 @@
             <span class="badge">🐍 Powered by Flask</span>
         </div>
 
-        <div id="errorMessage" class="error-message"></div>
-        <div id="successMessage" class="success-message"></div>
-
         <form id="loginForm">
             <div class="form-group">
                 <label for="usuario">Usuario</label>
@@ -55,6 +52,9 @@
                 <label for="rememberMe">Recordar mis credenciales</label>
             </div>
 
+            <!-- ALERTA DE ERROR — id debe coincidir con login.js -->
+            <div id="loginError" class="login-alert login-alert--error" style="display:none;"></div>
+
             <div class="button-group">
                 <button type="submit" class="btn btn-admin" id="btnAdmin" data-role="administrador">
                     👤 Administrador
@@ -76,7 +76,8 @@
         </form>
     </div>
 
-    <script src="{{ url_for('static', filename='js/login.js') }}"></script>
+    <!-- auth.js PRIMERO, luego login.js -->
     <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/login.js') }}"></script>
 </body>
 </html>

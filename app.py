@@ -4,7 +4,7 @@ LO QUE QUIERO¡¡
 QUÉ SI YA EL PACIENTE HA SIDO REGISTRADO Y TIENE SU TURNO (ID_PACIENTE), PERO ESTE PACIENTE PERDIÓ SU TURNO IMPRESO POR X MÓTIVO, LA PERSONA A CARGO DE REGISTRAR AL PACIENTE SÍ COLOCA EL MISMO NOMBRE Y EL MISMO TIPO DE CONSULTA, EL SISTEMA GENERA OTRO CÓDIGO PERO CON EL MISMO ID_PACIENTE, POR LO QUE EL SISTEMA DETECTA EL CAMBIO E INTERCAMBIA EL CÓDIGO EN /RECEPCION.
 ¡¡OJO!! PERO SIGUE TENIENDO LA MISMA ID_PACIENTE SOLO CAMBIA EL CÓDIGO DE TURNO PARA QUE IMPRIMA Y SE LO MUESTRE AL RECEPSIONISTA CUANDO ESTÁ LLAMANDO EN PANTALLA
 """
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, redirect
 from flask_cors import CORS
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -34,6 +34,35 @@ CORS(app, supports_credentials=True, origins=['*'])
 # ===================================
 # HELPERS JWT
 # ===================================
+
+def pagina_protegida(*roles):
+    """
+    Protege rutas HTML.
+    - Si no hay token válido → redirige a login (/)
+    - Si el rol no coincide → redirige a login
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            token = obtener_token_del_request()
+
+            if not token:
+                return redirect('/')
+
+            payload = verificar_token(token)
+            if not payload:
+                return redirect('/')
+
+            rol_usuario = normalizar_rol(payload.get('role', ''))
+
+            if roles and rol_usuario not in roles:
+                return redirect('/')
+
+            request.current_user = payload
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
+
 
 def generar_token(usuario_id, usuario, rol, nombre_completo):
     """Genera un JWT token firmado. Normaliza administrador -> admin."""
@@ -300,7 +329,7 @@ def create_user():
 @rol_requerido('admin')
 def delete_user(user_id):
     try:
-        user = Usuario.query.get(user_id)
+        user = db.session.get(Usuario, user_id)
         if not user:
             return jsonify({'success': False, 'message': 'Usuario no encontrado'}), 404
         if user.usuario == 'admin':
@@ -320,7 +349,7 @@ def delete_user(user_id):
 @rol_requerido('admin')
 def update_user(user_id):
     try:
-        user = Usuario.query.get(user_id)
+        user = db.session.get(Usuario, user_id)
         if not user:
             return jsonify({'success': False, 'message': 'Usuario no encontrado'}), 404
 
@@ -420,7 +449,7 @@ def vincular_pantalla(pantalla_id):
 @rol_requerido('admin')
 def desvincular_pantalla(pantalla_id):
     try:
-        pantalla = Pantalla.query.get(pantalla_id)
+        pantalla = db.session.get(Pantalla, pantalla_id)
         if not pantalla:
             return jsonify({'success': False, 'message': 'Pantalla no encontrada'}), 404
 
@@ -579,7 +608,7 @@ def generar_codigo_turno(paciente_id, medico_id, motivo):
 
     Si el paciente no tiene aún codigo_paciente asignado, se genera también aquí.
     """
-    paciente = Paciente.query.get(paciente_id)
+    paciente = db.session.get(Paciente, paciente_id)
     if not paciente:
         raise Exception("Paciente no encontrado")
 
@@ -852,7 +881,7 @@ def buscar_paciente_codigo(codigo):
         if not paciente:
             return jsonify({'success': False, 'message': 'Paciente no encontrado'}), 404
 
-        medico = Usuario.query.get(paciente.medico_id)
+        medico = db.session.get(Usuario, paciente.medico_id)
 
         # Turno activo actual
         turno_activo = (Turno.query
@@ -887,7 +916,7 @@ def eliminar_paciente(paciente_id):
     El registro del paciente se conserva (soft-delete de turnos).
     """
     try:
-        paciente = Paciente.query.get(paciente_id)
+        paciente = db.session.get(Paciente, paciente_id)
         if not paciente:
             return jsonify({'success': False, 'message': 'Paciente no encontrado'}), 404
 
