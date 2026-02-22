@@ -1,9 +1,3 @@
-"""
-tengo la siguiente lógica, en /administrador creo usuario médico, este médico pasa  a /registro, en /registro se generan cards con los usuarios médicos creados con ID_médico unico, estas cards son dinámicas y abre un modal para registrar con el nombre del paciente y el tipo de consulta, Información o consulta, Esté genera un código con ID_paciente. El sistema mira SI es tipo informativo pero con el mismo nombre =ID_paciente diferente y SI es de tipo consulta pero con el mismo nombre =ID_paciente diferente.
-LO QUE QUIERO¡¡
-QUÉ SI YA EL PACIENTE HA SIDO REGISTRADO Y TIENE SU TURNO (ID_PACIENTE), PERO ESTE PACIENTE PERDIÓ SU TURNO IMPRESO POR X MÓTIVO, LA PERSONA A CARGO DE REGISTRAR AL PACIENTE SÍ COLOCA EL MISMO NOMBRE Y EL MISMO TIPO DE CONSULTA, EL SISTEMA GENERA OTRO CÓDIGO PERO CON EL MISMO ID_PACIENTE, POR LO QUE EL SISTEMA DETECTA EL CAMBIO E INTERCAMBIA EL CÓDIGO EN /RECEPCION.
-¡¡OJO!! PERO SIGUE TENIENDO LA MISMA ID_PACIENTE SOLO CAMBIA EL CÓDIGO DE TURNO PARA QUE IMPRIMA Y SE LO MUESTRE AL RECEPSIONISTA CUANDO ESTÁ LLAMANDO EN PANTALLA
-"""
 from flask import Flask, request, jsonify, render_template, redirect
 from flask_cors import CORS
 from datetime import datetime, timedelta, timezone
@@ -415,6 +409,16 @@ def update_user(user_id):
             }
         }, room=user.rol)
 
+        for sala in ['registro', 'recepcion']:
+            socketio.emit('usuario_actualizado', {
+                'tipo':    'edicion',
+                'usuario': {
+                    'id':              str(user.id),
+                    'nombre_completo': user.nombre_completo,
+                    'rol':             user.rol,
+                }
+            }, room=sala)
+
         return jsonify({
             'success': True,
             'message': f'Usuario {user.usuario} actualizado',
@@ -425,6 +429,89 @@ def update_user(user_id):
         db.session.rollback()
         return jsonify({'success': False, 'message': 'Error al actualizar usuario'}), 500
 
+@app.route('/api/users/<user_id>/desactivar', methods=['POST'])
+@rol_requerido('admin')
+def desactivar_usuario(user_id):
+    try:
+        user = db.session.get(Usuario, user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'Usuario no encontrado'}), 404
+        if user.usuario == 'admin':
+            return jsonify({'success': False, 'message': 'No se puede desactivar el administrador principal'}), 403
+
+        user.activo = False
+        db.session.commit()
+
+        # Notificar a la sala del rol del usuario desactivado
+        payload_desactivado = {
+            'usuario_id': str(user.id),
+            'rol':        user.rol,
+            'nombre':     user.nombre_completo
+        }
+        for sala in [user.rol, 'admin', 'registro', 'recepcion']:
+            socketio.emit('usuario_desactivado', payload_desactivado, room=sala)
+
+        # Notificar al admin también (por si hay otra sesión admin abierta)
+        socketio.emit('usuario_desactivado', {
+            'usuario_id': str(user.id),
+            'rol':        user.rol,
+            'nombre':     user.nombre_completo
+        }, room='admin')
+
+        print(f"[{datetime.now()}] Usuario desactivado: {user.usuario}")
+
+        return jsonify({
+            'success': True,
+            'message': f'Usuario {user.usuario} desactivado'
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/users/<user_id>/restaurar', methods=['POST'])
+@rol_requerido('admin')
+def restaurar_usuario(user_id):
+    try:
+        user = db.session.get(Usuario, user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'Usuario no encontrado'}), 404
+
+        user.activo = True
+        db.session.commit()
+
+        # Notificar al rol correspondiente que el usuario vuelve
+        payload_restaurado = {
+            'usuario': {
+                'id':              str(user.id),
+                'nombre_completo': user.nombre_completo,
+                'rol':             user.rol,
+                'inicial':         (user.nombre_completo or user.usuario)[0].upper(),
+            }
+        }
+        for sala in [user.rol, 'admin', 'registro', 'recepcion']:
+            socketio.emit('usuario_restaurado', payload_restaurado, room=sala)
+
+
+        socketio.emit('usuario_restaurado', {
+            'usuario': {
+                'id':              str(user.id),
+                'nombre_completo': user.nombre_completo,
+                'rol':             user.rol,
+            }
+        }, room='admin')
+
+        print(f"[{datetime.now()}] Usuario restaurado: {user.usuario}")
+
+        return jsonify({
+            'success': True,
+            'message': f'Usuario {user.usuario} restaurado'
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/users/recepcionistas', methods=['GET'])
 @rol_requerido('admin')
@@ -992,10 +1079,7 @@ def buscar_paciente_codigo(codigo):
 @app.route('/api/recepcion/paciente/<paciente_id>', methods=['DELETE'])
 @rol_requerido('recepcion', 'admin')
 def eliminar_paciente(paciente_id):
-    """
-    Marca todos los turnos pendientes del paciente como 'cancelado'.
-    El registro del paciente se conserva (soft-delete de turnos).
-    """
+
     try:
         paciente = db.session.get(Paciente, paciente_id)
         if not paciente:
@@ -1009,6 +1093,13 @@ def eliminar_paciente(paciente_id):
             t.estado = 'cancelado'
 
         db.session.commit()
+
+        socketio.emit('paciente_eliminado', {
+            'paciente_id': paciente_id,
+            'nombre':      paciente.nombre,
+            'medico_id':   str(paciente.medico_id)
+        }, room='registro')
+
 
         return jsonify({
             'success': True,

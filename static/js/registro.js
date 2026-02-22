@@ -34,15 +34,98 @@ function conectarSocket() {
             console.log('📨 Médico actualizado, recargando cards...');
             cargarMedicos();
 
+            // ── NUEVO: si el modal está abierto para este médico, actualizar nombre ──
+            const medicoIdActual = document.getElementById('medicoId')?.value;
+            if (medicoIdActual === String(data.usuario.id)) {
+                document.getElementById('medicoNombre').value = data.usuario.nombre_completo;
+
+                // Actualizar el título visible del modal si existe
+                const tituloModal = document.querySelector('#registroModal h2');
+                if (tituloModal) {
+                    tituloModal.textContent = `Registrar Paciente — ${data.usuario.nombre_completo}`;
+                }
+            }
+
             const msg = data.tipo === 'nuevo'
                 ? `👨‍⚕️ Nuevo médico disponible: ${data.usuario.nombre_completo}`
                 : `✏️ Médico actualizado: ${data.usuario.nombre_completo}`;
 
-            // Toast simple sin librería
             mostrarToastRegistro(msg);
         }
     });
+    socket.on('paciente_eliminado', (data) => {
+    console.log('🗑️ Paciente eliminado en tiempo real:', data);
+
+    const medicoIdActual = document.getElementById('medicoId')?.value;
+    const modal = document.getElementById('registroModal');
+    const modalAbierto = modal?.classList.contains('active');
+
+    // Si el modal está abierto para el mismo médico del paciente eliminado, cerrarlo
+        if (modalAbierto && medicoIdActual === data.medico_id) {
+            cerrarModal();
+            mostrarToastRegistro(`🗑️ El paciente "${data.nombre}" fue retirado de la lista`);
+        } else {
+            mostrarToastRegistro(`🗑️ Paciente retirado: ${data.nombre}`);
+        }
+    });
+
+    socket.on('usuario_desactivado', (data) => {
+        if (data.rol !== 'medico') return;
+
+        console.log('🗑️ Médico desactivado, quitando card:', data.usuario_id);
+
+        // Quitar de medicosData
+        medicosData = medicosData.filter(m => String(m.id) !== String(data.usuario_id));
+
+        // Quitar card del DOM
+        const card = document.querySelector(`.medico-card[data-medico-id="${data.usuario_id}"]`);
+        if (card) card.remove();
+
+        // Si el modal estaba abierto para este médico, cerrarlo
+        const medicoIdActual = document.getElementById('medicoId')?.value;
+        if (medicoIdActual === String(data.usuario_id)) {
+            cerrarModal();
+        }
+
+        // Si no quedan cards, mostrar empty state
+        const grid = document.querySelector('.medicos-grid');
+        if (grid && grid.children.length === 0) {
+            document.getElementById('medicosContainer').innerHTML = `
+                <div class="empty-state">
+                    <h3>😕 No hay médicos disponibles</h3>
+                    <p>Debes crear médicos desde el panel de administrador</p>
+                </div>`;
+        }
+
+        mostrarToastRegistro(`🗑️ Médico ${data.nombre} fue dado de baja`);
+    });
+
+    // ── Médico restaurado → agregar card en tiempo real ──
+    socket.on('usuario_restaurado', (data) => {
+        if (data.usuario.rol !== 'medico') return;
+
+        console.log('✅ Médico restaurado, agregando card:', data.usuario);
+
+        // Si ya existe en medicosData, no duplicar
+        if (medicosData.some(m => String(m.id) === String(data.usuario.id))) return;
+
+        // Agregar a medicosData
+        const nuevoMedico = {
+            id:             data.usuario.id,
+            nombre_completo: data.usuario.nombre_completo,
+            inicial:        data.usuario.inicial || data.usuario.nombre_completo[0].toUpperCase()
+        };
+        medicosData.push(nuevoMedico);
+
+        // Reconstruir grid (más simple que insertar manualmente)
+        cargarMedicos();
+
+        mostrarToastRegistro(`✅ Médico ${data.usuario.nombre_completo} disponible nuevamente`);
+    });
+
+    
 }
+
 function mostrarToastRegistro(msg) {
     let toast = document.getElementById('toastRegistro');
     if (!toast) {

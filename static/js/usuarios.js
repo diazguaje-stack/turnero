@@ -56,8 +56,10 @@ async function loadUsersFromBackend() {
         const response = await fetch(USUARIOS_API.getAll, { headers: getAuthHeaders() });
         if (response.ok) {
             const data = await response.json();
-            users = data.users;
-            console.log(`✅ ${users.length} usuarios cargados`);
+            // ── CRÍTICO: excluir los que ya están en papelera local ──
+            const idsEnPapelera = new Set(usersTrash.map(u => u.id));
+            users = data.users.filter(u => !idsEnPapelera.has(u.id));
+            console.log(`✅ ${users.length} usuarios cargados (${idsEnPapelera.size} en papelera)`);
         } else {
             console.warn('Fallback a localStorage');
             users = JSON.parse(localStorage.getItem('systemUsers')) || [];
@@ -101,20 +103,35 @@ function closeUsersTrash() {
     document.getElementById('usersTrashModal').classList.remove('active');
 }
 
-function restoreUser(userId) {
+async function restoreUser(userId) {
     const user = usersTrash.find(u => u.id === userId);
     if (!user) return;
 
-    users.push(user);
-    usersTrash = usersTrash.filter(u => u.id !== userId);
+    try {
+        const response = await fetch(USUARIOS_API.restaurar(userId), {
+            method:  'POST',
+            headers: getAuthHeaders()
+        });
 
-    loadUsers();
-    updateStats();
-    openUsersTrash();
+        if (!response.ok) {
+            const data = await response.json();
+            showToast(data.message || 'Error al restaurar', 'error');
+            return;
+        }
 
-    showToast(`Usuario ${user.usuario} restaurado`, 'success');
+        users.push(user);
+        usersTrash = usersTrash.filter(u => u.id !== userId);
+
+        loadUsers();
+        updateStats();
+        openUsersTrash();
+        showToast(`Usuario ${user.usuario} restaurado`, 'success');
+
+    } catch (error) {
+        console.error(error);
+        showToast('Error de conexión', 'error');
+    }
 }
-
 async function deleteUserForever(userId) {
     const user = usersTrash.find(u => u.id === userId);
     if (!user) return;
@@ -248,7 +265,7 @@ async function handleCreateUser(e) {
 
 // ── Eliminar usuario ──────────────────────────────────────────────────────────
 
-function moveUserToTrash() {
+async function moveUserToTrash() {
     if (!selectedUserId) return;
 
     const user = users.find(u => u.id === selectedUserId);
@@ -256,19 +273,38 @@ function moveUserToTrash() {
 
     if (!confirm(`¿Enviar a la papelera al usuario "${user.usuario}"?`)) return;
 
-    // Agregar a papelera
-    usersTrash.push(user);
+    // ── CRÍTICO: evitar duplicados en papelera ──
+    if (usersTrash.some(u => u.id === selectedUserId)) {
+        showToast('Este usuario ya está en la papelera', 'warning');
+        closeUserDetailsModal();
+        return;
+    }
 
-    // Quitar de la lista visible
-    users = users.filter(u => u.id !== selectedUserId);
+    try {
+        const response = await fetch(USUARIOS_API.desactivar(selectedUserId), {
+            method:  'POST',
+            headers: getAuthHeaders()
+        });
 
-    loadUsers();
-    updateStats();
+        if (!response.ok) {
+            const data = await response.json();
+            showToast(data.message || 'Error al desactivar usuario', 'error');
+            return;
+        }
 
-    closeUserDetailsModal();
-    showToast(`Usuario ${user.usuario} enviado a papelera`, 'warning');
+        usersTrash.push(user);
+        users = users.filter(u => u.id !== selectedUserId);
+
+        loadUsers();
+        updateStats();
+        closeUserDetailsModal();
+        showToast(`Usuario ${user.usuario} enviado a papelera`, 'warning');
+
+    } catch (error) {
+        console.error('Error al desactivar usuario:', error);
+        showToast('Error de conexión', 'error');
+    }
 }
-
 function openCreateUserModal() {
     const modal = document.getElementById('createUserModal');
     if (!modal) return;

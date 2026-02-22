@@ -12,7 +12,10 @@ const USUARIOS_API = {
     create:        `${API_BASE_URL}/users/create`,
     update: (id) => `${API_BASE_URL}/users/${id}`,
     delete: (id) => `${API_BASE_URL}/users/${id}`,
-    logout:        `${API_BASE_URL}/logout`
+    logout:        `${API_BASE_URL}/logout`,
+    desactivar:  (id) => `/api/users/${id}/desactivar`,   // ← nuevo
+    restaurar:   (id) => `/api/users/${id}/restaurar`,    // ← nuevo
+
 };
 
 // Endpoints de pantallas
