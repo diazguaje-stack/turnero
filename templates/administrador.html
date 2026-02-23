@@ -326,7 +326,8 @@
     </div>
 
     <div id="toast" class="toast"></div>
-
+    <!-- DEBE estar antes de cualquier script que use io() -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='js/config.js') }}"></script>
     <script src="{{ url_for('static', filename='js/usuarios.js') }}"></script>
     <script src="{{ url_for('static', filename='js/pantallas.js') }}"></script>

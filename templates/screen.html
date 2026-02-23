@@ -190,7 +190,8 @@
         <!-- Estado: Error -->
         <div id="errorMessage" class="error-message"></div>
     </div>
-
+    <!-- DEBE estar antes de cualquier script que use io() -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='js/screen.js') }}"></script>
     <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
 </body>

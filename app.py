@@ -568,6 +568,13 @@ def vincular_pantalla(pantalla_id):
         pantalla.vinculada_at = datetime.utcnow()
         db.session.commit()
 
+        socketio.emit('pantalla_vinculada', {
+            'pantalla_id': str(pantalla.id),
+            'numero':      pantalla.numero,
+            'estado':      'vinculada'
+        }, room='screen')
+
+
         return jsonify({'success': True, 'message': 'Pantalla vinculada', 'pantalla': pantalla.to_dict()}), 200
 
     except Exception as e:
@@ -588,6 +595,12 @@ def desvincular_pantalla(pantalla_id):
         pantalla.estado             = 'disponible'
         pantalla.vinculada_at       = None
         db.session.commit()
+
+        socketio.emit('pantalla_desvinculada', {
+            'pantalla_id': str(pantalla.id),
+            'numero':      pantalla.numero,
+            'estado':      'desvinculada'
+        }, room='screen')
 
         return jsonify({'success': True, 'message': 'Pantalla desvinculada', 'pantalla': pantalla.to_dict()}), 200
 
@@ -620,6 +633,17 @@ def asignar_recepcionista(pantalla_id):
 
         pantalla.recepcionista_id = recepcionista_id
         db.session.commit()
+
+        socketio.emit('recepcionista_asignado', {
+            'pantalla_id':          str(pantalla.id),
+            'recepcionista_nombre': recepcionista.nombre_completo if recepcionista_id else None
+        }, room='admin')
+
+        socketio.emit('recepcionista_asignado', {
+            'pantalla_id':          str(pantalla.id),
+            'recepcionista_nombre': recepcionista.nombre_completo if recepcionista_id else None
+        }, room='screen')
+
 
         return jsonify({'success': True, 'message': 'Recepcionista asignado', 'pantalla': pantalla.to_dict()}), 200
 
@@ -655,6 +679,14 @@ def screen_init():
         pantalla_disponible.estado           = 'pendiente'
         pantalla_disponible.ultima_conexion  = datetime.utcnow()
         db.session.commit()
+
+        socketio.emit('pantalla_pendiente', {
+            'pantalla_id': str(pantalla_disponible.id),
+            'numero':      pantalla_disponible.numero,
+            'codigo':      codigo,
+            'estado':      'pendiente'
+        }, room='admin')
+
 
         return jsonify({'success': True, 'status': 'pendiente', 'pantalla': pantalla_disponible.to_dict()}), 200
 
@@ -1205,4 +1237,4 @@ if __name__ == '__main__':
     print("   recepcion / recep123")
     print("=" * 60 + "\n")
 
-    socketio.run(app, host='0.0.0.0', port=port, debug=debug)
+    socketio.run(app, host='0.0.0.0', port=port, debug=debug, allow_unsafe_werkzeug=True)

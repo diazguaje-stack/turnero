@@ -17,11 +17,17 @@ const DELAY_REINTENTO = 3000;
 // INICIALIZACIÓN
 // =========================
 
-document.addEventListener('DOMContentLoaded', function () {
+// screen.js — reemplaza el final del archivo
+document.addEventListener('DOMContentLoaded', () => {
     console.log('📺 Pantalla de turnos iniciando...');
     inicializarPantalla();
+    conectarSocketScreen();   // ← ahora junto con la inicialización
 });
 
+window.addEventListener('beforeunload', () => {
+    if (statusCheckInterval) clearInterval(statusCheckInterval);
+    if (socketScreen) socketScreen.disconnect();
+});
 // =========================
 // FINGERPRINT
 // =========================
@@ -89,6 +95,23 @@ async function inicializarPantalla() {
             pantallaData          = data.pantalla;
             intentoInicializacion = 0;
 
+            // Esperar a que el socket esté en sala 'screen' antes de procesar estado
+            await new Promise(resolve => {
+                if (socketScreen && socketScreen.connected) {
+                    resolve();
+                } else {
+                    // Dar hasta 2s para que el socket se conecte
+                    const t = setTimeout(resolve, 2000);
+                    const chk = setInterval(() => {
+                        if (socketScreen && socketScreen.connected) {
+                            clearInterval(chk);
+                            clearTimeout(t);
+                            resolve();
+                        }
+                    }, 100);
+                }
+            });
+
             switch (data.status) {
                 case 'vinculada':
                     mostrarPantallaTrabajo(pantallaData);
@@ -123,32 +146,10 @@ async function inicializarPantalla() {
     }
 }
 
-// =========================
-// FIX #4 — Un único punto de entrada para ambos monitoreos.
-// Limpia SIEMPRE el intervalo anterior antes de crear uno nuevo,
-// evitando que dos intervalos corran en paralelo.
-// =========================
-
 function iniciarMonitoreo(modo) {
-    if (statusCheckInterval) {
-        clearInterval(statusCheckInterval);
-        statusCheckInterval = null;
-    }
-    erroresConsecutivos = 0;
-
-    if (modo === 'vinculacion') {
-        console.log('👀 Monitoreo de vinculación (cada 3 s)');
-        statusCheckInterval = setInterval(tickVinculacion, 3000);
-    } else {
-        console.log('📡 Monitoreo de estado (cada 3 s)');
-        statusCheckInterval = setInterval(tickEstado, 3000);
-    }
+    // ── Polling eliminado: socket maneja todo en tiempo real ──
+    console.log(`✅ Modo socket activo (sin polling): ${modo}`);
 }
-
-// =========================
-// FIX #2 — tick de vinculación detecta cancelación del admin
-// El original solo manejaba 'vinculada' e ignoraba 'desvinculada'
-// =========================
 
 async function tickVinculacion() {
     try {
@@ -433,7 +434,68 @@ function formatearFechaCorta(fechaISO) {
 // =========================
 // LIMPIEZA AL CERRAR
 // =========================
+// =========================
+// WEBSOCKET — sincronización en tiempo real
+// =========================
 
-window.addEventListener('beforeunload', () => {
-    if (statusCheckInterval) clearInterval(statusCheckInterval);
-});
+let socketScreen = null;
+
+function conectarSocketScreen() {
+    socketScreen = io();
+
+    socketScreen.on('connect', () => {
+        console.log('🔌 Socket screen conectado:', socketScreen.id);
+        // Unirse a la sala 'screen' para recibir eventos de vinculación
+        socketScreen.emit('join', { room: 'screen' });
+    });
+    socketScreen.on('joined', (data) => {
+        console.log('✅ Confirmado en sala:', data.room);
+    });
+
+    socketScreen.on('disconnect', () => {
+        console.log('🔌 Socket screen desconectado');
+    });
+
+    // ── Admin vinculó esta pantalla → mostrar pantalla de trabajo ──
+    socketScreen.on('pantalla_vinculada', (data) => {
+        console.log('🎉 Evento pantalla_vinculada recibido:', data);
+
+        // Detener el polling de vinculación
+        if (statusCheckInterval) {
+            clearInterval(statusCheckInterval);
+            statusCheckInterval = null;
+        }
+        
+        // Recargar estado desde backend para obtener datos completos
+        consultarStatus().then(statusData => {
+            if (statusData && statusData.status === 'vinculada') {
+                pantallaData = statusData.pantalla;
+                mostrarPantallaTrabajo(pantallaData);
+                iniciarMonitoreo('estado');
+                console.log('✅ Pantalla de trabajo activa vía socket');
+            }
+        }).catch(() => {
+            // Fallback: recargar la página completa
+            location.reload();
+        });
+    });
+
+    // ── Recepcionista asignado → actualizar nombre en pantalla ──
+    socketScreen.on('recepcionista_asignado', (data) => {
+        console.log('👤 Recepcionista actualizado vía socket:', data);
+        if (pantallaData) {
+            pantallaData.recepcionista_nombre = data.recepcionista_nombre;
+            actualizarRecepcionista(pantallaData);
+            actualizarUltimaActualizacion();
+        }
+    });
+
+    // ── Admin desvinculó esta pantalla → volver al estado inicial ──
+    socketScreen.on('pantalla_desvinculada', (data) => {
+        console.log('🔌 Evento pantalla_desvinculada recibido:', data);
+
+        // El polling ya detecta esto, pero el socket lo hace instantáneo
+        detenerYRecargar('desvinculada', 1500);
+    });
+}
+

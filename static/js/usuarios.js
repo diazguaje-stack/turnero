@@ -609,5 +609,16 @@ function conectarSocketAdmin() {
             showToast(`✏️ Usuario actualizado: ${data.usuario.nombre_completo}`, 'success');
         }
     });
+
+// ── Eventos de pantallas (para actualizar grid en tiempo real) ──
+    socketAdmin.on('pantalla_vinculada',     () => {
+        if (typeof cargarPantallas === 'function') cargarPantallas();
+    });
+    socketAdmin.on('pantalla_desvinculada',  () => {
+        if (typeof cargarPantallas === 'function') cargarPantallas();
+    });
+    socketAdmin.on('recepcionista_asignado', () => {
+        if (typeof cargarPantallas === 'function') cargarPantallas();
+    });
 }
-conectarSocketAdmin();
+    conectarSocketAdmin();

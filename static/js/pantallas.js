@@ -31,25 +31,18 @@ let usuarioEscribiendo        = false;
 
 // ── Inicializar / limpiar ─────────────────────────────────────────────────────
 
+function iniciarMonitoreo(modo) {
+    // ── Polling eliminado: socket maneja todo en tiempo real ──
+    console.log(`✅ Modo socket activo (sin polling): ${modo}`);
+}
+
 function inicializarPantallas() {
     cargarRecepcionistas();
     cargarPantallas();
-
-    if (!pantallasInterval) {
-        pantallasInterval = setInterval(() => {
-            const section = document.getElementById('section-pantallas');
-            if (section && section.classList.contains('active') && !usuarioEscribiendo) {
-                cargarPantallas();
-            }
-        }, 5000);
-    }
+    // Polling eliminado — socket maneja actualizaciones en tiempo real
 }
 
 function limpiarIntervaloPantallas() {
-    if (pantallasInterval) {
-        clearInterval(pantallasInterval);
-        pantallasInterval = null;
-    }
 }
 
 // ── Cargar datos ──────────────────────────────────────────────────────────────
@@ -370,3 +363,110 @@ function mostrarMensajePantallas(mensaje, tipo) {
 window.mostrarModalAsignarRecepcionista  = mostrarModalAsignarRecepcionista;
 window.cerrarModalRecepcionista          = cerrarModalRecepcionista;
 window.confirmarAsignacionRecepcionista  = confirmarAsignacionRecepcionista;
+
+// ── WEBSOCKET: actualizar grid de pantallas en tiempo real ──
+// ── WEBSOCKET: actualizar grid cuando lleguen eventos de pantallas ──
+// ── WEBSOCKET propio para pantallas.js ──────────────────────────────────────
+
+let socketPantallas = null;
+
+function conectarSocketPantallas() {
+    // Reusar socketAdmin si ya existe (cargado por usuarios.js),
+    // o crear uno nuevo si pantallas.js se carga solo.
+    if (typeof socketAdmin !== 'undefined' && socketAdmin) {
+        socketPantallas = socketAdmin;
+        console.log('✅ Reutilizando socketAdmin para pantallas');
+        registrarEventosPantallas(socketPantallas);
+        return;
+    }
+
+    socketPantallas = io();
+
+    socketPantallas.on('connect', () => {
+        console.log('🔌 Socket pantallas conectado:', socketPantallas.id);
+        socketPantallas.emit('join', { room: 'admin' });
+    });
+
+    socketPantallas.on('disconnect', () => {
+        console.log('🔌 Socket pantallas desconectado');
+    });
+
+    registrarEventosPantallas(socketPantallas);
+}
+
+function registrarEventosPantallas(socket) {
+    // Asegurarse de estar en sala admin
+    if (socket.connected) {
+        socket.emit('join', { room: 'admin' });
+    } else {
+        socket.on('connect', () => socket.emit('join', { room: 'admin' }));
+    }
+
+    socket.on('pantalla_vinculada',     () => {
+        console.log('📺 pantalla_vinculada recibido → recargando grid');
+        cargarPantallas();
+    });
+    socket.on('pantalla_desvinculada',  () => {
+        console.log('📺 pantalla_desvinculada recibido → recargando grid');
+        cargarPantallas();
+    });
+    socket.on('recepcionista_asignado', () => {
+        console.log('👤 recepcionista_asignado recibido → recargando grid');
+        cargarPantallas();
+    });
+
+    socketAdmin.on('pantalla_pendiente', () => {
+        console.log('🟡 pantalla_pendiente → recargando grid');
+        cargarPantallas();
+    });
+
+
+    console.log('✅ Eventos de pantallas registrados en socket');
+}
+
+// Reemplaza el DOMContentLoaded anterior
+// ── WEBSOCKET ────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+
+    const EVENTOS = [
+        'pantalla_vinculada',
+        'pantalla_desvinculada',
+        'pantalla_pendiente',       // ← screen recargó y está esperando código
+        'recepcionista_asignado'
+    ];
+
+    function registrar(socket) {
+        // Unirse a sala admin
+        const unirse = () => socket.emit('join', { room: 'admin' });
+        if (socket.connected) unirse();
+        socket.on('connect', unirse);   // reconexiones automáticas
+
+        // Un solo handler para todos los eventos relevantes
+        EVENTOS.forEach(evento => {
+            socket.on(evento, () => {
+                console.log(`📺 Socket [${evento}] → cargarPantallas()`);
+                cargarPantallas();
+            });
+        });
+
+        console.log('✅ pantallas.js: eventos socket registrados');
+    }
+
+    // Intentar reutilizar socketAdmin (usuarios.js), si no crear uno propio
+    let intentos = 0;
+    const esperar = setInterval(() => {
+        intentos++;
+
+        if (typeof socketAdmin !== 'undefined' && socketAdmin) {
+            clearInterval(esperar);
+            registrar(socketAdmin);
+
+        } else if (intentos > 15) {
+            clearInterval(esperar);
+            console.warn('⚠️ socketAdmin no encontrado — creando socket propio');
+            const s = io();
+            registrar(s);
+        }
+    }, 200);
+});
