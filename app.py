@@ -1,3 +1,4 @@
+
 import eventlet
 eventlet.monkey_patch()
 from flask import Flask, request, jsonify, render_template, redirect
@@ -1244,20 +1245,22 @@ def on_llamar_paciente(data):
     codigo     = data.get('codigo', '')
     nombre     = data.get('nombre', '')
     paciente_id = data.get('pacienteId', '')
-
-    print(f"[WS] 📢 Llamando paciente: {codigo} — {nombre}")
+    recepcion   = data.get('recepcion', '')
+    print(f"[WS] 📢 Llamando paciente: {codigo} — {nombre} - Rececpión: {recepcion}")
 
     _ultimo_llamado = {
         'codigo':     codigo,
         'nombre':     nombre,
         'pacienteId': paciente_id,
-        }
+        'recepcion': recepcion,
+    }
 
     # Reenviar a todos los clientes en sala 'screen'
     socketio.emit('llamar_paciente', {
         'codigo':     codigo,
         'nombre':     nombre,
-        'pacienteId': paciente_id
+        'pacienteId': paciente_id,
+        'recepcion': recepcion
     }, to='screen')
 
 @socketio.on('pedir_ultimo_llamado')

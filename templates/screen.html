@@ -31,7 +31,6 @@
             position: relative;
         }
 
-        /* ── Background atmosphere ── */
         body::before {
             content: '';
             position: fixed;
@@ -44,7 +43,6 @@
             z-index: 0;
         }
 
-        /* Fine grid texture */
         body::after {
             content: '';
             position: fixed;
@@ -57,11 +55,19 @@
             z-index: 0;
         }
 
+        /* ── Top gold rule ── */
+        .top-rule {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent 0%, var(--gold) 20%, var(--gold-light) 50%, var(--gold) 80%, transparent 100%);
+            z-index: 200;
+        }
+
         /* ── Corner: recepcionista ── */
         #recepcionistaCorner {
             position: fixed;
-            top: 0;
-            left: 0;
+            top: 0; left: 0;
             z-index: 100;
             padding: 28px 36px;
             display: flex;
@@ -78,73 +84,36 @@
         }
 
         .corner-avatar {
-            width: 44px;
-            height: 44px;
+            width: 44px; height: 44px;
             border-radius: 50%;
             background: linear-gradient(135deg, var(--accent), var(--bright));
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            display: flex; align-items: center; justify-content: center;
             font-family: 'Playfair Display', serif;
-            font-size: 18px;
-            font-weight: 700;
-            color: white;
+            font-size: 18px; font-weight: 700; color: white;
             border: 2px solid rgba(79,142,247,0.4);
             box-shadow: 0 0 16px rgba(79,142,247,0.25);
             flex-shrink: 0;
         }
 
-        .corner-info {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .corner-label {
-            font-size: 10px;
-            letter-spacing: 0.2em;
-            text-transform: uppercase;
-            color: var(--bright);
-            font-weight: 500;
-        }
-
-        .corner-name {
-            font-size: 15px;
-            font-weight: 600;
-            color: var(--white);
-            letter-spacing: 0.03em;
-        }
-
-        /* ── Top gold rule ── */
-        .top-rule {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: linear-gradient(90deg, transparent 0%, var(--gold) 20%, var(--gold-light) 50%, var(--gold) 80%, transparent 100%);
-            z-index: 200;
-        }
+        .corner-info { display: flex; flex-direction: column; }
+        .corner-label { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--bright); font-weight: 500; }
+        .corner-name  { font-size: 15px; font-weight: 600; color: var(--white); letter-spacing: 0.03em; }
 
         /* ── Bottom status bar ── */
         .status-bar {
             position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
+            bottom: 0; left: 0; right: 0;
             height: 48px;
             background: rgba(5,13,26,0.85);
             backdrop-filter: blur(12px);
             border-top: 1px solid var(--white-ghost);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+            display: flex; align-items: center; justify-content: space-between;
             padding: 0 32px;
             z-index: 100;
         }
 
         .status-dot {
-            width: 8px;
-            height: 8px;
+            width: 8px; height: 8px;
             border-radius: 50%;
             background: #22c55e;
             box-shadow: 0 0 8px #22c55e;
@@ -153,23 +122,15 @@
             animation: pulse-dot 2s infinite;
         }
 
-        @keyframes pulse-dot {
-            0%, 100% { opacity: 1; }
-            50%       { opacity: 0.4; }
-        }
+        @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-        .status-text-bar {
-            font-size: 12px;
-            color: var(--white-dim);
-            letter-spacing: 0.05em;
-        }
+        .status-text-bar { font-size: 12px; color: var(--white-dim); letter-spacing: 0.05em; }
 
-        /* ── Main layout ── */
+        /* ── Main container ── */
         .container {
             position: relative;
             z-index: 10;
-            width: 100%;
-            height: 100vh;
+            width: 100%; height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -184,8 +145,7 @@
         }
 
         .spinner-ring {
-            width: 72px;
-            height: 72px;
+            width: 72px; height: 72px;
             border: 3px solid var(--white-ghost);
             border-top-color: var(--bright);
             border-radius: 50%;
@@ -195,11 +155,8 @@
         @keyframes spin { to { transform: rotate(360deg); } }
 
         .connecting-label {
-            font-size: 14px;
-            letter-spacing: 0.25em;
-            text-transform: uppercase;
-            color: var(--white-dim);
-            font-weight: 300;
+            font-size: 14px; letter-spacing: 0.25em;
+            text-transform: uppercase; color: var(--white-dim); font-weight: 300;
         }
 
         /* ─── PENDING STATE ─── */
@@ -211,12 +168,8 @@
         }
 
         .pending-header {
-            font-family: 'Barlow', sans-serif;
-            font-size: 13px;
-            letter-spacing: 0.3em;
-            text-transform: uppercase;
-            color: var(--bright);
-            font-weight: 500;
+            font-size: 13px; letter-spacing: 0.3em;
+            text-transform: uppercase; color: var(--bright); font-weight: 500;
         }
 
         .codigo-frame {
@@ -227,30 +180,20 @@
             border-radius: 4px;
         }
 
-        .codigo-frame::before,
-        .codigo-frame::after {
+        .codigo-frame::before, .codigo-frame::after {
             content: '';
             position: absolute;
-            width: 20px;
-            height: 20px;
+            width: 20px; height: 20px;
             border-color: var(--gold);
             border-style: solid;
         }
 
-        .codigo-frame::before {
-            top: -1px; left: -1px;
-            border-width: 2px 0 0 2px;
-        }
-
-        .codigo-frame::after {
-            bottom: -1px; right: -1px;
-            border-width: 0 2px 2px 0;
-        }
+        .codigo-frame::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+        .codigo-frame::after  { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
 
         #codigoVinculacion {
             font-family: 'Playfair Display', serif;
-            font-size: 88px;
-            font-weight: 900;
+            font-size: 88px; font-weight: 900;
             color: var(--gold-light);
             letter-spacing: 18px;
             text-shadow: 0 0 40px rgba(201,168,76,0.4);
@@ -258,51 +201,62 @@
         }
 
         .pending-subtitle {
-            font-size: 14px;
-            color: var(--white-dim);
-            letter-spacing: 0.05em;
-            text-align: center;
-            line-height: 1.7;
+            font-size: 14px; color: var(--white-dim);
+            letter-spacing: 0.05em; text-align: center; line-height: 1.7;
         }
 
-        /* ─── LINKED STATE ─── */
+        /* ─── LINKED STATE: SPLIT LAYOUT ─── */
         #linkedState {
             display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
             width: 100%;
             height: 100%;
-            gap: 0;
         }
 
-        /* Turno llamado — zona principal */
-        .turno-container {
+        .screen-split {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            padding-bottom: 48px; /* status bar */
+            padding-top: 3px;     /* top rule */
+        }
+
+        /* ══ LEFT PANEL — Turno actual ══ */
+        .panel-left {
+            flex: 0 0 58%;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            flex: 1;
-            width: 100%;
-            padding-bottom: 48px;
+            border-right: 1px solid var(--white-ghost);
+            position: relative;
+            padding: 60px 48px 40px;
         }
 
-        .turno-label {
-            font-size: 13px;
+        /* Vertical gold accent line */
+        .panel-left::after {
+            content: '';
+            position: absolute;
+            right: -1px; top: 15%; bottom: 15%;
+            width: 1px;
+            background: linear-gradient(to bottom, transparent, var(--gold), transparent);
+        }
+
+        .left-label {
+            font-size: 11px;
             letter-spacing: 0.35em;
             text-transform: uppercase;
             color: var(--bright);
             font-weight: 500;
-            margin-bottom: 20px;
+            margin-bottom: 28px;
             opacity: 0;
             transition: opacity 0.5s ease;
         }
 
-        .turno-label.visible { opacity: 1; }
+        .left-label.visible { opacity: 1; }
 
         .turno-codigo {
             font-family: 'Playfair Display', serif;
-            font-size: clamp(100px, 18vw, 200px);
+            font-size: clamp(80px, 14vw, 160px);
             font-weight: 900;
             color: var(--white);
             letter-spacing: 6px;
@@ -310,9 +264,9 @@
             text-shadow:
                 0 0 60px rgba(79,142,247,0.35),
                 0 20px 60px rgba(0,0,0,0.5);
-            transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
             opacity: 0;
             transform: scale(0.92);
+            transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
         }
 
         .turno-codigo.visible {
@@ -330,20 +284,17 @@
             100% { transform: scale(1); text-shadow: 0 0 60px rgba(79,142,247,0.35), 0 20px 60px rgba(0,0,0,0.5); }
         }
 
-        /* Gold divider */
         .gold-divider {
-            width: 1px;
-            height: 0;
+            width: 1px; height: 0;
             background: linear-gradient(to bottom, transparent, var(--gold), transparent);
             margin: 24px auto;
             transition: height 0.6s ease 0.2s;
         }
 
-        .gold-divider.visible { height: 80px; }
+        .gold-divider.visible { height: 60px; }
 
         .turno-nombre {
-            font-family: 'Barlow', sans-serif;
-            font-size: clamp(24px, 4vw, 52px);
+            font-size: clamp(18px, 3vw, 36px);
             font-weight: 300;
             color: var(--white-dim);
             letter-spacing: 0.15em;
@@ -352,7 +303,6 @@
             transform: translateY(10px);
             transition: all 0.5s ease 0.3s;
             text-align: center;
-            padding: 0 40px;
         }
 
         .turno-nombre.visible {
@@ -360,7 +310,7 @@
             transform: translateY(0);
         }
 
-        /* Idle state — when no patient called */
+        /* Idle state dentro del panel izquierdo */
         .idle-state {
             display: flex;
             flex-direction: column;
@@ -370,20 +320,136 @@
             transition: opacity 0.4s ease;
         }
 
-        .idle-state.hidden { opacity: 0; pointer-events: none; }
+        .idle-state.hidden { opacity: 0; pointer-events: none; position: absolute; }
 
-        .idle-icon {
-            font-size: 64px;
-            opacity: 0.15;
-        }
-
+        .idle-icon { font-size: 56px; opacity: 0.12; }
         .idle-text {
-            font-size: 16px;
-            letter-spacing: 0.2em;
-            text-transform: uppercase;
-            color: var(--white-ghost);
-            font-weight: 300;
+            font-size: 14px; letter-spacing: 0.2em;
+            text-transform: uppercase; color: var(--white-ghost); font-weight: 300;
         }
+
+        /* ══ RIGHT PANEL — Historial ══ */
+        .panel-right {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 72px 32px 32px;
+            overflow: hidden;
+        }
+
+        .history-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 28px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--white-ghost);
+            flex-shrink: 0;
+        }
+
+        .history-title {
+            font-size: 11px;
+            letter-spacing: 0.3em;
+            text-transform: uppercase;
+            color: var(--white-dim);
+            font-weight: 500;
+        }
+
+        .history-count {
+            background: var(--white-ghost);
+            border: 1px solid rgba(79,142,247,0.2);
+            border-radius: 20px;
+            padding: 2px 10px;
+            font-size: 11px;
+            color: var(--bright);
+            font-weight: 600;
+        }
+
+        .history-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding-right: 4px;
+        }
+
+        .history-list::-webkit-scrollbar { width: 3px; }
+        .history-list::-webkit-scrollbar-track { background: transparent; }
+        .history-list::-webkit-scrollbar-thumb { background: rgba(79,142,247,0.3); border-radius: 2px; }
+
+        .history-item {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px 16px;
+            background: var(--white-ghost);
+            border: 1px solid rgba(79,142,247,0.1);
+            border-radius: 4px;
+            animation: slide-in 0.4s cubic-bezier(0.23, 1, 0.32, 1) both;
+            transition: background 0.2s ease;
+        }
+
+        .history-item:hover {
+            background: rgba(240,244,255,0.08);
+        }
+
+        @keyframes slide-in {
+            from { opacity: 0; transform: translateX(20px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+
+        .history-item-num {
+            font-size: 10px;
+            color: var(--bright);
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            min-width: 24px;
+            text-align: right;
+        }
+
+        .history-item-code {
+            font-family: 'Playfair Display', serif;
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--white);
+            letter-spacing: 2px;
+            flex: 1;
+        }
+
+        .history-item-name {
+            font-size: 12px;
+            color: var(--white-dim);
+            font-weight: 300;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            text-align: right;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .history-item-time {
+            font-size: 10px;
+            color: rgba(240,244,255,0.3);
+            letter-spacing: 0.05em;
+            min-width: 44px;
+            text-align: right;
+        }
+
+        .history-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            gap: 12px;
+            opacity: 0.25;
+        }
+
+        .history-empty-icon { font-size: 36px; }
+        .history-empty-text { font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--white-dim); }
 
         /* ─── ERROR MESSAGE ─── */
         #errorMessage {
@@ -402,25 +468,19 @@
 
         #errorMessage.show { display: block; }
 
-        /* ─── UPDATE TIMESTAMP ─── */
-        #ultimaActualizacion {
-            font-size: 11px;
-            color: var(--white-dim);
-            letter-spacing: 0.05em;
-        }
+        #ultimaActualizacion { font-size: 11px; color: var(--white-dim); letter-spacing: 0.05em; }
 
-        /* ─── RESPONSIVE ─── */
         @media (max-width: 768px) {
-            #recepcionistaCorner { padding: 20px 24px; }
-            .corner-name { font-size: 13px; }
-            #codigoVinculacion { font-size: 60px; letter-spacing: 10px; }
+            .screen-split { flex-direction: column; }
+            .panel-left { flex: 0 0 55%; border-right: none; border-bottom: 1px solid var(--white-ghost); padding: 40px 24px 24px; }
+            .panel-left::after { display: none; }
+            .panel-right { padding: 20px 16px; }
         }
     </style>
 </head>
 <body>
     <div class="top-rule"></div>
 
-    <!-- Recepcionista — esquina superior izquierda -->
     <div id="recepcionistaCorner">
         <div class="corner-avatar" id="cornerAvatar">—</div>
         <div class="corner-info">
@@ -437,7 +497,7 @@
             <span class="connecting-label">Conectando</span>
         </div>
 
-        <!-- Pendiente: muestra código -->
+        <!-- Pendiente -->
         <div id="pendingState">
             <div class="pending-header">Código de vinculación</div>
             <div class="codigo-frame">
@@ -448,22 +508,39 @@
             </p>
         </div>
 
-        <!-- Vinculada: muestra turno llamado -->
+        <!-- Vinculada: layout dividido -->
         <div id="linkedState">
-            <div class="turno-container">
+            <div class="screen-split">
 
-                <!-- Sin paciente llamado -->
-                <div class="idle-state" id="idleState">
-                    <div class="idle-icon">◈</div>
-                    <div class="idle-text">Esperando llamada</div>
+                <!-- IZQUIERDA: turno actual -->
+                <div class="panel-left">
+                    <!-- Sin paciente llamado -->
+                    <div class="idle-state" id="idleState">
+                        <div class="idle-icon">◈</div>
+                        <div class="idle-text">Esperando llamada</div>
+                    </div>
+
+                    <!-- Turno activo -->
+                    <div id="turnoActivo" style="display:none; flex-direction:column; align-items:center;">
+                        <div class="left-label" id="turnoLabel">Turno llamado</div>
+                        <div class="turno-codigo" id="turnoCodigo"></div>
+                        <div class="gold-divider" id="goldDivider"></div>
+                        <div class="turno-nombre" id="turnoNombre"></div>
+                    </div>
                 </div>
 
-                <!-- Paciente siendo llamado -->
-                <div id="turnoActivo" style="display:none; flex-direction:column; align-items:center;">
-                    <div class="turno-label" id="turnoLabel">Turno llamado</div>
-                    <div class="turno-codigo" id="turnoCodigo"></div>
-                    <div class="gold-divider" id="goldDivider"></div>
-                    <div class="turno-nombre" id="turnoNombre"></div>
+                <!-- DERECHA: historial -->
+                <div class="panel-right">
+                    <div class="history-header">
+                        <span class="history-title">Llamados anteriores</span>
+                        <span class="history-count" id="historyCount">0</span>
+                    </div>
+                    <div class="history-list" id="historyList">
+                        <div class="history-empty" id="historyEmpty">
+                            <div class="history-empty-icon">◇</div>
+                            <div class="history-empty-text">Sin registros aún</div>
+                        </div>
+                    </div>
                 </div>
 
             </div>
@@ -473,7 +550,6 @@
         <div id="errorMessage"></div>
     </div>
 
-    <!-- Status bar -->
     <div class="status-bar">
         <div>
             <span class="status-dot" id="conexionDot"></span>

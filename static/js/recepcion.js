@@ -14,7 +14,7 @@ let papelera          = [];
 let codigosAnteriores = {};
 let intervaloRefresco = null;
 let socket            = null;
-
+let historialLlamados=[];
 const INTERVALO_REFRESCO_MS = 15_000;
 
 // ==================== INICIALIZACIÓN ====================
@@ -75,6 +75,32 @@ function conectarSocket() {
         cargarPacientes(); // recarga todo incluyendo nombre del médico
         mostrarToast(`👨‍⚕️ Datos de médico actualizados`, 'nuevo');
         }
+    });
+    socket.on('llamar_paciente', (data) => {
+    // Guardar en historial local
+        historialLlamados.unshift({
+            codigo: data.codigo,
+            nombre: data.nombre,
+            hora:   new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        });
+
+        // Limitar a 100 entradas
+        if (historialLlamados.length > 100) historialLlamados = historialLlamados.slice(0, 100);
+
+        // Actualizar badge del botón historial
+        const badgeEl = document.getElementById('historialBadge');
+        if (badgeEl) {
+            badgeEl.textContent = historialLlamados.length;
+            badgeEl.style.display = 'inline-block';
+        }
+
+        // Si el modal está abierto, actualizar en tiempo real
+        const modal = document.getElementById('historialModal');
+        if (modal && modal.style.display === 'flex') {
+            renderizarHistorialModal();
+        }
+
+        console.log(`📋 Llamado registrado en historial: ${data.codigo} — ${data.nombre}`);
     });
 
 }
@@ -371,22 +397,21 @@ function toggleAcciones(pacienteId, medicoId) {
 }
 
 
-function llamarPaciente(pacienteId, codigo, nombre) {
+function llamarPaciente(pacienteId, codigo, nombre, numeroPantalla) {
     mostrarToast(`📢 Llamando: ${codigo} — ${nombre}`, 'nuevo');
 
-    // Emitir al backend → backend reenvía a sala 'screen'
     if (socket && socket.connected) {
         socket.emit('llamar_paciente', {
             pacienteId: pacienteId,
             codigo:     codigo,
-            nombre:     nombre
+            nombre:     nombre,
+            recepcion:  numeroPantalla || obtenerNumeroRecepcionActual()
         });
-        console.log(`📢 Emitido llamar_paciente: ${codigo} — ${nombre}`);
+        console.log(`📢 Emitido llamar_paciente: ${codigo} — ${nombre} — Recepción: ${numeroPantalla}`);
     } else {
         console.warn('⚠️ Socket no conectado — llamada no enviada a pantalla');
     }
 
-    // Resaltar chip visualmente
     const chip = document.getElementById(`paciente-row-${pacienteId}`);
     if (chip) {
         chip.style.borderColor = '#4f8ef7';
@@ -397,6 +422,24 @@ function llamarPaciente(pacienteId, codigo, nombre) {
         }, 4000);
     }
 }
+
+function obtenerNumeroRecepcionActual() {
+    // Opción A: leer de una variable global que hayas seteado al cargar la página
+    if (window._numeroPantallaRecepcion) {
+        return window._numeroPantallaRecepcion;
+    }
+
+    // Opción B: leer del nombre de usuario en el header
+    const userNameEl = document.getElementById('userName');
+    if (userNameEl) {
+        const match = userNameEl.textContent.match(/\d+/);
+        if (match) return match[0];
+    }
+
+    // Fallback: sin número de recepción
+    return null;
+}
+
 // ==================== PAPELERA ====================
 
 function retirarPaciente(pacienteId, medicoId) {
@@ -570,4 +613,70 @@ function mostrarEmptyState(containerId, mensaje) {
     const container = document.getElementById(containerId);
     if (container) container.innerHTML = `
         <div class="empty-state"><h3>😕 Sin datos</h3><p>${mensaje}</p></div>`;
+}
+
+function abrirHistorialLlamados() {
+    const modal = document.getElementById('historialModal');
+    if (!modal) return;
+    renderizarHistorialModal();
+    modal.style.display = 'flex';
+}
+
+function cerrarHistorialLlamados() {
+    const modal = document.getElementById('historialModal');
+    if (modal) modal.style.display = 'none';
+}
+
+function renderizarHistorialModal() {
+    const body = document.getElementById('historialBody');
+    if (!body) return;
+
+    if (!historialLlamados.length) {
+        body.innerHTML = `
+            <div style="text-align:center; padding:48px 0; opacity:0.5;">
+                <div style="font-size:40px; margin-bottom:12px;">◇</div>
+                <p style="font-size:14px; letter-spacing:0.1em; color:#888;">Aún no se han llamado pacientes</p>
+            </div>`;
+        return;
+    }
+
+    body.innerHTML = historialLlamados.map((item, idx) => `
+        <div class="historial-item" style="
+            display:flex; align-items:center; gap:16px;
+            padding:14px 20px;
+            background: ${idx === 0 ? 'rgba(79,142,247,0.08)' : 'rgba(255,255,255,0.03)'};
+            border: 1px solid ${idx === 0 ? 'rgba(79,142,247,0.25)' : 'rgba(255,255,255,0.07)'};
+            border-radius:6px;
+            margin-bottom:8px;
+            animation: fadeInItem 0.3s ease both;
+            animation-delay: ${idx * 0.03}s;
+        ">
+            <span style="
+                font-size:11px; color:#4f8ef7; font-weight:600;
+                min-width:28px; text-align:center;
+                background:rgba(79,142,247,0.1); padding:3px 6px; border-radius:20px;
+            ">${historialLlamados.length - idx}</span>
+            <span style="
+                font-family:'Georgia', serif;
+                font-size:22px; font-weight:700;
+                color:#f0f4ff; letter-spacing:2px; flex:1;
+            ">${item.codigo}</span>
+            <span style="
+                font-size:13px; color:rgba(240,244,255,0.55);
+                max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+            ">${item.nombre || '—'}</span>
+            <span style="
+                font-size:11px; color:rgba(240,244,255,0.3);
+                min-width:52px; text-align:right; font-variant-numeric:tabular-nums;
+            ">${item.hora}</span>
+        </div>
+    `).join('');
+}
+
+function limpiarHistorialLlamados() {
+    if (!confirm('¿Limpiar todo el historial de llamados?')) return;
+    historialLlamados = [];
+    const badgeEl = document.getElementById('historialBadge');
+    if (badgeEl) { badgeEl.textContent = '0'; badgeEl.style.display = 'none'; }
+    renderizarHistorialModal();
 }
