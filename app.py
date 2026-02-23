@@ -1,3 +1,5 @@
+import eventlet
+eventlet.monkey_patch()
 from flask import Flask, request, jsonify, render_template, redirect
 from flask_cors import CORS
 from datetime import datetime, timedelta, timezone
