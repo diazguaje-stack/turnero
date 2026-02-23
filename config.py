@@ -4,74 +4,62 @@ import os
 from urllib.parse import quote_plus
 from cryptography.fernet import Fernet
 
+
 class Config:
     """Configuración base"""
-    
-    # Secret Key para Flask
+
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'tu_clave_secreta_muy_segura_12345'
-    
-    # Clave de encriptación Fernet para contraseñas
-    # Genera una nueva clave con: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
     PASSWORD_ENCRYPTION_KEY = os.environ.get('PASSWORD_ENCRYPTION_KEY') or b'qa1mRq-ejpFmdh7iyIhxaVksNxiCJg1bdgjijfCzIyo='
-    
-    # Configuración de SQLAlchemy
+
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO = False
-    
-    # Pool de conexiones
+
+    # Pool de conexiones — sobreescrito por cada subclase
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 10,
-        'pool_recycle': 3600,
-        'pool_pre_ping': True,
-        'max_overflow': 20
+        'pool_pre_ping': True,   # verifica conexión antes de usarla
+        'pool_recycle':  1800,   # recicla conexiones cada 30 min
     }
 
 
 class DevelopmentConfig(Config):
-    """Configuración para desarrollo local - Usa SQLite"""
+    """Desarrollo local — SQLite"""
     DEBUG = True
-    FLASK_ENV = 'development'
-    
-    # Base de datos SQLite local (sin dependencias externas)
+
     DB_PATH = os.path.join(os.path.dirname(__file__), 'turnero_medico.db')
     SQLALCHEMY_DATABASE_URI = f'sqlite:///{DB_PATH}'
-    
-    # SQLite no necesita pool config complejo
+
     SQLALCHEMY_ENGINE_OPTIONS = {
         'connect_args': {'check_same_thread': False}
     }
 
 
 class ProductionConfig(Config):
-    """Configuración para producción (Render) - Usa PostgreSQL"""
+    """Producción (Render) — PostgreSQL"""
     DEBUG = False
-    FLASK_ENV = 'production'
-    
-    # En producción, usar DATABASE_URL de Render
-    DATABASE_URL = os.environ.get('DATABASE_URL')
-    
-    if DATABASE_URL:
-        # Render a veces usa postgres://, SQLAlchemy espera postgresql://
-        if DATABASE_URL.startswith('postgres://'):
-            DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-        SQLALCHEMY_DATABASE_URI = DATABASE_URL
-    else:
-        # Fallback a PostgreSQL local si no hay DATABASE_URL
-        DB_USER = os.environ.get('DB_USER', 'postgres')
-        DB_PASSWORD = os.environ.get('DB_PASSWORD', 'tu_contraseña')
-        DB_HOST = os.environ.get('DB_HOST', 'localhost')
-        DB_PORT = os.environ.get('DB_PORT', '5432')
-        DB_NAME = os.environ.get('DB_NAME', 'turnero_medico')
-        
-        SQLALCHEMY_DATABASE_URI = (
-            f"postgresql://{DB_USER}:{quote_plus(DB_PASSWORD)}"
-            f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-        )
+
+    # ── Leer y normalizar DATABASE_URL ──────────────────────
+    # Render inyecta "postgres://" pero SQLAlchemy 1.4+ necesita "postgresql://"
+    _db_url = os.environ.get('DATABASE_URL', '')
+    if _db_url.startswith('postgres://'):
+        _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
+
+    SQLALCHEMY_DATABASE_URI = _db_url or 'sqlite:///fallback.db'
+
+    # ── Pool ajustado para Render Free (máx ~25 conexiones) ─
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_size':     3,      # conexiones base
+        'max_overflow':  7,      # conexiones extra temporales (total máx = 10)
+        'pool_timeout':  30,     # segundos esperando una conexión libre
+        'pool_recycle':  1800,   # recicla conexiones cada 30 min
+        'pool_pre_ping': True,   # descarta conexiones muertas automáticamente
+    }
 
 
-# Diccionario de configuraciones
+# ── DEFAULT apunta a Production, no a Development ───────────
+# Así si FLASK_ENV no llega por alguna razón, usa PostgreSQL igual
 config = {
     'development': DevelopmentConfig,
-    'production': ProductionConfig,
-    'default': DevelopmentConfig
+    'production':  ProductionConfig,
+    'default':     ProductionConfig,   # ← era DevelopmentConfig, ese era el bug
 }
