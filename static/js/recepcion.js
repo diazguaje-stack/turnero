@@ -49,6 +49,10 @@ function conectarSocket() {
         console.log('✅ Unido a sala:', data.room);
     });
 
+    socket.on('llamar_confirmado', (data) => {
+        console.log('✅ Pantalla recibió llamada:', data.codigo);
+    });
+    
     socket.on('disconnect', () => {
         console.log('🔌 Socket desconectado — usando fallback de 15s');
     });
@@ -366,20 +370,27 @@ function toggleAcciones(pacienteId, medicoId) {
     accionesEl.closest('.paciente-chip')?.classList.toggle('chip-activo', !estaAbierto);
 }
 
-// ── Llamar paciente ────────────────────────────────────────
+
 function llamarPaciente(pacienteId, codigo, nombre) {
     mostrarToast(`📢 Llamando: ${codigo} — ${nombre}`, 'nuevo');
 
-    // Emitir por socket para que la pantalla lo muestre
-    if (socket) {
-        socket.emit('llamar_paciente', { pacienteId, codigo, nombre });
+    // Emitir al backend → backend reenvía a sala 'screen'
+    if (socket && socket.connected) {
+        socket.emit('llamar_paciente', {
+            pacienteId: pacienteId,
+            codigo:     codigo,
+            nombre:     nombre
+        });
+        console.log(`📢 Emitido llamar_paciente: ${codigo} — ${nombre}`);
+    } else {
+        console.warn('⚠️ Socket no conectado — llamada no enviada a pantalla');
     }
 
     // Resaltar chip visualmente
     const chip = document.getElementById(`paciente-row-${pacienteId}`);
     if (chip) {
-        chip.style.borderColor = '#1565c0';
-        chip.style.background  = '#e3f2fd';
+        chip.style.borderColor = '#4f8ef7';
+        chip.style.background  = 'rgba(79,142,247,0.08)';
         setTimeout(() => {
             chip.style.borderColor = '';
             chip.style.background  = '';

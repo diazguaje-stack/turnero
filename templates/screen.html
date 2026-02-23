@@ -4,195 +4,487 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pantalla de Turnos</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --navy:        #050d1a;
+            --deep:        #091428;
+            --mid:         #0d2347;
+            --royal:       #1a3a6b;
+            --accent:      #2563b8;
+            --bright:      #4f8ef7;
+            --gold:        #c9a84c;
+            --gold-light:  #f0d080;
+            --white:       #f0f4ff;
+            --white-dim:   rgba(240,244,255,0.55);
+            --white-ghost: rgba(240,244,255,0.12);
         }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Barlow', sans-serif;
+            background: var(--navy);
             min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            overflow: hidden;
+            position: relative;
         }
 
+        /* ── Background atmosphere ── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 80% 60% at 20% 80%, rgba(26,58,107,0.55) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 50% at 80% 20%, rgba(37,99,184,0.3) 0%, transparent 55%),
+                radial-gradient(ellipse 40% 40% at 50% 50%, rgba(9,20,40,0.8) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* Fine grid texture */
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(79,142,247,0.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(79,142,247,0.04) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ── Corner: recepcionista ── */
+        #recepcionistaCorner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 100;
+            padding: 28px 36px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            opacity: 0;
+            transform: translateY(-8px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+
+        #recepcionistaCorner.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .corner-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent), var(--bright));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Playfair Display', serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: white;
+            border: 2px solid rgba(79,142,247,0.4);
+            box-shadow: 0 0 16px rgba(79,142,247,0.25);
+            flex-shrink: 0;
+        }
+
+        .corner-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .corner-label {
+            font-size: 10px;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--bright);
+            font-weight: 500;
+        }
+
+        .corner-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--white);
+            letter-spacing: 0.03em;
+        }
+
+        /* ── Top gold rule ── */
+        .top-rule {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent 0%, var(--gold) 20%, var(--gold-light) 50%, var(--gold) 80%, transparent 100%);
+            z-index: 200;
+        }
+
+        /* ── Bottom status bar ── */
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 48px;
+            background: rgba(5,13,26,0.85);
+            backdrop-filter: blur(12px);
+            border-top: 1px solid var(--white-ghost);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            z-index: 100;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #22c55e;
+            box-shadow: 0 0 8px #22c55e;
+            display: inline-block;
+            margin-right: 8px;
+            animation: pulse-dot 2s infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.4; }
+        }
+
+        .status-text-bar {
+            font-size: 12px;
+            color: var(--white-dim);
+            letter-spacing: 0.05em;
+        }
+
+        /* ── Main layout ── */
         .container {
-            text-align: center;
+            position: relative;
+            z-index: 10;
             width: 100%;
             height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 20px;
-            flex-direction: column;
         }
 
-        #linkedState {
+        /* ─── CONNECTING STATE ─── */
+        #connectingState {
             display: flex;
             flex-direction: column;
-            justify-content: center;
             align-items: center;
-            width: 100%;
-            height: 100%;
+            gap: 32px;
         }
 
-        .pantalla-nombre {
-            font-size: 120px;
-            font-weight: bold;
-            color: white;
-            text-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            letter-spacing: 10px;
-            margin-bottom: 30px;
-        }
-
-        .recepcionista-nombre {
-            font-size: 60px;
-            font-weight: 600;
-            color: rgba(255, 255, 255, 0.9);
-            text-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-        }
-
-        .recepcionista-label {
-            font-size: 24px;
-            color: rgba(255, 255, 255, 0.7);
-            margin-bottom: 10px;
-        }
-
-        .loading {
-            display: inline-block;
-            width: 80px;
-            height: 80px;
-            border: 8px solid rgba(255, 255, 255, 0.3);
+        .spinner-ring {
+            width: 72px;
+            height: 72px;
+            border: 3px solid var(--white-ghost);
+            border-top-color: var(--bright);
             border-radius: 50%;
-            border-top-color: white;
-            animation: spin 1.5s linear infinite;
+            animation: spin 1.4s linear infinite;
         }
 
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .connecting-label {
+            font-size: 14px;
+            letter-spacing: 0.25em;
+            text-transform: uppercase;
+            color: var(--white-dim);
+            font-weight: 300;
         }
 
-        .status-text {
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 24px;
-            margin-top: 20px;
-        }
-
-        @media (max-width: 768px) {
-            .pantalla-nombre {
-                font-size: 80px;
-                letter-spacing: 5px;
-            }
-
-            .recepcionista-nombre {
-                font-size: 40px;
-            }
-
-            .recepcionista-label {
-                font-size: 18px;
-            }
-
-            .status-text {
-                font-size: 18px;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .pantalla-nombre {
-                font-size: 60px;
-                letter-spacing: 3px;
-            }
-
-            .recepcionista-nombre {
-                font-size: 30px;
-            }
-
-            .recepcionista-label {
-                font-size: 14px;
-            }
-
-            .status-text {
-                font-size: 14px;
-            }
-        }
-
-        .error-message {
-            background-color: rgba(255, 0, 0, 0.8);
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            font-size: 18px;
+        /* ─── PENDING STATE ─── */
+        #pendingState {
             display: none;
-            max-width: 800px;
-            margin: 20px auto;
-        }
-
-        .error-message.show {
-            display: block;
-        }
-
-        .pending-state {
-            display: flex;
             flex-direction: column;
-            justify-content: center;
             align-items: center;
+            gap: 48px;
+        }
+
+        .pending-header {
+            font-family: 'Barlow', sans-serif;
+            font-size: 13px;
+            letter-spacing: 0.3em;
+            text-transform: uppercase;
+            color: var(--bright);
+            font-weight: 500;
+        }
+
+        .codigo-frame {
+            position: relative;
+            padding: 40px 64px;
+            background: var(--white-ghost);
+            border: 1px solid rgba(79,142,247,0.25);
+            border-radius: 4px;
+        }
+
+        .codigo-frame::before,
+        .codigo-frame::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-color: var(--gold);
+            border-style: solid;
+        }
+
+        .codigo-frame::before {
+            top: -1px; left: -1px;
+            border-width: 2px 0 0 2px;
+        }
+
+        .codigo-frame::after {
+            bottom: -1px; right: -1px;
+            border-width: 0 2px 2px 0;
+        }
+
+        #codigoVinculacion {
+            font-family: 'Playfair Display', serif;
+            font-size: 88px;
+            font-weight: 900;
+            color: var(--gold-light);
+            letter-spacing: 18px;
+            text-shadow: 0 0 40px rgba(201,168,76,0.4);
+            line-height: 1;
+        }
+
+        .pending-subtitle {
+            font-size: 14px;
+            color: var(--white-dim);
+            letter-spacing: 0.05em;
+            text-align: center;
+            line-height: 1.7;
+        }
+
+        /* ─── LINKED STATE ─── */
+        #linkedState {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             width: 100%;
             height: 100%;
-            gap: 40px;
+            gap: 0;
         }
 
-        .pending-label {
-            font-size: 36px;
-            color: rgba(255, 255, 255, 0.9);
-            font-weight: 600;
+        /* Turno llamado — zona principal */
+        .turno-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            width: 100%;
+            padding-bottom: 48px;
         }
 
-        .codigo-vinculacion {
-            font-size: 80px;
-            font-weight: bold;
-            color: #FFD700;
-            letter-spacing: 20px;
-            font-family: 'Courier New', monospace;
-            text-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        .turno-label {
+            font-size: 13px;
+            letter-spacing: 0.35em;
+            text-transform: uppercase;
+            color: var(--bright);
+            font-weight: 500;
+            margin-bottom: 20px;
+            opacity: 0;
+            transition: opacity 0.5s ease;
         }
 
-        .codigo-label {
-            font-size: 24px;
-            color: rgba(255, 255, 255, 0.7);
-            margin-top: 20px;
+        .turno-label.visible { opacity: 1; }
+
+        .turno-codigo {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(100px, 18vw, 200px);
+            font-weight: 900;
+            color: var(--white);
+            letter-spacing: 6px;
+            line-height: 0.9;
+            text-shadow:
+                0 0 60px rgba(79,142,247,0.35),
+                0 20px 60px rgba(0,0,0,0.5);
+            transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+            opacity: 0;
+            transform: scale(0.92);
+        }
+
+        .turno-codigo.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .turno-codigo.llamando {
+            animation: llamar-pulse 0.8s ease-out;
+        }
+
+        @keyframes llamar-pulse {
+            0%   { transform: scale(1); text-shadow: 0 0 60px rgba(79,142,247,0.35), 0 20px 60px rgba(0,0,0,0.5); }
+            40%  { transform: scale(1.06); text-shadow: 0 0 100px rgba(79,142,247,0.8), 0 0 60px rgba(201,168,76,0.4); }
+            100% { transform: scale(1); text-shadow: 0 0 60px rgba(79,142,247,0.35), 0 20px 60px rgba(0,0,0,0.5); }
+        }
+
+        /* Gold divider */
+        .gold-divider {
+            width: 1px;
+            height: 0;
+            background: linear-gradient(to bottom, transparent, var(--gold), transparent);
+            margin: 24px auto;
+            transition: height 0.6s ease 0.2s;
+        }
+
+        .gold-divider.visible { height: 80px; }
+
+        .turno-nombre {
+            font-family: 'Barlow', sans-serif;
+            font-size: clamp(24px, 4vw, 52px);
+            font-weight: 300;
+            color: var(--white-dim);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.5s ease 0.3s;
+            text-align: center;
+            padding: 0 40px;
+        }
+
+        .turno-nombre.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Idle state — when no patient called */
+        .idle-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            opacity: 1;
+            transition: opacity 0.4s ease;
+        }
+
+        .idle-state.hidden { opacity: 0; pointer-events: none; }
+
+        .idle-icon {
+            font-size: 64px;
+            opacity: 0.15;
+        }
+
+        .idle-text {
+            font-size: 16px;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--white-ghost);
+            font-weight: 300;
+        }
+
+        /* ─── ERROR MESSAGE ─── */
+        #errorMessage {
+            background: rgba(180,30,30,0.15);
+            border: 1px solid rgba(220,60,60,0.4);
+            color: var(--white);
+            padding: 28px 40px;
+            border-radius: 4px;
+            font-size: 16px;
+            display: none;
+            max-width: 600px;
+            text-align: center;
+            line-height: 1.7;
+            backdrop-filter: blur(12px);
+        }
+
+        #errorMessage.show { display: block; }
+
+        /* ─── UPDATE TIMESTAMP ─── */
+        #ultimaActualizacion {
+            font-size: 11px;
+            color: var(--white-dim);
+            letter-spacing: 0.05em;
+        }
+
+        /* ─── RESPONSIVE ─── */
+        @media (max-width: 768px) {
+            #recepcionistaCorner { padding: 20px 24px; }
+            .corner-name { font-size: 13px; }
+            #codigoVinculacion { font-size: 60px; letter-spacing: 10px; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Estado: Conectando -->
-        <div id="connectingState">
-            <div class="loading"></div>
-            <p class="status-text">Conectando...</p>
-        </div>
+    <div class="top-rule"></div>
 
-        <!-- Estado: Pendiente de Vinculación (muestra código) -->
-        <div id="pendingState" class="pending-state" style="display: none;">
-            <div class="pending-label">Código de Vinculación</div>
-            <div class="codigo-vinculacion" id="codigoVinculacion">------</div>
-            <div class="codigo-label">Ingresa este código en la pantalla del administrador</div>
+    <!-- Recepcionista — esquina superior izquierda -->
+    <div id="recepcionistaCorner">
+        <div class="corner-avatar" id="cornerAvatar">—</div>
+        <div class="corner-info">
+            <span class="corner-label">Recepción</span>
+            <span class="corner-name" id="cornerName">Sin asignar</span>
         </div>
-
-        <!-- Estado: Pantalla Vinculada (muestra solo nombre del recepcionista) -->
-        <div id="linkedState" style="display: none;">
-            <div class="recepcionista-nombre" id="recepcionistaName">-</div>
-        </div>
-
-        <!-- Estado: Error -->
-        <div id="errorMessage" class="error-message"></div>
     </div>
-    <!-- DEBE estar antes de cualquier script que use io() -->
+
+    <div class="container">
+
+        <!-- Conectando -->
+        <div id="connectingState">
+            <div class="spinner-ring"></div>
+            <span class="connecting-label">Conectando</span>
+        </div>
+
+        <!-- Pendiente: muestra código -->
+        <div id="pendingState">
+            <div class="pending-header">Código de vinculación</div>
+            <div class="codigo-frame">
+                <div id="codigoVinculacion">——————</div>
+            </div>
+            <p class="pending-subtitle">
+                Ingresa este código en el<br>panel de administrador
+            </p>
+        </div>
+
+        <!-- Vinculada: muestra turno llamado -->
+        <div id="linkedState">
+            <div class="turno-container">
+
+                <!-- Sin paciente llamado -->
+                <div class="idle-state" id="idleState">
+                    <div class="idle-icon">◈</div>
+                    <div class="idle-text">Esperando llamada</div>
+                </div>
+
+                <!-- Paciente siendo llamado -->
+                <div id="turnoActivo" style="display:none; flex-direction:column; align-items:center;">
+                    <div class="turno-label" id="turnoLabel">Turno llamado</div>
+                    <div class="turno-codigo" id="turnoCodigo"></div>
+                    <div class="gold-divider" id="goldDivider"></div>
+                    <div class="turno-nombre" id="turnoNombre"></div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Error -->
+        <div id="errorMessage"></div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+        <div>
+            <span class="status-dot" id="conexionDot"></span>
+            <span class="status-text-bar">Sistema de Turnos</span>
+        </div>
+        <div id="ultimaActualizacion" class="status-text-bar">—</div>
+    </div>
+
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <script src="{{ url_for('static', filename='js/screen.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/screen_vinculacion.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/screen_turnos.js') }}"></script>
     <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
 </body>
 </html>

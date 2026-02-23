@@ -1220,6 +1220,22 @@ def on_join(data):
     print(f"[WS] Cliente {request.sid} entró a sala: {room}")
     emit('joined', {'room': room, 'status': 'ok'})
 
+@socketio.on('llamar_paciente')
+def on_llamar_paciente(data):
+    codigo     = data.get('codigo', '')
+    nombre     = data.get('nombre', '')
+    paciente_id = data.get('pacienteId', '')
+
+    print(f"[WS] 📢 Llamando paciente: {codigo} — {nombre}")
+
+    # Reenviar a todos los clientes en sala 'screen'
+    socketio.emit('llamar_paciente', {
+        'codigo':     codigo,
+        'nombre':     nombre,
+        'pacienteId': paciente_id
+    }, to='screen')
+
+
 
 if __name__ == '__main__':
     port  = int(os.environ.get('PORT', 5000))
