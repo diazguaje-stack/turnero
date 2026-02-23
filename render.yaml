@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────
+# render.yaml — Despliegue automático en Render
+# Commit este archivo en la raíz del repositorio
+# Render lo detecta y configura todo automáticamente
+# ─────────────────────────────────────────
+
+services:
+  - type: web
+    name: turnero-medico
+    runtime: docker          # ← usa tu Dockerfile, no el autodetector de Render
+    dockerfilePath: ./Dockerfile
+    region: oregon           # cambiá a "frankfurt" si tu audiencia es Europa/Latam
+    plan: free               # cambiá a "starter" o superior en producción real
+
+    # Variables de entorno en Render
+    # Las sensibles (JWT_SECRET, PASSWORD_ENCRYPTION_KEY) se cargan
+    # desde el dashboard de Render → Environment → Secret Files
+    envVars:
+      - key: FLASK_ENV
+        value: production
+
+      - key: PORT
+        value: 5000
+
+      - key: DATABASE_URL
+        # Render inyecta esta variable automáticamente si vinculás
+        # una PostgreSQL DB al servicio desde el dashboard
+        fromDatabase:
+          name: turnero-db
+          property: connectionString
+
+      - key: JWT_SECRET
+        generateValue: true    # Render genera un valor aleatorio seguro
+
+      - key: PASSWORD_ENCRYPTION_KEY
+        sync: false            # Marcada como "secret" — la cargás manualmente en el dashboard
+
+    # Healthcheck para que Render sepa cuándo el servicio está listo
+    healthCheckPath: /health
+
+# Base de datos PostgreSQL gestionada por Render
+databases:
+  - name: turnero-db
+    databaseName: turnero
+    user: turnero_user
+    region: oregon            # debe coincidir con la región del servicio web
+    plan: free

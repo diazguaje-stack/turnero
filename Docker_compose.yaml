@@ -1,0 +1,58 @@
+# ─────────────────────────────────────────
+# docker-compose.yml — Desarrollo local
+# Levanta la app Flask + una DB PostgreSQL local
+# USO: docker-compose up --build
+# ─────────────────────────────────────────
+
+version: '3.9'
+
+services:
+
+  db:
+    image: postgres:15-alpine
+    container_name: turnero_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       turnero
+      POSTGRES_USER:     turnero_user
+      POSTGRES_PASSWORD: turnero_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U turnero_user -d turnero"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: turnero_web
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_ENV:                  development
+      PORT:                       5000
+      DATABASE_URL:               postgresql://turnero_user:turnero_pass@db:5432/turnero
+      JWT_SECRET:                 jwt-secret-dev-cambiar-en-produccion
+      PASSWORD_ENCRYPTION_KEY:    ${PASSWORD_ENCRYPTION_KEY}
+    volumes:
+      # Montar código fuente para hot-reload en desarrollo
+      - .:/app
+    command: >
+      gunicorn
+      --worker-class eventlet
+      --workers 1
+      --bind 0.0.0.0:5000
+      --timeout 120
+      --reload
+      --log-level debug
+      app:app
+
+volumes:
+  postgres_data:
