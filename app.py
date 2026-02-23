@@ -366,11 +366,6 @@ def get_users_inactivos():
         return jsonify({'success': False, 'message': 'Error al obtener usuarios inactivos'}), 500
 
 
-@app.route('/reset-db-temporal')
-def reset_db():
-    db.drop_all()
-    db.create_all()
-    return "BD limpiada!"
 
 @app.route('/api/users/<user_id>', methods=['DELETE'])
 @rol_requerido('admin')
