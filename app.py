@@ -23,7 +23,7 @@ JWT_EXPIRATION_HOURS = 8  # Token expira en 8 horas
 
 init_db(app)
 CORS(app, supports_credentials=True, origins=['*'])
-socketio=SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio=SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 _ultimo_llamado=None
 # ===================================
 # HELPERS JWT
@@ -615,7 +615,7 @@ def asignar_recepcionista(pantalla_id):
     try:
         data             = request.get_json()
         recepcionista_id = data.get('recepcionista_id')
-        pantalla         = Pantalla.query.get(pantalla_id)
+        pantalla         = db.session.get(Pantalla, pantalla_id)
 
         if not pantalla:
             return jsonify({'success': False, 'message': 'Pantalla no encontrada'}), 404
@@ -625,7 +625,7 @@ def asignar_recepcionista(pantalla_id):
             db.session.commit()
             return jsonify({'success': True, 'message': 'Recepcionista desasignado', 'pantalla': pantalla.to_dict()}), 200
 
-        recepcionista = Usuario.query.get(recepcionista_id)
+        recepcionista = db.session.get(Usuario, recepcionista_id)
         if not recepcionista:
             return jsonify({'success': False, 'message': 'Recepcionista no encontrado'}), 404
         if recepcionista.rol != 'recepcion':
@@ -1073,7 +1073,7 @@ def buscar_paciente_codigo(codigo):
         turno = Turno.query.filter_by(codigo_turno=codigo).first()
 
         if turno:
-            paciente = Paciente.query.get(turno.paciente_id)
+            paciente = db.session.get(Paciente, turno.paciente_id)
         else:
             # Intentar buscar por código de paciente
             paciente = Paciente.query.filter_by(codigo_paciente=codigo).first()
