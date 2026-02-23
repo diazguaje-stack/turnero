@@ -1,7 +1,7 @@
 // ============================================================
 // screen_turnos.js
 // Responsabilidad: comunicación con recepcion.js
-// Maneja: evento 'llamar_paciente', animaciones de turno
+// Maneja: evento 'llamar_paciente', animaciones de turno, persistencia local
 //
 // DISEÑO:
 // - NO crea su propio socket
@@ -9,6 +9,35 @@
 //   de screen_vinculacion.js SOLO cuando ya está en sala 'screen'
 //   (después de recibir el evento 'joined' del backend)
 // ============================================================
+
+// =========================
+// PERSISTENCIA LOCAL
+// Definidas primero para que estén disponibles en todo el archivo
+// =========================
+
+const STORAGE_KEY = 'screen_ultimo_llamado';
+
+function guardarUltimoLlamado(codigo, nombre) {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ codigo, nombre }));
+        console.log('[TUR] 💾 Guardado en localStorage:', codigo, nombre);
+    } catch (e) {
+        console.warn('[TUR] ⚠️ No se pudo guardar en localStorage:', e);
+    }
+}
+
+function recuperarUltimoLlamado() {
+    try {
+        const data = localStorage.getItem(STORAGE_KEY);
+        return data ? JSON.parse(data) : null;
+    } catch {
+        return null;
+    }
+}
+
+// =========================
+// INIT
+// =========================
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[TUR] Iniciando módulo de turnos...');
@@ -37,36 +66,43 @@ function esperarSocketYRegistrar() {
 
 function registrarListeners(socket) {
 
-    // ── Evento principal: recepción llama a un paciente ──
     socket.on('llamar_paciente', (data) => {
-        console.log('[TUR] 📢 llamar_paciente recibido:', data);
-
+        guardarUltimoLlamado(data.codigo, data.nombre);
         const linkedState   = document.getElementById('linkedState');
         const estaVinculada = linkedState && linkedState.style.display !== 'none';
-
         if (estaVinculada) {
             mostrarTurnoLlamado(data.codigo, data.nombre);
         } else {
-            // Pantalla aún en pendiente/conectando — guardar para después
-            console.log('[TUR] Pantalla no activa aún, buffereando llamada...');
             window._llamadaPendiente = data;
         }
     });
 
-    // ── Procesar llamada buffereada cuando linkedState se active ──
-    const linkedState = document.getElementById('linkedState');
-    if (linkedState) {
-        new MutationObserver(() => {
-            if (window._llamadaPendiente && linkedState.style.display !== 'none') {
-                const p = window._llamadaPendiente;
-                window._llamadaPendiente = null;
-                console.log('[TUR] Procesando llamada buffereada:', p.codigo);
-                mostrarTurnoLlamado(p.codigo, p.nombre);
-            }
-        }).observe(linkedState, { attributes: true, attributeFilter: ['style'] });
-    }
-}
+    // ← AGREGAR ESTO: pedir al servidor al conectar
+    socket.emit('pedir_ultimo_llamado');
 
+    const linkedState = document.getElementById('linkedState');
+    if (!linkedState) return;
+
+    function intentarRestaurar() {
+        if (linkedState.style.display === 'none') return;
+        if (window._llamadaPendiente) {
+            const p = window._llamadaPendiente;
+            window._llamadaPendiente = null;
+            mostrarTurnoLlamado(p.codigo, p.nombre);
+            return;
+        }
+        const guardado = recuperarUltimoLlamado();
+        if (guardado) {
+            mostrarTurnoLlamado(guardado.codigo, guardado.nombre);
+        }
+    }
+
+    new MutationObserver(intentarRestaurar)
+        .observe(linkedState, { attributes: true, attributeFilter: ['style'] });
+
+    setTimeout(intentarRestaurar, 200);
+}
+ 
 // =========================
 // MOSTRAR TURNO LLAMADO
 // =========================

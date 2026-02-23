@@ -24,7 +24,7 @@ JWT_EXPIRATION_HOURS = 8  # Token expira en 8 horas
 init_db(app)
 CORS(app, supports_credentials=True, origins=['*'])
 socketio=SocketIO(app, cors_allowed_origins="*", async_mode='threading')
-
+_ultimo_llamado=None
 # ===================================
 # HELPERS JWT
 # ===================================
@@ -1222,11 +1222,19 @@ def on_join(data):
 
 @socketio.on('llamar_paciente')
 def on_llamar_paciente(data):
+    global _ultimo_llamado
+
     codigo     = data.get('codigo', '')
     nombre     = data.get('nombre', '')
     paciente_id = data.get('pacienteId', '')
 
     print(f"[WS] 📢 Llamando paciente: {codigo} — {nombre}")
+
+    _ultimo_llamado = {
+        'codigo':     codigo,
+        'nombre':     nombre,
+        'pacienteId': paciente_id,
+        }
 
     # Reenviar a todos los clientes en sala 'screen'
     socketio.emit('llamar_paciente', {
@@ -1235,6 +1243,11 @@ def on_llamar_paciente(data):
         'pacienteId': paciente_id
     }, to='screen')
 
+@socketio.on('pedir_ultimo_llamado')
+def on_pedir_ultimo_llamado():
+    if _ultimo_llamado:
+        emit('llamar_paciente', _ultimo_llamado)
+        print(f"[WS] 🔄 Enviando último llamado a nueva pantalla: {_ultimo_llamado['codigo']}")
 
 
 if __name__ == '__main__':
