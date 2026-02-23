@@ -1,32 +1,19 @@
 /**
  * usuarios.js — Gestión completa de usuarios
- * Requiere: auth.js cargado antes en el HTML
+ * Requiere: auth.js y config.js cargados antes en el HTML
  */
-
-// ── getAuthHeaders: lee el token del lugar correcto ───────────────────────────
-
-function getAuthHeaders() {
-    // auth.js guarda el token en sessionStorage con clave 'jwt_token'
-    // login.js también lo guarda ahí (y en localStorage como jwt_token_<rol>)
-    const token = sessionStorage.getItem('jwt_token')
-               || localStorage.getItem('jwt_token_admin')
-               || localStorage.getItem('jwt_token_recepcion')
-               || localStorage.getItem('jwt_token_registro');
-
-    if (!token) {
-        window.location.href = '/';
-        return {};
-    }
-
-    return {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type':  'application/json'
-    };
-}
 
 // ==========================================
 let isEditMode = false;
 let usersTrash = [];
+
+// ── Debounce para evitar recargas múltiples por eventos WS ────────────────────
+let _reloadTimeout = null;
+function recargarUsuarios() {
+    clearTimeout(_reloadTimeout);
+    _reloadTimeout = setTimeout(() => loadUsersFromBackend(), 300);
+}
+
 // ── Inicialización ────────────────────────────────────────────────────────────
 
 function initUsuarios() {
@@ -39,7 +26,6 @@ function initUsuarios() {
         });
     });
 }
-// ── Agregar después de initUsuarios() ────────────────────────────────────────
 
 function onRoleChange() {
     const role        = document.getElementById('newRole').value;
@@ -56,7 +42,6 @@ async function loadUsersFromBackend() {
         const response = await fetch(USUARIOS_API.getAll, { headers: getAuthHeaders() });
         if (response.ok) {
             const data = await response.json();
-            // ── CRÍTICO: excluir los que ya están en papelera local ──
             const idsEnPapelera = new Set(usersTrash.map(u => u.id));
             users = data.users.filter(u => !idsEnPapelera.has(u.id));
             console.log(`✅ ${users.length} usuarios cargados (${idsEnPapelera.size} en papelera)`);
@@ -71,10 +56,12 @@ async function loadUsersFromBackend() {
     loadUsers();
     updateStats();
 }
+
+// ── Papelera ──────────────────────────────────────────────────────────────────
+
 function openUsersTrash() {
     const modal = document.getElementById('usersTrashModal');
     const body  = document.getElementById('usersTrashBody');
-
     if (!modal || !body) return;
 
     body.innerHTML = '';
@@ -86,7 +73,7 @@ function openUsersTrash() {
             const div = document.createElement('div');
             div.className = 'trash-item';
             div.innerHTML = `
-                <strong>${user.usuario}</strong> (${user.nombre_completo})
+                <strong>${user.usuario}</strong> (${user.nombre_completo || ''})
                 <br>
                 <button onclick="restoreUser('${user.id}')">Restaurar</button>
                 <button onclick="deleteUserForever('${user.id}')">Eliminar definitivamente</button>
@@ -100,7 +87,8 @@ function openUsersTrash() {
 }
 
 function closeUsersTrash() {
-    document.getElementById('usersTrashModal').classList.remove('active');
+    const modal = document.getElementById('usersTrashModal');
+    if (modal) modal.classList.remove('active');
 }
 
 async function restoreUser(userId) {
@@ -119,11 +107,8 @@ async function restoreUser(userId) {
             return;
         }
 
-        users.push(user);
         usersTrash = usersTrash.filter(u => u.id !== userId);
-
-        loadUsers();
-        updateStats();
+        await loadUsersFromBackend(); // recargar desde BD para estado fresco
         openUsersTrash();
         showToast(`Usuario ${user.usuario} restaurado`, 'success');
 
@@ -132,6 +117,7 @@ async function restoreUser(userId) {
         showToast('Error de conexión', 'error');
     }
 }
+
 async function deleteUserForever(userId) {
     const user = usersTrash.find(u => u.id === userId);
     if (!user) return;
@@ -140,7 +126,7 @@ async function deleteUserForever(userId) {
 
     try {
         const response = await fetch(USUARIOS_API.delete(userId), {
-            method: 'DELETE',
+            method:  'DELETE',
             headers: getAuthHeaders()
         });
 
@@ -149,13 +135,15 @@ async function deleteUserForever(userId) {
             openUsersTrash();
             showToast('Usuario eliminado definitivamente', 'success');
         } else {
-            showToast('Error al eliminar en BD', 'error');
+            const data = await response.json();
+            showToast(data.message || 'Error al eliminar en BD', 'error');
         }
     } catch (error) {
         console.error(error);
         showToast('Error de conexión', 'error');
     }
 }
+
 // ── Renderizado de la grilla ──────────────────────────────────────────────────
 
 function loadUsers() {
@@ -163,15 +151,16 @@ function loadUsers() {
     const emptyState = document.getElementById('emptyState');
     if (!grid) return;
 
+    grid.innerHTML = ''; // limpiar antes de repoblar — evita listeners duplicados
+
     if (users.length === 0) {
         grid.style.display       = 'none';
-        emptyState.style.display = 'flex';
+        if (emptyState) emptyState.style.display = 'flex';
         return;
     }
 
-    grid.style.display       = 'grid';
-    emptyState.style.display = 'none';
-    grid.innerHTML           = '';
+    grid.style.display = 'grid';
+    if (emptyState) emptyState.style.display = 'none';
     users.forEach(user => grid.appendChild(createUserCard(user)));
 }
 
@@ -194,6 +183,7 @@ function createUserCard(user) {
         </div>
     `;
 
+    // Un solo listener por card — no se acumula porque grid.innerHTML='' limpia antes
     card.addEventListener('click', () => showUserDetails(user.id));
     card.addEventListener('contextmenu', (e) => {
         e.preventDefault();
@@ -205,13 +195,6 @@ function createUserCard(user) {
 
 // ── Crear usuario ─────────────────────────────────────────────────────────────
 
-function generateUserId() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let id = '';
-    for (let i = 0; i < 6; i++) id += chars[Math.floor(Math.random() * chars.length)];
-    return users.some(u => u.id === id) ? generateUserId() : id;
-}
-
 async function handleCreateUser(e) {
     e.preventDefault();
 
@@ -219,9 +202,10 @@ async function handleCreateUser(e) {
     const name     = document.getElementById('newName').value.trim();
     const password = document.getElementById('newPassword').value;
     const role     = document.getElementById('newRole').value;
-    const prefijo = role === 'medico'
+    const prefijo  = role === 'medico'
         ? (document.getElementById('newPrefijo')?.value || 'Dr.')
         : '';
+
     if (!username || !name || !password || !role) {
         showToast('Por favor completa todos los campos', 'error');
         return;
@@ -234,7 +218,7 @@ async function handleCreateUser(e) {
     const nombreConPrefijo = prefijo ? `${prefijo} ${name}` : name;
     const newUser = {
         usuario:         username,
-        nombre_completo: nombreConPrefijo, //Ahora incluye Dr.nombre
+        nombre_completo: nombreConPrefijo,
         password,
         rol:             role,
         created_at:      new Date().toISOString(),
@@ -263,7 +247,7 @@ async function handleCreateUser(e) {
     }
 }
 
-// ── Eliminar usuario ──────────────────────────────────────────────────────────
+// ── Mover a papelera ──────────────────────────────────────────────────────────
 
 async function moveUserToTrash() {
     if (!selectedUserId) return;
@@ -273,7 +257,6 @@ async function moveUserToTrash() {
 
     if (!confirm(`¿Enviar a la papelera al usuario "${user.usuario}"?`)) return;
 
-    // ── CRÍTICO: evitar duplicados en papelera ──
     if (usersTrash.some(u => u.id === selectedUserId)) {
         showToast('Este usuario ya está en la papelera', 'warning');
         closeUserDetailsModal();
@@ -305,6 +288,7 @@ async function moveUserToTrash() {
         showToast('Error de conexión', 'error');
     }
 }
+
 function openCreateUserModal() {
     const modal = document.getElementById('createUserModal');
     if (!modal) return;
@@ -333,11 +317,10 @@ async function saveUserChanges() {
     if (!user) return;
 
     const originalPassword = user.password || '';
-
     const huboCambios =
         newUsername !== user.usuario ||
-        newName !== (user.nombre_completo || '') ||
-        newRole !== user.rol ||
+        newName     !== (user.nombre_completo || '') ||
+        newRole     !== user.rol ||
         (newPassword && newPassword !== originalPassword);
 
     if (!huboCambios) {
@@ -350,7 +333,6 @@ async function saveUserChanges() {
         nombre_completo: newName,
         rol:             newRole
     };
-
     if (newPassword && newPassword !== originalPassword) {
         updatedData.password = newPassword;
     }
@@ -361,7 +343,6 @@ async function saveUserChanges() {
             headers: getAuthHeaders(),
             body:    JSON.stringify(updatedData)
         });
-
         const data = await response.json();
 
         if (response.ok) {
@@ -378,7 +359,6 @@ async function saveUserChanges() {
 }
 
 // ── Modales ───────────────────────────────────────────────────────────────────
-
 
 function closeCreateUserModal() {
     document.getElementById('createUserModal').classList.remove('active');
@@ -400,15 +380,15 @@ function showUserDetails(userId) {
     const userPassword = user.password || '';
 
     if (!userPassword) {
-        passwordEl.textContent          = '[No disponible]';
-        passwordEl.dataset.password     = '';
-        passwordEl.style.color          = '#9ca3af';
-        passwordEl.style.fontStyle      = 'italic';
+        passwordEl.textContent      = '[No disponible]';
+        passwordEl.dataset.password = '';
+        passwordEl.style.color      = '#9ca3af';
+        passwordEl.style.fontStyle  = 'italic';
     } else {
-        passwordEl.textContent          = '••••••••';
-        passwordEl.dataset.password     = userPassword;
-        passwordEl.style.color          = '';
-        passwordEl.style.fontStyle      = '';
+        passwordEl.textContent      = '••••••••';
+        passwordEl.dataset.password = userPassword;
+        passwordEl.style.color      = '';
+        passwordEl.style.fontStyle  = '';
     }
 
     const roleEl       = document.getElementById('detailRole');
@@ -449,25 +429,22 @@ function enterEditMode() {
     if (!user) return;
 
     isEditMode = true;
-
     document.getElementById('userDetailsModal').classList.add('active');
     document.getElementById('editUsername').value = user.usuario;
     document.getElementById('editName').value     = user.nombre_completo || '';
 
+    const passInput = document.getElementById('editPassword');
     const userPassword = user.password || '';
-    const passInput    = document.getElementById('editPassword');
     passInput.value       = userPassword;
     passInput.placeholder = userPassword ? 'Contraseña actual' : 'Establecer nueva contraseña';
     passInput.type        = 'password';
 
     document.getElementById('editRole').value = user.rol;
-
     _setModoEdicion();
 }
 
 function cancelEditMode() {
     isEditMode = false;
-
     const user = users.find(u => u.id === selectedUserId);
     if (user) {
         document.getElementById('detailUsername').textContent = user.usuario;
@@ -475,7 +452,6 @@ function cancelEditMode() {
 
         const passwordEl   = document.getElementById('detailPassword');
         const userPassword = user.password || '';
-
         if (!userPassword) {
             passwordEl.textContent      = '[No disponible]';
             passwordEl.dataset.password = '';
@@ -492,7 +468,6 @@ function cancelEditMode() {
         roleEl.textContent = getRoleLabel(user.rol);
         roleEl.className   = `detail-value detail-role role-${(user.rol || '').toLowerCase()}`;
     }
-
     _setModoLectura();
 }
 
@@ -501,12 +476,10 @@ function cancelEditMode() {
 function toggleDetailPassword() {
     const el             = document.getElementById('detailPassword');
     const storedPassword = el.dataset.password;
-
     if (!storedPassword) {
         showToast('Contraseña no disponible. Edita el usuario para establecer una nueva.', 'warning');
         return;
     }
-
     if (el.textContent === '••••••••') {
         el.textContent      = storedPassword;
         el.style.color      = '#059669';
@@ -556,11 +529,10 @@ function _setModoLectura() {
     document.getElementById('editPasswordContainer').style.display = 'none';
     document.getElementById('detailRole').style.display            = '';
     document.getElementById('editRole').style.display              = 'none';
-
-    document.getElementById('deleteBtn').style.display = 'block';
-    document.getElementById('saveBtn').style.display   = 'none';
-    document.getElementById('cancelBtn').style.display = 'none';
-    document.getElementById('closeBtn').style.display  = 'block';
+    document.getElementById('deleteBtn').style.display             = 'block';
+    document.getElementById('saveBtn').style.display               = 'none';
+    document.getElementById('cancelBtn').style.display             = 'none';
+    document.getElementById('closeBtn').style.display              = 'block';
 }
 
 function _setModoEdicion() {
@@ -572,17 +544,19 @@ function _setModoEdicion() {
     document.getElementById('editPasswordContainer').style.display = 'flex';
     document.getElementById('detailRole').style.display            = 'none';
     document.getElementById('editRole').style.display              = 'block';
-
-    document.getElementById('deleteBtn').style.display = 'none';
-    document.getElementById('saveBtn').style.display   = 'block';
-    document.getElementById('cancelBtn').style.display = 'block';
-    document.getElementById('closeBtn').style.display  = 'none';
+    document.getElementById('deleteBtn').style.display             = 'none';
+    document.getElementById('saveBtn').style.display               = 'block';
+    document.getElementById('cancelBtn').style.display             = 'block';
+    document.getElementById('closeBtn').style.display              = 'none';
 }
-// ==================== WEBSOCKET ====================
+
+// ── WebSocket — se conecta desde main.js, NO al cargar el archivo ─────────────
 
 let socketAdmin = null;
 
 function conectarSocketAdmin() {
+    if (socketAdmin && socketAdmin.connected) return; // evitar reconexiones duplicadas
+
     socketAdmin = io();
 
     socketAdmin.on('connect', () => {
@@ -594,31 +568,25 @@ function conectarSocketAdmin() {
         console.log('🔌 Socket admin desconectado');
     });
 
-    // ── Nuevo usuario creado (desde otra sesión admin) ──
     socketAdmin.on('usuario_creado', (data) => {
         console.log('📨 Nuevo usuario creado en tiempo real:', data);
-        loadUsersFromBackend();
+        recargarUsuarios(); // ← debounce: evita múltiples recargas en ráfaga
         showToast(`👤 Nuevo usuario: ${data.usuario.nombre_completo} (${getRoleLabel(data.usuario.rol)})`, 'success');
     });
 
-    // ── Usuario editado ──
     socketAdmin.on('usuario_actualizado', (data) => {
         if (data.tipo === 'edicion') {
             console.log('📨 Usuario actualizado en tiempo real:', data);
-            loadUsersFromBackend();
+            recargarUsuarios(); // ← debounce
             showToast(`✏️ Usuario actualizado: ${data.usuario.nombre_completo}`, 'success');
         }
     });
 
-// ── Eventos de pantallas (para actualizar grid en tiempo real) ──
-    socketAdmin.on('pantalla_vinculada',     () => {
-        if (typeof cargarPantallas === 'function') cargarPantallas();
-    });
-    socketAdmin.on('pantalla_desvinculada',  () => {
-        if (typeof cargarPantallas === 'function') cargarPantallas();
-    });
-    socketAdmin.on('recepcionista_asignado', () => {
-        if (typeof cargarPantallas === 'function') cargarPantallas();
-    });
+    socketAdmin.on('pantalla_vinculada',     () => { if (typeof cargarPantallas === 'function') cargarPantallas(); });
+    socketAdmin.on('pantalla_desvinculada',  () => { if (typeof cargarPantallas === 'function') cargarPantallas(); });
+    socketAdmin.on('recepcionista_asignado', () => { if (typeof cargarPantallas === 'function') cargarPantallas(); });
 }
-    conectarSocketAdmin();
+
+// ── IMPORTANTE: NO llamar conectarSocketAdmin() aquí ─────────────────────────
+// Se llama desde main.js dentro del DOMContentLoaded para garantizar
+// que el DOM y la sesión estén listos antes de conectar el socket.
