@@ -8,8 +8,7 @@ FROM python:3.11-slim
 # Variables de entorno base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    FLASK_ENV=production \
-    PORT=5000
+    FLASK_ENV=production
 
 # Dependencias del sistema necesarias para psycopg2 y cryptography
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -38,13 +37,13 @@ EXPOSE 5000
 # --keep-alive 65       → mayor que el timeout del load balancer de Render (60s)
 # --worker-connections 100 → conexiones simultáneas por worker
 # ─────────────────────────────────────────────────────────
-CMD ["gunicorn", \
-     "--worker-class", "eventlet", \
-     "--workers", "1", \
-     "--worker-connections", "100", \
-     "--bind", "0.0.0.0:5000", \
-     "--timeout", "0", \
-     "--graceful-timeout", "30", \
-     "--keep-alive", "65", \
-     "--log-level", "info", \
-     "app:app"]
+CMD ["sh", "-c", "gunicorn \
+     --worker-class eventlet \
+     --workers 1 \
+     --worker-connections 100 \
+     --bind 0.0.0.0:${PORT:-10000} \
+     --timeout 0 \
+     --graceful-timeout 30 \
+     --keep-alive 65 \
+     --log-level info \
+     app:app"]

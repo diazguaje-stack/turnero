@@ -163,14 +163,7 @@ const Auth = {
 
     // ── Logout ─────────────────────────────────────────────────────
 
-    async logout() {
-        try {
-            await this.fetch('/api/logout', { method: 'POST' });
-        } catch (_) { /* ignorar errores de red en logout */ }
-        this.eliminarToken();
-        window.location.href = '/';
-    },
-
+    
     // ── Mostrar info del usuario en navbar ────────────────────────
 
     mostrarUsuarioEnNavbar(data) {
@@ -183,3 +176,36 @@ const Auth = {
         if (userAvatarEl) userAvatarEl.textContent = nombre.charAt(0).toUpperCase();
     }
 };
+async function logout() {
+    try {
+        const token = sessionStorage.getItem('jwt_token')
+                   || localStorage.getItem('jwt_token_admin')
+                   || localStorage.getItem('jwt_token_recepcion')
+                   || localStorage.getItem('jwt_token_registro');
+
+        // Notificar al backend (opcional pero recomendado para logs)
+        if (token) {
+            await fetch('/api/logout', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json'
+                }
+            }).catch(() => {}); // ignorar errores de red en logout
+        }
+    } catch(e) {
+        // No importa si falla — igual limpiamos todo
+    } finally {
+        // CRÍTICO: limpiar TODAS las claves posibles
+        sessionStorage.removeItem('jwt_token');
+        sessionStorage.removeItem('user_data');
+        localStorage.removeItem('jwt_token_admin');
+        localStorage.removeItem('jwt_token_recepcion');
+        localStorage.removeItem('jwt_token_registro');
+        localStorage.removeItem('jwt_token');
+        localStorage.removeItem('currentUser');
+        
+        // Redirigir al login
+        window.location.href = '/';
+    }
+}

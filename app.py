@@ -23,7 +23,7 @@ JWT_EXPIRATION_HOURS = 8  # Token expira en 8 horas
 
 init_db(app)
 CORS(app, supports_credentials=True, origins=['*'])
-socketio=SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio=SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 _ultimo_llamado=None
 # ===================================
 # HELPERS JWT
@@ -270,7 +270,9 @@ def screen():
 @rol_requerido('admin')
 def get_users():
     try:
-        users      = Usuario.query.all()
+        # activo=True → solo usuarios activos en el grid principal
+        # Los inactivos (papelera) se consultan por /api/users/inactivos
+        users      = Usuario.query.filter_by(activo=True).all()
         users_list = [user.to_dict() for user in users]
         return jsonify({'success': True, 'users': users_list}), 200
     except Exception as e:
@@ -339,6 +341,27 @@ def create_user():
         db.session.rollback()
         print(f"Error al crear usuario: {str(e)}")
         return jsonify({'success': False, 'message': 'Error al crear usuario'}), 500
+
+
+@app.route('/api/users/recepcionistas', methods=['GET'])
+@rol_requerido('admin')
+def get_recepcionistas():
+    try:
+        recepcionistas = Usuario.query.filter_by(rol='recepcion', activo=True).all()
+        return jsonify({'success': True, 'recepcionistas': [r.to_dict() for r in recepcionistas]}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Error al obtener recepcionistas'}), 500
+
+
+@app.route('/api/users/inactivos', methods=['GET'])
+@rol_requerido('admin')
+def get_users_inactivos():
+    """Devuelve usuarios inactivos (papelera) — separado del listado principal."""
+    try:
+        users_inactivos = Usuario.query.filter_by(activo=False).all()
+        return jsonify({'success': True, 'users': [u.to_dict() for u in users_inactivos]}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Error al obtener usuarios inactivos'}), 500
 
 
 @app.route('/api/users/<user_id>', methods=['DELETE'])
@@ -513,15 +536,6 @@ def restaurar_usuario(user_id):
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
-@app.route('/api/users/recepcionistas', methods=['GET'])
-@rol_requerido('admin')
-def get_recepcionistas():
-    try:
-        recepcionistas = Usuario.query.filter_by(rol='recepcion', activo=True).all()
-        return jsonify({'success': True, 'recepcionistas': [r.to_dict() for r in recepcionistas]}), 200
-    except Exception as e:
-        return jsonify({'success': False, 'message': 'Error al obtener recepcionistas'}), 500
-
 
 # ===================================
 # RUTAS DE PANTALLAS
@@ -615,7 +629,7 @@ def asignar_recepcionista(pantalla_id):
     try:
         data             = request.get_json()
         recepcionista_id = data.get('recepcionista_id')
-        pantalla         = Pantalla.query.get(pantalla_id)
+        pantalla         = db.session.get(Pantalla, pantalla_id)
 
         if not pantalla:
             return jsonify({'success': False, 'message': 'Pantalla no encontrada'}), 404
@@ -625,7 +639,7 @@ def asignar_recepcionista(pantalla_id):
             db.session.commit()
             return jsonify({'success': True, 'message': 'Recepcionista desasignado', 'pantalla': pantalla.to_dict()}), 200
 
-        recepcionista = Usuario.query.get(recepcionista_id)
+        recepcionista = db.session.get(Usuario, recepcionista_id)
         if not recepcionista:
             return jsonify({'success': False, 'message': 'Recepcionista no encontrado'}), 404
         if recepcionista.rol != 'recepcion':
@@ -1073,7 +1087,7 @@ def buscar_paciente_codigo(codigo):
         turno = Turno.query.filter_by(codigo_turno=codigo).first()
 
         if turno:
-            paciente = Paciente.query.get(turno.paciente_id)
+            paciente = db.session.get(Paciente, turno.paciente_id)
         else:
             # Intentar buscar por código de paciente
             paciente = Paciente.query.filter_by(codigo_paciente=codigo).first()
