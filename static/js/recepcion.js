@@ -399,13 +399,26 @@ function llamarPaciente(pacienteId, codigo, nombre, numeroPantalla) {
     mostrarToast(`📢 Llamando: ${codigo} — ${nombre}`, 'nuevo');
 
     if (socket && socket.connected) {
+        // Leer el ID del recepcionista desde el JWT en sessionStorage
+        let recepcionistaId = null;
+        try {
+            const token = sessionStorage.getItem('jwt_token');
+            if (token) {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                recepcionistaId = payload.user_id || null;
+            }
+        } catch (e) {
+            console.warn('No se pudo leer recepcionistaId del token:', e);
+        }
+
         socket.emit('llamar_paciente', {
-            pacienteId: pacienteId,
-            codigo:     codigo,
-            nombre:     nombre,
-            recepcion:  numeroPantalla || obtenerNumeroRecepcionActual()
+            pacienteId:      pacienteId,
+            codigo:          codigo,
+            nombre:          nombre,
+            recepcionistaId: recepcionistaId,                              // ← coma aquí
+            recepcion:       numeroPantalla || obtenerNumeroRecepcionActual()
         });
-        console.log(`📢 Emitido llamar_paciente: ${codigo} — ${nombre}`);
+        console.log(`📢 Emitido llamar_paciente: ${codigo} — ${nombre} — recepcionistaId: ${recepcionistaId}`);
     } else {
         console.warn('⚠️ Socket no conectado — llamada no enviada a pantalla');
     }
@@ -420,7 +433,6 @@ function llamarPaciente(pacienteId, codigo, nombre, numeroPantalla) {
         }, 4000);
     }
 }
-
 function obtenerNumeroRecepcionActual() {
     if (window._numeroPantallaRecepcion) return window._numeroPantallaRecepcion;
     const userNameEl = document.getElementById('userName');

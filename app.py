@@ -717,7 +717,8 @@ def vincular_pantalla(pantalla_id):
             'pantalla_id':          str(pantalla.id),
             'numero':               pantalla.numero,
             'estado':               'vinculada',
-            'recepcionista_nombre': recepcionista.nombre_completo
+            'recepcionista_nombre': recepcionista.nombre_completo,
+            'sala_propia':          f'screen_{pantalla.id}'   
         }, room='screen')
 
         socketio.emit('recepcionista_asignado', {
@@ -1403,15 +1404,21 @@ def on_disconnect():
 
 @socketio.on('join')
 def on_join(data):
-    room = data.get('room', '')
-    device_fp = data.get('device_fingerprint', None)  # ← screen_vinculacion.js enviará esto
+    room      = data.get('room', '')
+    device_fp = data.get('device_fingerprint', None)
     join_room(room)
     print(f"[WS] Cliente {request.sid} entró a sala: {room}")
 
-    # Rastrear sid → device_fingerprint solo para sala 'screen'
     if room == 'screen' and device_fp:
         _screen_sids[request.sid] = device_fp
-        print(f"[WS] Screen registrado: {request.sid} → {device_fp[:20]}...")
+
+        # Buscar a qué pantalla pertenece este device y unirla a su sala propia
+        with app.app_context():
+            pantalla = Pantalla.query.filter_by(device_id=device_fp).first()
+            if pantalla:
+                sala_propia = f'screen_{pantalla.id}'
+                join_room(sala_propia)
+                print(f"[WS] Screen unida a sala propia: {sala_propia}")
 
     emit('joined', {'room': room, 'status': 'ok'})
 
@@ -1419,19 +1426,21 @@ def on_join(data):
 def on_llamar_paciente(data):
     global _ultimo_llamado
 
-    codigo      = data.get('codigo', '')
-    nombre      = data.get('nombre', '')
-    paciente_id = data.get('pacienteId', '')
-    recepcion   = data.get('recepcion', '')
+    codigo          = data.get('codigo', '')
+    nombre          = data.get('nombre', '')
+    paciente_id     = data.get('pacienteId', '')
+    recepcion       = data.get('recepcion', '')
+    recepcionista_id = data.get('recepcionistaId', '')  # ← frontend debe enviarlo
 
     print(f"[WS] 📢 Llamando: {codigo} — {nombre} — Recepción: {recepcion}")
 
     _ultimo_llamado = {
-        'codigo':     codigo,
-        'nombre':     nombre,
-        'pacienteId': paciente_id,
-        'recepcion':  recepcion,
-        'timestamp':  datetime.utcnow().isoformat()
+        'codigo':          codigo,
+        'nombre':          nombre,
+        'pacienteId':      paciente_id,
+        'recepcion':       recepcion,
+        'recepcionistaId': recepcionista_id,
+        'timestamp':       datetime.utcnow().isoformat()
     }
 
     payload = {
@@ -1441,10 +1450,25 @@ def on_llamar_paciente(data):
         'recepcion':  recepcion
     }
 
-    # Enviar a pantallas
-    socketio.emit('llamar_paciente', payload, to='screen')
+    # Buscar la pantalla asignada a este recepcionista
+    sala_destino = None
+    if recepcionista_id:
+        pantalla = Pantalla.query.filter_by(
+            recepcionista_id=recepcionista_id,
+            estado='vinculada'
+        ).first()
+        if pantalla:
+            sala_destino = f'screen_{pantalla.id}'
+            print(f"[WS] 📺 Enviando a sala: {sala_destino} (Pantalla {pantalla.numero})")
 
-    # ── NUEVO: reenviar a recepción para que llene el historial ──
+    if sala_destino:
+        socketio.emit('llamar_paciente', payload, to=sala_destino)
+    else:
+        # Fallback: si no encuentra pantalla asignada, emitir a todas
+        print(f"[WS] ⚠️ Sin pantalla asignada para recepcionista {recepcionista_id}, broadcast a screen")
+        socketio.emit('llamar_paciente', payload, to='screen')
+
+    # Reenviar a recepción para historial
     socketio.emit('llamar_paciente', payload, to='recepcion')
 
 @socketio.on('pedir_ultimo_llamado')

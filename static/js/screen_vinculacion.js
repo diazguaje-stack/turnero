@@ -75,6 +75,16 @@ function conectarSocket() {
     // ── Admin vinculó → mostrar pantalla activa ──
     _socket.on('pantalla_vinculada', (data) => {
         console.log('[VIN] pantalla_vinculada:', data);
+
+        // Unirse a la sala propia de esta pantalla
+        if (data.sala_propia) {
+            _socket.emit('join', {
+                room:               data.sala_propia,
+                device_fingerprint: deviceFingerprint
+            });
+            console.log('[VIN] Unido a sala propia:', data.sala_propia);
+        }
+
         consultarStatus().then(sd => {
             if (sd?.status === 'vinculada') {
                 pantallaData = sd.pantalla;
@@ -82,7 +92,6 @@ function conectarSocket() {
             }
         }).catch(() => location.reload());
     });
-
     // ── Admin desvinculó → recargar ──
     _socket.on('pantalla_desvinculada', () => {
         console.log('[VIN] pantalla_desvinculada');
