@@ -1,6 +1,5 @@
-
-import eventlet
-eventlet.monkey_patch()
+from gevent import monkey
+monkey.patch_all()
 from flask import Flask, request, jsonify, render_template, redirect
 from flask_cors import CORS
 from datetime import datetime, timedelta, timezone
@@ -15,6 +14,7 @@ from flask_socketio  import SocketIO, emit, join_room
 # CONFIGURACION
 # ===================================
 
+
 app = Flask(__name__)
 
 env = os.environ.get('FLASK_ENV', 'development')
@@ -26,7 +26,8 @@ JWT_EXPIRATION_HOURS = 8  # Token expira en 8 horas
 
 init_db(app)
 CORS(app, supports_credentials=True, origins=['*'])
-socketio=SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', logger=False, engineio_logger=False)
+
 _ultimo_llamado=None
 # ===================================
 # HELPERS JWT
@@ -218,16 +219,21 @@ def api_logout():
 
 @app.route('/api/verify-session', methods=['GET'])
 def verify_session():
-    """Verifica si el JWT token es valido y retorna datos del usuario"""
     token = obtener_token_del_request()
-
     if not token:
         return jsonify({'success': False, 'authenticated': False, 'message': 'Sin token'}), 401
 
     payload = verificar_token(token)
-
     if not payload:
         return jsonify({'success': False, 'authenticated': False, 'message': 'Token invalido o expirado'}), 401
+
+    # ── Verificar que el usuario siga existiendo y activo en BD ──────────────
+    user = Usuario.query.filter_by(id=payload['user_id'], activo=True).first()
+    if not user:
+        return jsonify({
+            'success': False, 'authenticated': False,
+            'message': 'Usuario inactivo o eliminado'
+        }), 401
 
     return jsonify({
         'success':         True,
@@ -238,8 +244,6 @@ def verify_session():
         'rol':             payload['role'],
         'id':              payload['user_id'],
     }), 200
-
-
 # ===================================
 # RUTAS DE PAGINAS HTML (publicas)
 # ===================================
@@ -302,8 +306,7 @@ def create_user():
             usuario         = usuario,
             rol             = rol,
             nombre_completo = data.get('nombre_completo', usuario),
-            email           = data.get('email'),
-            telefono        = data.get('telefono'),
+            activo          = True,
             created_by      = request.current_user.get('usuario', 'admin')
         )
         new_user.set_password(password)
@@ -329,11 +332,24 @@ def create_user():
                 'id':              str(new_user.id),
                 'nombre_completo': new_user.nombre_completo,
                 'rol':             new_user.rol,
+                'inicial':         (new_user.nombre_completo or new_user.usuario)[0].upper(),
             }
         }, room=new_user.rol)   # sala 'medico', 'recepcion', 'registro', etc.
 
         print(f"[{datetime.now()}] Usuario creado: {usuario} - Rol: {rol}")
 
+        if new_user.rol == 'medico':
+            socketio.emit('usuario_actualizado', {
+                'tipo':    'nuevo',
+                'usuario': {
+                    'id':              str(new_user.id),
+                    'nombre_completo': new_user.nombre_completo,
+                    'rol':             new_user.rol,
+                    'inicial':         (new_user.nombre_completo or new_user.usuario)[0].upper(),
+                }
+            }, room='registro')
+
+        print(f"[{datetime.now()}] Usuario creado: {usuario} - Rol: {rol}")
         return jsonify({
             'success': True,
             'message': f'Usuario {usuario} creado exitosamente',
@@ -344,6 +360,7 @@ def create_user():
         db.session.rollback()
         print(f"Error al crear usuario: {str(e)}")
         return jsonify({'success': False, 'message': 'Error al crear usuario'}), 500
+
 
 
 @app.route('/api/users/recepcionistas', methods=['GET'])
@@ -366,26 +383,184 @@ def get_users_inactivos():
     except Exception as e:
         return jsonify({'success': False, 'message': 'Error al obtener usuarios inactivos'}), 500
 
+@app.route('/api/users/<user_id>/desactivar', methods=['POST'])
+@rol_requerido('admin')
+def desactivar_usuario(user_id):
+    """
+    Mueve el usuario a la papelera (activo=False).
+    NO borra de la BD. Equivale a "mover a papelera" en macOS/Windows.
+    Notifica al rol afectado para que su página caiga/reaccione.
+    """
+    try:
+        user = db.session.get(Usuario, user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'Usuario no encontrado'}), 404
+        if user.usuario == 'admin':
+            return jsonify({'success': False, 'message': 'No se puede desactivar el administrador principal'}), 403
+        if not user.activo:
+            return jsonify({'success': False, 'message': 'El usuario ya está en la papelera'}), 400
+
+        user.activo = False
+
+        # Si era recepcionista, liberar pantallas asignadas
+        if user.rol == 'recepcion':
+            for pantalla in Pantalla.query.filter_by(recepcionista_id=user.id).all():
+                pantalla.recepcionista_id = None
+                socketio.emit('recepcionista_asignado', {
+                    'pantalla_id':          str(pantalla.id),
+                    'recepcionista_nombre': None
+                }, room='screen')
+
+        db.session.commit()
+
+        payload = {
+            'usuario_id': str(user.id),
+            'usuario':    user.usuario,
+            'rol':        user.rol,
+            'nombre':     user.nombre_completo,
+        }
+
+        # Notificar a TODAS las salas relevantes para que las páginas "caigan"
+        salas = ['admin', 'registro', 'recepcion', user.rol]
+        for sala in set(salas):  # set() evita duplicados
+            socketio.emit('usuario_desactivado', payload, room=sala)
+
+        print(f"[{datetime.now()}] Usuario movido a papelera: {user.usuario} ({user.rol})")
+        return jsonify({'success': True, 'message': f'Usuario {user.usuario} movido a papelera'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/users/<user_id>/restaurar', methods=['POST'])
+@rol_requerido('admin')
+def restaurar_usuario(user_id):
+    """
+    Restaura un usuario desde la papelera (activo=True).
+    Equivale a "Sacar de la papelera" en macOS/Windows.
+    """
+    try:
+        user = db.session.get(Usuario, user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'Usuario no encontrado'}), 404
+        if user.activo:
+            return jsonify({'success': False, 'message': 'El usuario ya está activo'}), 400
+
+        user.activo = True
+        db.session.commit()
+
+        payload = {
+            'usuario': {
+                'id':              str(user.id),
+                'usuario':         user.usuario,
+                'nombre_completo': user.nombre_completo,
+                'rol':             user.rol,
+                'inicial':         (user.nombre_completo or user.usuario)[0].upper(),
+            }
+        }
+
+        salas = ['admin', 'registro', 'recepcion', user.rol]
+        for sala in set(salas):
+            socketio.emit('usuario_restaurado', payload, room=sala)
+
+        print(f"[{datetime.now()}] Usuario restaurado: {user.usuario} ({user.rol})")
+        return jsonify({'success': True, 'message': f'Usuario {user.usuario} restaurado'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+
+@app.route('/api/users/vaciar-papelera', methods=['DELETE'])
+@rol_requerido('admin')
+def vaciar_papelera_usuarios():
+    """
+    Elimina DEFINITIVAMENTE todos los usuarios inactivos.
+    Borra de la BD. Equivale a "Vaciar papelera" en macOS/Windows.
+    """
+    try:
+        inactivos = Usuario.query.filter_by(activo=False).all()
+        if not inactivos:
+            return jsonify({'success': True, 'eliminados': 0}), 200
+
+        # Guardar datos antes de borrar (para sockets post-commit)
+        datos = [(str(u.id), u.rol, u.usuario, u.nombre_completo) for u in inactivos]
+
+        # Limpiar FKs de pantallas antes de borrar
+        for user in inactivos:
+            if user.rol == 'recepcion':
+                Pantalla.query.filter_by(recepcionista_id=user.id).update(
+                    {'recepcionista_id': None}, synchronize_session='fetch'
+                )
+
+        # Borrar uno a uno para respetar el ORM y las constraints
+        for user in inactivos:
+            db.session.delete(user)
+
+        db.session.commit()
+
+        # Notificar a todas las salas
+        for uid, rol, usuario, nombre in datos:
+            payload = {'usuario_id': uid, 'rol': rol, 'usuario': usuario, 'nombre': nombre}
+            for sala in set(['admin', 'registro', 'recepcion', rol]):
+                socketio.emit('usuario_eliminado_definitivo', payload, room=sala)
+
+        print(f"[{datetime.now()}] Papelera vaciada: {len(datos)} usuarios eliminados definitivamente")
+        return jsonify({'success': True, 'eliminados': len(datos)}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error vaciando papelera: {str(e)}")
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 @app.route('/api/users/<user_id>', methods=['DELETE'])
 @rol_requerido('admin')
 def delete_user(user_id):
+    """
+    Elimina DEFINITIVAMENTE un usuario específico desde la papelera.
+    Solo debería llamarse si el usuario ya está inactivo (activo=False).
+    """
     try:
         user = db.session.get(Usuario, user_id)
         if not user:
             return jsonify({'success': False, 'message': 'Usuario no encontrado'}), 404
         if user.usuario == 'admin':
             return jsonify({'success': False, 'message': 'No se puede eliminar el administrador principal'}), 403
+        if user.activo:
+            # Salvaguarda: no permitir borrar usuarios activos directamente
+            return jsonify({
+                'success': False,
+                'message': 'Mueve el usuario a la papelera antes de eliminarlo definitivamente'
+            }), 400
+
+        uid    = str(user.id)
+        rol    = user.rol
+        nombre = user.nombre_completo
+        usuario_nombre = user.usuario
+
+        # Limpiar FKs de pantallas
+        if rol == 'recepcion':
+            for pantalla in Pantalla.query.filter_by(recepcionista_id=user.id).all():
+                pantalla.recepcionista_id = None
 
         db.session.delete(user)
         db.session.commit()
 
-        return jsonify({'success': True, 'message': f'Usuario {user.usuario} eliminado'}), 200
+        payload = {'usuario_id': uid, 'rol': rol, 'usuario': usuario_nombre, 'nombre': nombre}
+        for sala in set(['admin', 'registro', 'recepcion', rol]):
+            socketio.emit('usuario_eliminado_definitivo', payload, room=sala)
+
+        print(f"[{datetime.now()}] Usuario eliminado definitivamente: {usuario_nombre} ({rol})")
+        return jsonify({'success': True, 'message': f'Usuario {usuario_nombre} eliminado definitivamente'}), 200
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': 'Error al eliminar usuario'}), 500
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 
 
 @app.route('/api/users/<user_id>', methods=['PUT'])
@@ -398,26 +573,26 @@ def update_user(user_id):
 
         data = request.get_json()
 
-        if not data.get('usuario', '').strip():
+        nuevo_usuario = data.get('usuario', '').strip()
+        if not nuevo_usuario:
             return jsonify({'success': False, 'message': 'El usuario es requerido'}), 400
 
-        if data['usuario'].strip() != user.usuario:
-            if Usuario.query.filter_by(usuario=data['usuario'].strip()).first():
-                return jsonify({'success': False, 'message': 'El usuario ya existe'}), 400
+        if nuevo_usuario != user.usuario:
+            existente = Usuario.query.filter_by(usuario=nuevo_usuario).first()
+            if existente and str(existente.id) != user_id:
+                return jsonify({'success': False, 'message': 'El nombre de usuario ya existe'}), 400
 
-        user.usuario         = data.get('usuario', user.usuario).strip()
+        user.usuario         = nuevo_usuario
         user.nombre_completo = data.get('nombre_completo', user.nombre_completo)
         user.rol             = data.get('rol', user.rol)
+        user.updated_at      = datetime.utcnow()
 
         if data.get('password', '').strip():
             user.set_password(data['password'])
 
-        user.updated_at = datetime.utcnow()
-        # ── En update_user, justo ANTES del return final ──────────────
         db.session.commit()
 
-        # AÑADIR ESTO:
-        socketio.emit('usuario_actualizado', {
+        payload_admin = {
             'tipo':    'edicion',
             'usuario': {
                 'id':              str(user.id),
@@ -425,26 +600,20 @@ def update_user(user_id):
                 'nombre_completo': user.nombre_completo,
                 'rol':             user.rol,
             }
-        }, room='admin')
+        }
+        socketio.emit('usuario_actualizado', payload_admin, room='admin')
 
-        socketio.emit('usuario_actualizado', {
+        payload_rol = {
             'tipo':    'edicion',
             'usuario': {
                 'id':              str(user.id),
                 'nombre_completo': user.nombre_completo,
                 'rol':             user.rol,
+                'inicial':         (user.nombre_completo or user.usuario)[0].upper(),
             }
-        }, room=user.rol)
-
-        for sala in ['registro', 'recepcion']:
-            socketio.emit('usuario_actualizado', {
-                'tipo':    'edicion',
-                'usuario': {
-                    'id':              str(user.id),
-                    'nombre_completo': user.nombre_completo,
-                    'rol':             user.rol,
-                }
-            }, room=sala)
+        }
+        for sala in set(['registro', 'recepcion', user.rol]):
+            socketio.emit('usuario_actualizado', payload_rol, room=sala)
 
         return jsonify({
             'success': True,
@@ -454,91 +623,10 @@ def update_user(user_id):
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': 'Error al actualizar usuario'}), 500
-
-@app.route('/api/users/<user_id>/desactivar', methods=['POST'])
-@rol_requerido('admin')
-def desactivar_usuario(user_id):
-    try:
-        user = db.session.get(Usuario, user_id)
-        if not user:
-            return jsonify({'success': False, 'message': 'Usuario no encontrado'}), 404
-        if user.usuario == 'admin':
-            return jsonify({'success': False, 'message': 'No se puede desactivar el administrador principal'}), 403
-
-        user.activo = False
-        db.session.commit()
-
-        # Notificar a la sala del rol del usuario desactivado
-        payload_desactivado = {
-            'usuario_id': str(user.id),
-            'rol':        user.rol,
-            'nombre':     user.nombre_completo
-        }
-        for sala in [user.rol, 'admin', 'registro', 'recepcion']:
-            socketio.emit('usuario_desactivado', payload_desactivado, room=sala)
-
-        # Notificar al admin también (por si hay otra sesión admin abierta)
-        socketio.emit('usuario_desactivado', {
-            'usuario_id': str(user.id),
-            'rol':        user.rol,
-            'nombre':     user.nombre_completo
-        }, room='admin')
-
-        print(f"[{datetime.now()}] Usuario desactivado: {user.usuario}")
-
-        return jsonify({
-            'success': True,
-            'message': f'Usuario {user.usuario} desactivado'
-        }), 200
-
-    except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
-@app.route('/api/users/<user_id>/restaurar', methods=['POST'])
-@rol_requerido('admin')
-def restaurar_usuario(user_id):
-    try:
-        user = db.session.get(Usuario, user_id)
-        if not user:
-            return jsonify({'success': False, 'message': 'Usuario no encontrado'}), 404
 
-        user.activo = True
-        db.session.commit()
-
-        # Notificar al rol correspondiente que el usuario vuelve
-        payload_restaurado = {
-            'usuario': {
-                'id':              str(user.id),
-                'nombre_completo': user.nombre_completo,
-                'rol':             user.rol,
-                'inicial':         (user.nombre_completo or user.usuario)[0].upper(),
-            }
-        }
-        for sala in [user.rol, 'admin', 'registro', 'recepcion']:
-            socketio.emit('usuario_restaurado', payload_restaurado, room=sala)
-
-
-        socketio.emit('usuario_restaurado', {
-            'usuario': {
-                'id':              str(user.id),
-                'nombre_completo': user.nombre_completo,
-                'rol':             user.rol,
-            }
-        }, room='admin')
-
-        print(f"[{datetime.now()}] Usuario restaurado: {user.usuario}")
-
-        return jsonify({
-            'success': True,
-            'message': f'Usuario {user.usuario} restaurado'
-        }), 200
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # ===================================
@@ -1129,37 +1217,32 @@ def buscar_paciente_codigo(codigo):
 @app.route('/api/recepcion/paciente/<paciente_id>', methods=['DELETE'])
 @rol_requerido('recepcion', 'admin')
 def eliminar_paciente(paciente_id):
-
     try:
         paciente = db.session.get(Paciente, paciente_id)
         if not paciente:
             return jsonify({'success': False, 'message': 'Paciente no encontrado'}), 404
 
-        turnos_pendientes = Turno.query.filter_by(
-            paciente_id=paciente_id, estado='pendiente'
-        ).all()
+        nombre    = paciente.nombre
+        medico_id = str(paciente.medico_id)
 
-        for t in turnos_pendientes:
-            t.estado = 'cancelado'
-
+        # Eliminar primero los turnos (FK constraint)
+        Turno.query.filter_by(paciente_id=paciente_id).delete()
+        
+        # Ahora sí eliminar el paciente
+        db.session.delete(paciente)
         db.session.commit()
 
         socketio.emit('paciente_eliminado', {
             'paciente_id': paciente_id,
-            'nombre':      paciente.nombre,
-            'medico_id':   str(paciente.medico_id)
+            'nombre':      nombre,
+            'medico_id':   medico_id
         }, room='registro')
 
-
-        return jsonify({
-            'success': True,
-            'message': f'Paciente {paciente.nombre} retirado de la lista'
-        }), 200
+        return jsonify({'success': True, 'message': f'Paciente {nombre} eliminado'}), 200
 
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
-
 
 @app.route('/api/pacientes/medico/<medico_id>', methods=['GET'])
 @login_required

@@ -1,49 +1,31 @@
 /**
  * pantallas.js — Gestión completa de pantallas
- * Requiere: auth.js cargado antes en el HTML
+ * 
+ * CAMBIOS:
+ * 1. Selección de recepcionista AL VINCULAR (no después)
+ * 2. Escucha usuario_eliminado / usuario_desactivado → limpia asignación en card
+ * 3. Propaga cambio a /screen via websocket
  */
-
-// ── getAuthHeaders: lee el token del lugar correcto ───────────────────────────
 
 function getAuthHeaders() {
     const token = sessionStorage.getItem('jwt_token')
                || localStorage.getItem('jwt_token_admin')
                || localStorage.getItem('jwt_token_recepcion')
                || localStorage.getItem('jwt_token_registro');
-
-    if (!token) {
-        window.location.href = '/';
-        return {};
-    }
-
-    return {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type':  'application/json'
-    };
+    if (!token) { window.location.href = '/'; return {}; }
+    return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
 }
 
 // ── Estado ────────────────────────────────────────────────────────────────────
-
 let pantallasList             = [];
-let pantallasInterval         = null;
 let recepcionistasDisponibles = [];
-let usuarioEscribiendo        = false;
-
-// ── Inicializar / limpiar ─────────────────────────────────────────────────────
-
-function iniciarMonitoreo(modo) {
-    // ── Polling eliminado: socket maneja todo en tiempo real ──
-    console.log(`✅ Modo socket activo (sin polling): ${modo}`);
-}
 
 function inicializarPantallas() {
     cargarRecepcionistas();
     cargarPantallas();
-    // Polling eliminado — socket maneja actualizaciones en tiempo real
 }
 
-function limpiarIntervaloPantallas() {
-}
+function limpiarIntervaloPantallas() {}
 
 // ── Cargar datos ──────────────────────────────────────────────────────────────
 
@@ -85,7 +67,7 @@ function renderizarPantallas() {
     }
 
     grid.innerHTML = pantallasList.map(p => `
-        <div class="pantalla-card ${p.estado}">
+        <div class="pantalla-card ${p.estado}" id="pantalla-card-${p.id}">
             <div class="pantalla-numero">${p.numero}</div>
             <div class="pantalla-estado">
                 <div class="estado-badge ${p.estado}">${getEstadoTexto(p.estado)}</div>
@@ -109,14 +91,31 @@ function renderInfoPantalla(p) {
     }
 
     if (p.estado === 'pendiente') {
+        // ── NUEVO: selector de recepcionista incluido en el panel de vinculación ──
+        const opciones = recepcionistasDisponibles.map(r =>
+            `<option value="${r.id}">${r.nombre_completo || r.usuario}</option>`
+        ).join('');
+
         return `
-            <div class="instrucciones-vinculacion">📱 Dispositivo conectado — Ingresa el código</div>
+            <div class="instrucciones-vinculacion">📱 Dispositivo conectado — Ingresa el código y asigna recepcionista</div>
             <div class="codigo-grande">${p.codigo_vinculacion || '------'}</div>
             <div class="codigo-input-group">
                 <input type="text" class="codigo-input" id="codigo-${p.id}"
-                    placeholder="Ingresa código" maxlength="6" pattern="[0-9]*">
+                    placeholder="Código de 6 dígitos" maxlength="6" pattern="[0-9]*">
             </div>
-            ${p.device_id ? `<div class="device-id-small">Device: ${p.device_id.substring(0, 30)}...</div>` : ''}`;
+            <div style="margin-top:10px;">
+                <label style="font-size:12px;color:#6b7280;display:block;margin-bottom:4px;">
+                    👤 Asignar recepcionista (opcional)
+                </label>
+                <select id="recepcionista-${p.id}" style="
+                    width:100%;padding:8px 10px;border:1px solid #d1d5db;
+                    border-radius:6px;font-size:13px;background:#fff;color:#374151;
+                ">
+                    <option value="">Sin asignar</option>
+                    ${opciones}
+                </select>
+            </div>
+            ${p.device_id ? `<div class="device-id-small">Device: ${p.device_id.substring(0,30)}...</div>` : ''}`;
     }
 
     if (p.estado === 'vinculada') {
@@ -135,9 +134,9 @@ function renderInfoPantalla(p) {
             </div>
             <div class="info-item">
                 <span class="info-label">Recepcionista:</span>
-                <span class="info-value">${recepInfo}</span>
+                <span class="info-value" id="recepcionista-asignado-${p.id}">${recepInfo}</span>
             </div>
-            ${p.device_id ? `<div class="device-id-small" style="margin-top:12px;">Device ID: ${p.device_id.substring(0, 40)}...</div>` : ''}
+            ${p.device_id ? `<div class="device-id-small" style="margin-top:12px;">Device ID: ${p.device_id.substring(0,40)}...</div>` : ''}
             <a href="/screen" target="_blank" class="link-pantalla">🔗 Abrir pantalla completa</a>`;
     }
 
@@ -156,11 +155,11 @@ function renderAccionesPantalla(p) {
     if (p.estado === 'vinculada') {
         return `
             <div class="pantalla-actions">
-                <button class="btn btn-primary btn-asignar-recepcionista"
+                <button class="btn btn-primary btn-cambiar-recepcionista"
                     data-id="${p.id}" data-numero="${p.numero}"
                     data-recepcionista="${p.recepcionista_id || ''}"
                     style="background:#059669;margin-bottom:8px;width:100%;">
-                    👤 Asignar Recepcionista
+                    👤 Cambiar Recepcionista
                 </button>
                 <button class="btn btn-danger btn-desvincular"
                     data-id="${p.id}" data-numero="${p.numero}">
@@ -172,9 +171,10 @@ function renderAccionesPantalla(p) {
     return '';
 }
 
-// ── Event listeners dinámicos ─────────────────────────────────────────────────
+// ── Event listeners ───────────────────────────────────────────────────────────
 
 function agregarEventListenersPantallas() {
+    // Vincular — ahora también lee el select de recepcionista
     document.querySelectorAll('.btn-vincular').forEach(btn =>
         btn.addEventListener('click', e => vincularPantallaAdmin(e.currentTarget.dataset.id)));
 
@@ -185,7 +185,8 @@ function agregarEventListenersPantallas() {
         btn.addEventListener('click', e =>
             confirmarDesvincularPantalla(e.currentTarget.dataset.id, e.currentTarget.dataset.numero)));
 
-    document.querySelectorAll('.btn-asignar-recepcionista').forEach(btn =>
+    // Cambiar recepcionista (solo en pantallas ya vinculadas)
+    document.querySelectorAll('.btn-cambiar-recepcionista').forEach(btn =>
         btn.addEventListener('click', e =>
             mostrarModalAsignarRecepcionista(
                 e.currentTarget.dataset.id,
@@ -197,18 +198,13 @@ function agregarEventListenersPantallas() {
         input.addEventListener('input', e => {
             e.target.value = e.target.value.replace(/[^0-9]/g, '').substring(0, 6);
         });
-        input.addEventListener('focus', () => { usuarioEscribiendo = true; });
-        input.addEventListener('blur',  () => { usuarioEscribiendo = false; });
         input.addEventListener('keypress', e => {
-            if (e.key === 'Enter') {
-                usuarioEscribiendo = false;
-                vincularPantallaAdmin(input.id.replace('codigo-', ''));
-            }
+            if (e.key === 'Enter') vincularPantallaAdmin(input.id.replace('codigo-', ''));
         });
     });
 }
 
-// ── Acciones ──────────────────────────────────────────────────────────────────
+// ── Vincular — ahora asigna recepcionista en el mismo paso ───────────────────
 
 async function vincularPantallaAdmin(pantallaId) {
     const input  = document.getElementById(`codigo-${pantallaId}`);
@@ -220,21 +216,36 @@ async function vincularPantallaAdmin(pantallaId) {
         return;
     }
 
-    usuarioEscribiendo = false;
+    // Leer recepcionista seleccionado (puede estar vacío)
+    const selectEl       = document.getElementById(`recepcionista-${pantallaId}`);
+    const recepcionistaId = selectEl ? (selectEl.value || null) : null;
 
     try {
-        // ✅ headers sin duplicar — usa getAuthHeaders() que ya incluye Content-Type
-        const response = await fetch(PANTALLAS_API.vincular(pantallaId), {
+        // Paso 1: vincular
+        const resVincular = await fetch(PANTALLAS_API.vincular(pantallaId), {
             method:  'POST',
             headers: getAuthHeaders(),
             body:    JSON.stringify({ codigo })
         });
-        const data = await response.json();
-        mostrarMensajePantallas(
-            data.success ? '✅ Pantalla vinculada exitosamente' : (data.message || 'Código incorrecto'),
-            data.success ? 'success' : 'error'
-        );
-        if (data.success) cargarPantallas();
+        const dataVincular = await resVincular.json();
+
+        if (!dataVincular.success) {
+            mostrarMensajePantallas(dataVincular.message || 'Código incorrecto', 'error');
+            return;
+        }
+
+        // Paso 2: asignar recepcionista si fue seleccionado
+        if (recepcionistaId) {
+            await fetch(PANTALLAS_API.asignarRecepcionista(pantallaId), {
+                method:  'POST',
+                headers: getAuthHeaders(),
+                body:    JSON.stringify({ recepcionista_id: recepcionistaId })
+            });
+        }
+
+        mostrarMensajePantallas('✅ Pantalla vinculada exitosamente', 'success');
+        cargarPantallas();
+
     } catch (error) {
         console.error('Error al vincular:', error);
         mostrarMensajePantallas('Error al vincular la pantalla', 'error');
@@ -260,7 +271,6 @@ async function desvincularPantallaAdmin(pantallaId) {
         );
         if (data.success) cargarPantallas();
     } catch (error) {
-        console.error('Error al desvincular:', error);
         mostrarMensajePantallas('Error al desvincular la pantalla', 'error');
     }
 }
@@ -281,15 +291,47 @@ async function asignarRecepcionista(pantallaId, recepcionistaId) {
         );
         if (data.success) cargarPantallas();
     } catch (error) {
-        console.error('Error al asignar recepcionista:', error);
         mostrarMensajePantallas('Error al asignar recepcionista', 'error');
     }
 }
 
-// ── Modal recepcionista ───────────────────────────────────────────────────────
+// ── Actualizar card en tiempo real cuando un usuario es eliminado/desactivado ─
+
+/**
+ * Llamado cuando llega el evento usuario_desactivado o usuario_eliminado.
+ * Si el usuario era recepcionista asignado a alguna pantalla,
+ * limpia la asignación en la card SIN recargar todo.
+ */
+function limpiarRecepcionistaEliminado(usuarioId) {
+    pantallasList.forEach(p => {
+        if (String(p.recepcionista_id) === String(usuarioId)) {
+            p.recepcionista_id     = null;
+            p.recepcionista_nombre = null;
+
+            // Actualizar solo el span del recepcionista en la card ya renderizada
+            const spanEl = document.getElementById(`recepcionista-asignado-${p.id}`);
+            if (spanEl) {
+                spanEl.innerHTML = `<span style="color:#ef4444;font-weight:600;">⚠️ Recepcionista eliminado</span>`;
+                // Animar brevemente para llamar la atención
+                spanEl.closest('.pantalla-card')?.classList.add('pantalla-alerta');
+                setTimeout(() => {
+                    spanEl.innerHTML = `<span style="color:#9ca3af;">Sin asignar</span>`;
+                    spanEl.closest('.pantalla-card')?.classList.remove('pantalla-alerta');
+                }, 4000);
+            }
+
+            console.log(`[PAN] 🔴 Recepcionista ${usuarioId} removido de pantalla ${p.numero}`);
+        }
+    });
+
+    // También quitar del select en pantallas pendientes
+    recepcionistasDisponibles = recepcionistasDisponibles.filter(r => String(r.id) !== String(usuarioId));
+    document.querySelectorAll(`option[value="${usuarioId}"]`).forEach(opt => opt.remove());
+}
+
+// ── Modal cambiar recepcionista (solo para pantallas ya vinculadas) ───────────
 
 function mostrarModalAsignarRecepcionista(pantallaId, pantallaNumero, recepcionistaActualId) {
-    // Eliminar modal anterior si existe
     document.getElementById('modalAsignarRecepcionista')?.remove();
 
     const opciones = recepcionistasDisponibles.map(r =>
@@ -300,24 +342,24 @@ function mostrarModalAsignarRecepcionista(pantallaId, pantallaNumero, recepcioni
 
     document.body.insertAdjacentHTML('beforeend', `
         <div class="modal-asignar-recepcionista" id="modalAsignarRecepcionista"
-             style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;">
-            <div class="modal-content-small"
-                 style="background:#fff;padding:24px;border-radius:12px;min-width:320px;box-shadow:0 4px 24px rgba(0,0,0,.2);">
-                <h3 style="margin:0 0 8px">Asignar Recepcionista</h3>
+             style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;
+                    align-items:center;justify-content:center;z-index:9999;">
+            <div style="background:#fff;padding:24px;border-radius:12px;
+                        min-width:320px;box-shadow:0 4px 24px rgba(0,0,0,.2);">
+                <h3 style="margin:0 0 8px">Cambiar Recepcionista</h3>
                 <p style="color:#6b7280;margin:0 0 16px">Pantalla ${pantallaNumero}</p>
-                <select id="selectRecepcionista" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:16px;">
+                <select id="selectRecepcionista" style="width:100%;padding:8px;
+                    border:1px solid #d1d5db;border-radius:6px;margin-bottom:16px;">
                     <option value="">Sin asignar</option>
                     ${opciones}
                 </select>
                 <div style="display:flex;gap:8px;justify-content:flex-end;">
                     <button onclick="cerrarModalRecepcionista()"
-                        style="padding:8px 16px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;">
-                        Cancelar
-                    </button>
+                        style="padding:8px 16px;border:1px solid #d1d5db;border-radius:6px;
+                               background:#fff;cursor:pointer;">Cancelar</button>
                     <button onclick="confirmarAsignacionRecepcionista('${pantallaId}')"
-                        style="padding:8px 16px;background:#6366f1;color:#fff;border:none;border-radius:6px;cursor:pointer;">
-                        Asignar
-                    </button>
+                        style="padding:8px 16px;background:#6366f1;color:#fff;
+                               border:none;border-radius:6px;cursor:pointer;">Asignar</button>
                 </div>
             </div>
         </div>
@@ -348,7 +390,7 @@ function formatFecha(fechaISO) {
         if (diff < 60)    return 'Hace un momento';
         if (diff < 3600)  return `Hace ${Math.floor(diff / 60)} min`;
         if (diff < 86400) return `Hace ${Math.floor(diff / 3600)} hrs`;
-        return fecha.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        return fecha.toLocaleDateString('es-ES', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
     } catch { return 'N/A'; }
 }
 
@@ -359,109 +401,78 @@ function mostrarMensajePantallas(mensaje, tipo) {
     setTimeout(() => { container.innerHTML = ''; }, tipo === 'error' ? 5000 : 3000);
 }
 
-// Exponer funciones usadas desde onclick en HTML inline
 window.mostrarModalAsignarRecepcionista  = mostrarModalAsignarRecepcionista;
 window.cerrarModalRecepcionista          = cerrarModalRecepcionista;
 window.confirmarAsignacionRecepcionista  = confirmarAsignacionRecepcionista;
 
-// ── WEBSOCKET: actualizar grid de pantallas en tiempo real ──
-// ── WEBSOCKET: actualizar grid cuando lleguen eventos de pantallas ──
-// ── WEBSOCKET propio para pantallas.js ──────────────────────────────────────
-
-let socketPantallas = null;
-
-function conectarSocketPantallas() {
-    // Reusar socketAdmin si ya existe (cargado por usuarios.js),
-    // o crear uno nuevo si pantallas.js se carga solo.
-    if (typeof socketAdmin !== 'undefined' && socketAdmin) {
-        socketPantallas = socketAdmin;
-        console.log('✅ Reutilizando socketAdmin para pantallas');
-        registrarEventosPantallas(socketPantallas);
-        return;
-    }
-
-    socketPantallas = io();
-
-    socketPantallas.on('connect', () => {
-        console.log('🔌 Socket pantallas conectado:', socketPantallas.id);
-        socketPantallas.emit('join', { room: 'admin' });
-    });
-
-    socketPantallas.on('disconnect', () => {
-        console.log('🔌 Socket pantallas desconectado');
-    });
-
-    registrarEventosPantallas(socketPantallas);
-}
-
-function registrarEventosPantallas(socket) {
-    // Asegurarse de estar en sala admin
-    if (socket.connected) {
-        socket.emit('join', { room: 'admin' });
-    } else {
-        socket.on('connect', () => socket.emit('join', { room: 'admin' }));
-    }
-
-    socket.on('pantalla_vinculada',     () => {
-        console.log('📺 pantalla_vinculada recibido → recargando grid');
-        cargarPantallas();
-    });
-    socket.on('pantalla_desvinculada',  () => {
-        console.log('📺 pantalla_desvinculada recibido → recargando grid');
-        cargarPantallas();
-    });
-    socket.on('recepcionista_asignado', () => {
-        console.log('👤 recepcionista_asignado recibido → recargando grid');
-        cargarPantallas();
-    });
-
-    socketAdmin.on('pantalla_pendiente', () => {
-        console.log('🟡 pantalla_pendiente → recargando grid');
-        cargarPantallas();
-    });
-
-
-    console.log('✅ Eventos de pantallas registrados en socket');
-}
-
-// Reemplaza el DOMContentLoaded anterior
 // ── WEBSOCKET ────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
-
-    const EVENTOS = [
+    const EVENTOS_PANTALLA = [
         'pantalla_vinculada',
         'pantalla_desvinculada',
-        'pantalla_pendiente',       // ← screen recargó y está esperando código
+        'pantalla_pendiente',
         'recepcionista_asignado'
     ];
 
     function registrar(socket) {
-        // Unirse a sala admin
         const unirse = () => socket.emit('join', { room: 'admin' });
         if (socket.connected) unirse();
-        socket.on('connect', unirse);   // reconexiones automáticas
+        socket.on('connect', unirse);
 
-        // Un solo handler para todos los eventos relevantes
-        EVENTOS.forEach(evento => {
+        EVENTOS_PANTALLA.forEach(evento => {
             socket.on(evento, () => {
-                console.log(`📺 Socket [${evento}] → cargarPantallas()`);
+                console.log(`📺 [${evento}] → cargarPantallas()`);
                 cargarPantallas();
             });
         });
 
-        console.log('✅ pantallas.js: eventos socket registrados');
+        // ── NUEVO: usuario eliminado o desactivado ──
+        socket.on('usuario_desactivado', (data) => {
+            console.log('[PAN] usuario_desactivado recibido:', data);
+            if (data.rol === 'recepcion') {
+                limpiarRecepcionistaEliminado(data.usuario_id);
+            }
+        });
+
+        socket.on('usuario_eliminado', (data) => {
+            console.log('[PAN] usuario_eliminado recibido:', data);
+            if (data.rol === 'recepcion') {
+                limpiarRecepcionistaEliminado(data.usuario_id);
+                // Recargar recepcionistas disponibles
+                cargarRecepcionistas();
+            }
+        });
+
+        // Cuando se restaura un recepcionista, volver a cargarlo en los selects
+        socket.on('usuario_restaurado', (data) => {
+            if (data.usuario?.rol === 'recepcion') {
+                cargarRecepcionistas().then(() => {
+                    // Re-renderizar solo selects de pantallas pendientes
+                    document.querySelectorAll('[id^="recepcionista-"]').forEach(sel => {
+                        if (sel.tagName === 'SELECT') {
+                            const yaExiste = Array.from(sel.options).some(o => o.value === String(data.usuario.id));
+                            if (!yaExiste) {
+                                const opt = document.createElement('option');
+                                opt.value       = data.usuario.id;
+                                opt.textContent = data.usuario.nombre_completo;
+                                sel.appendChild(opt);
+                            }
+                        }
+                    });
+                });
+            }
+        });
+
+        console.log('✅ pantallas.js: todos los eventos socket registrados');
     }
 
-    // Intentar reutilizar socketAdmin (usuarios.js), si no crear uno propio
     let intentos = 0;
     const esperar = setInterval(() => {
         intentos++;
-
         if (typeof socketAdmin !== 'undefined' && socketAdmin) {
             clearInterval(esperar);
             registrar(socketAdmin);
-
         } else if (intentos > 15) {
             clearInterval(esperar);
             console.warn('⚠️ socketAdmin no encontrado — creando socket propio');

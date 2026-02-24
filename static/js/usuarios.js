@@ -1,13 +1,19 @@
 /**
  * usuarios.js — Gestión completa de usuarios
+ * Lógica de papelera tipo OS (macOS / Windows):
+ *   - Mover a papelera → soft delete (activo=False en BD)
+ *   - Restaurar        → activo=True en BD
+ *   - Eliminar def.    → borra de BD (solo desde papelera)
+ *   - Vaciar papelera  → borra todos de BD
+ *
  * Requiere: auth.js y config.js cargados antes en el HTML
  */
 
-// ==========================================
+// ── Estado ────────────────────────────────────────────────────────────────────
 let isEditMode = false;
-let usersTrash = [];
+let usersTrash = [];   // espejo en memoria de los usuarios inactivos
 
-// ── Debounce para evitar recargas múltiples por eventos WS ────────────────────
+// ── Debounce para recargas por WS ─────────────────────────────────────────────
 let _reloadTimeout = null;
 function recargarUsuarios() {
     clearTimeout(_reloadTimeout);
@@ -15,7 +21,6 @@ function recargarUsuarios() {
 }
 
 // ── Inicialización ────────────────────────────────────────────────────────────
-
 function initUsuarios() {
     const form = document.getElementById('createUserForm');
     if (form) form.addEventListener('submit', handleCreateUser);
@@ -35,55 +40,124 @@ function onRoleChange() {
     }
 }
 
-// ── Cargar desde backend ──────────────────────────────────────────────────────
-
+// ── Cargar usuarios activos desde backend ─────────────────────────────────────
 async function loadUsersFromBackend() {
     try {
         const response = await fetch(USUARIOS_API.getAll, { headers: getAuthHeaders() });
         if (response.ok) {
             const data = await response.json();
-            const idsEnPapelera = new Set(usersTrash.map(u => u.id));
-            users = data.users.filter(u => !idsEnPapelera.has(u.id));
-            console.log(`✅ ${users.length} usuarios cargados (${idsEnPapelera.size} en papelera)`);
+            users = data.users;
+            console.log(`✅ ${users.length} usuarios activos cargados`);
         } else {
-            console.warn('Fallback a localStorage');
-            users = JSON.parse(localStorage.getItem('systemUsers')) || [];
+            console.warn('Error al cargar usuarios del backend');
+            users = [];
         }
     } catch (error) {
         console.error('Error al cargar usuarios:', error);
-        users = JSON.parse(localStorage.getItem('systemUsers')) || [];
+        users = [];
     }
     loadUsers();
     updateStats();
 }
 
-// ── Papelera ──────────────────────────────────────────────────────────────────
+// =============================================================================
+// PAPELERA — lógica tipo OS
+// =============================================================================
 
-function openUsersTrash() {
+async function openUsersTrash() {
     const modal = document.getElementById('usersTrashModal');
     const body  = document.getElementById('usersTrashBody');
     if (!modal || !body) return;
 
+    body.innerHTML = '<p style="color:#888;text-align:center">Cargando papelera...</p>';
+    modal.classList.add('active');
+
+    try {
+        const response = await fetch('/api/users/inactivos', { headers: getAuthHeaders() });
+        const data     = await response.json();
+        usersTrash     = data.users || [];
+    } catch (e) {
+        console.error('Error cargando papelera:', e);
+        body.innerHTML = '<p style="color:red">Error al cargar la papelera</p>';
+        return;
+    }
+
+    _renderizarPapelera();
+}
+
+function _renderizarPapelera() {
+    const body = document.getElementById('usersTrashBody');
+    if (!body) return;
+
     body.innerHTML = '';
 
     if (!usersTrash.length) {
-        body.innerHTML = '<p>No hay usuarios en papelera</p>';
-    } else {
-        usersTrash.forEach(user => {
-            const div = document.createElement('div');
-            div.className = 'trash-item';
-            div.innerHTML = `
-                <strong>${user.usuario}</strong> (${user.nombre_completo || ''})
-                <br>
-                <button onclick="restoreUser('${user.id}')">Restaurar</button>
-                <button onclick="deleteUserForever('${user.id}')">Eliminar definitivamente</button>
-                <hr>
-            `;
-            body.appendChild(div);
-        });
+        body.innerHTML = `
+            <div style="text-align:center;padding:32px;color:#9ca3af">
+                <div style="font-size:3rem;margin-bottom:12px">🗑️</div>
+                <p style="font-size:1rem;font-weight:500">La papelera está vacía</p>
+                <p style="font-size:0.85rem;margin-top:4px">Los usuarios eliminados aparecerán aquí</p>
+            </div>`;
+        return;
     }
 
-    modal.classList.add('active');
+    // ── Barra superior con contador y botón vaciar ──
+    const barra = document.createElement('div');
+    barra.className = 'trash-toolbar';
+    barra.style.cssText = `
+        display:flex; justify-content:space-between; align-items:center;
+        padding:10px 14px; background:#fef3c7; border-radius:8px;
+        margin-bottom:14px; border:1px solid #fcd34d;`;
+    barra.innerHTML = `
+        <span style="font-size:0.9rem;color:#92400e;font-weight:500">
+            🗑️ ${usersTrash.length} usuario${usersTrash.length > 1 ? 's' : ''} en papelera
+        </span>
+        <button
+            onclick="vaciarPapeleraUsuarios()"
+            style="background:#dc2626;color:#fff;border:none;padding:6px 14px;
+                   border-radius:6px;cursor:pointer;font-weight:600;font-size:0.85rem;">
+            Vaciar papelera
+        </button>`;
+    body.appendChild(barra);
+
+    // ── Items ──
+    usersTrash.forEach(user => {
+        const div        = document.createElement('div');
+        div.className    = 'trash-item';
+        div.style.cssText = `
+            display:flex; justify-content:space-between; align-items:center;
+            padding:10px 14px; border:1px solid #e5e7eb; border-radius:8px;
+            margin-bottom:8px; background:#f9fafb;`;
+
+        const info = document.createElement('div');
+        info.innerHTML = `
+            <strong style="font-size:0.95rem">${user.usuario}</strong>
+            <span style="color:#6b7280;font-size:0.85rem;margin-left:8px">${user.nombre_completo || ''}</span>
+            <br>
+            <span style="font-size:0.78rem;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px">
+                ${getRoleLabel(user.rol)}
+            </span>`;
+
+        const acciones = document.createElement('div');
+        acciones.style.cssText = 'display:flex;gap:8px;flex-shrink:0';
+        acciones.innerHTML = `
+            <button
+                onclick="restoreUser('${user.id}')"
+                style="background:#059669;color:#fff;border:none;padding:5px 12px;
+                       border-radius:5px;cursor:pointer;font-size:0.82rem;font-weight:500">
+                ↩ Restaurar
+            </button>
+            <button
+                onclick="deleteUserForever('${user.id}')"
+                style="background:#dc2626;color:#fff;border:none;padding:5px 12px;
+                       border-radius:5px;cursor:pointer;font-size:0.82rem;font-weight:500">
+                🗑 Eliminar
+            </button>`;
+
+        div.appendChild(info);
+        div.appendChild(acciones);
+        body.appendChild(div);
+    });
 }
 
 function closeUsersTrash() {
@@ -91,6 +165,43 @@ function closeUsersTrash() {
     if (modal) modal.classList.remove('active');
 }
 
+// ── Mover a papelera (desde grid principal — soft delete) ─────────────────────
+async function moveUserToTrash() {
+    if (!selectedUserId) return;
+
+    const user = users.find(u => u.id === selectedUserId);
+    if (!user) return;
+
+    if (!confirm(`¿Enviar a la papelera al usuario "${user.usuario}"?\nPodrás restaurarlo más tarde.`)) return;
+
+    try {
+        const response = await fetch(USUARIOS_API.desactivar(selectedUserId), {
+            method:  'POST',
+            headers: getAuthHeaders()
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+            showToast(data.message || 'Error al mover a papelera', 'error');
+            return;
+        }
+
+        // Actualizar estado local sin recargar todo
+        users      = users.filter(u => u.id !== selectedUserId);
+        usersTrash = [...usersTrash, user];
+
+        loadUsers();
+        updateStats();
+        closeUserDetailsModal();
+        showToast(`🗑️ "${user.usuario}" movido a la papelera`, 'warning');
+
+    } catch (error) {
+        console.error('Error al mover a papelera:', error);
+        showToast('Error de conexión', 'error');
+    }
+}
+
+// ── Restaurar desde papelera ──────────────────────────────────────────────────
 async function restoreUser(userId) {
     const user = usersTrash.find(u => u.id === userId);
     if (!user) return;
@@ -100,61 +211,108 @@ async function restoreUser(userId) {
             method:  'POST',
             headers: getAuthHeaders()
         });
+        const data = await response.json();
 
         if (!response.ok) {
-            const data = await response.json();
             showToast(data.message || 'Error al restaurar', 'error');
             return;
         }
 
+        // Actualizar estado local
         usersTrash = usersTrash.filter(u => u.id !== userId);
-        await loadUsersFromBackend(); // recargar desde BD para estado fresco
-        openUsersTrash();
-        showToast(`Usuario ${user.usuario} restaurado`, 'success');
+        users      = [...users, { ...user, activo: true }];
+
+        loadUsers();
+        updateStats();
+        _renderizarPapelera();
+        showToast(`✅ "${user.usuario}" restaurado correctamente`, 'success');
 
     } catch (error) {
-        console.error(error);
+        console.error('Error al restaurar:', error);
         showToast('Error de conexión', 'error');
     }
 }
 
+// ── Eliminar definitivamente UN usuario (solo desde papelera) ─────────────────
 async function deleteUserForever(userId) {
     const user = usersTrash.find(u => u.id === userId);
     if (!user) return;
 
-    if (!confirm(`Eliminar DEFINITIVAMENTE a ${user.usuario}?`)) return;
+    if (!confirm(
+        `⚠️ ELIMINAR DEFINITIVAMENTE\n\n` +
+        `¿Estás seguro de que deseas eliminar a "${user.usuario}" de forma permanente?\n` +
+        `Esta acción NO se puede deshacer.`
+    )) return;
 
     try {
         const response = await fetch(USUARIOS_API.delete(userId), {
             method:  'DELETE',
             headers: getAuthHeaders()
         });
+        const data = await response.json();
 
-        if (response.ok) {
-            usersTrash = usersTrash.filter(u => u.id !== userId);
-            openUsersTrash();
-            showToast('Usuario eliminado definitivamente', 'success');
-        } else {
-            const data = await response.json();
-            showToast(data.message || 'Error al eliminar en BD', 'error');
+        if (!response.ok) {
+            showToast(data.message || 'Error al eliminar', 'error');
+            return;
         }
+
+        // Eliminar del estado local
+        usersTrash = usersTrash.filter(u => u.id !== userId);
+        _renderizarPapelera();
+        showToast(`🗑️ "${user.usuario}" eliminado definitivamente`, 'success');
+
     } catch (error) {
-        console.error(error);
+        console.error('Error al eliminar definitivamente:', error);
         showToast('Error de conexión', 'error');
     }
 }
 
-// ── Renderizado de la grilla ──────────────────────────────────────────────────
+// ── Vaciar papelera completa ──────────────────────────────────────────────────
+async function vaciarPapeleraUsuarios() {
+    if (!usersTrash.length) return;
+
+    const total = usersTrash.length;
+    if (!confirm(
+        `⚠️ VACIAR PAPELERA\n\n` +
+        `¿Eliminar DEFINITIVAMENTE los ${total} usuario${total > 1 ? 's' : ''} en papelera?\n` +
+        `Esta acción NO se puede deshacer.`
+    )) return;
+
+    try {
+        const response = await fetch('/api/users/vaciar-papelera', {
+            method:  'DELETE',
+            headers: getAuthHeaders()
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+            showToast(data.message || 'Error al vaciar papelera', 'error');
+            return;
+        }
+
+        usersTrash = [];
+        _renderizarPapelera();
+        showToast(`🗑️ Papelera vaciada — ${data.eliminados} usuario${data.eliminados !== 1 ? 's' : ''} eliminado${data.eliminados !== 1 ? 's' : ''} definitivamente`, 'success');
+
+    } catch (e) {
+        console.error('Error al vaciar papelera:', e);
+        showToast('Error de conexión', 'error');
+    }
+}
+
+// =============================================================================
+// RENDERIZADO DE GRILLA
+// =============================================================================
 
 function loadUsers() {
     const grid       = document.getElementById('usersGrid');
     const emptyState = document.getElementById('emptyState');
     if (!grid) return;
 
-    grid.innerHTML = ''; // limpiar antes de repoblar — evita listeners duplicados
+    grid.innerHTML = '';
 
     if (users.length === 0) {
-        grid.style.display       = 'none';
+        grid.style.display = 'none';
         if (emptyState) emptyState.style.display = 'flex';
         return;
     }
@@ -180,10 +338,8 @@ function createUserCard(user) {
         <div class="user-info">
             <h3>${nombre}</h3>
             <span class="user-role ${roleClass}">${roleLabel}</span>
-        </div>
-    `;
+        </div>`;
 
-    // Un solo listener por card — no se acumula porque grid.innerHTML='' limpia antes
     card.addEventListener('click', () => showUserDetails(user.id));
     card.addEventListener('contextmenu', (e) => {
         e.preventDefault();
@@ -193,7 +349,9 @@ function createUserCard(user) {
     return card;
 }
 
-// ── Crear usuario ─────────────────────────────────────────────────────────────
+// =============================================================================
+// CREAR USUARIO
+// =============================================================================
 
 async function handleCreateUser(e) {
     e.preventDefault();
@@ -236,7 +394,7 @@ async function handleCreateUser(e) {
         if (response.ok) {
             await loadUsersFromBackend();
             closeCreateUserModal();
-            showToast(`Usuario ${username} creado exitosamente`, 'success');
+            showToast(`✅ Usuario "${username}" creado exitosamente`, 'success');
             document.getElementById('createUserForm').reset();
         } else {
             showToast(data.message || 'Error al crear usuario', 'error');
@@ -247,60 +405,9 @@ async function handleCreateUser(e) {
     }
 }
 
-// ── Mover a papelera ──────────────────────────────────────────────────────────
-
-async function moveUserToTrash() {
-    if (!selectedUserId) return;
-
-    const user = users.find(u => u.id === selectedUserId);
-    if (!user) return;
-
-    if (!confirm(`¿Enviar a la papelera al usuario "${user.usuario}"?`)) return;
-
-    if (usersTrash.some(u => u.id === selectedUserId)) {
-        showToast('Este usuario ya está en la papelera', 'warning');
-        closeUserDetailsModal();
-        return;
-    }
-
-    try {
-        const response = await fetch(USUARIOS_API.desactivar(selectedUserId), {
-            method:  'POST',
-            headers: getAuthHeaders()
-        });
-
-        if (!response.ok) {
-            const data = await response.json();
-            showToast(data.message || 'Error al desactivar usuario', 'error');
-            return;
-        }
-
-        usersTrash.push(user);
-        users = users.filter(u => u.id !== selectedUserId);
-
-        loadUsers();
-        updateStats();
-        closeUserDetailsModal();
-        showToast(`Usuario ${user.usuario} enviado a papelera`, 'warning');
-
-    } catch (error) {
-        console.error('Error al desactivar usuario:', error);
-        showToast('Error de conexión', 'error');
-    }
-}
-
-function openCreateUserModal() {
-    const modal = document.getElementById('createUserModal');
-    if (!modal) return;
-    modal.classList.add('active');
-    document.getElementById('createUserForm').reset();
-    setTimeout(() => {
-        const input = document.getElementById('newUsername');
-        if (input) input.value = '';
-    }, 150);
-}
-
-// ── Guardar cambios ───────────────────────────────────────────────────────────
+// =============================================================================
+// GUARDAR CAMBIOS (edición)
+// =============================================================================
 
 async function saveUserChanges() {
     const newUsername = document.getElementById('editUsername').value.trim();
@@ -328,11 +435,7 @@ async function saveUserChanges() {
         return;
     }
 
-    const updatedData = {
-        usuario:         newUsername,
-        nombre_completo: newName,
-        rol:             newRole
-    };
+    const updatedData = { usuario: newUsername, nombre_completo: newName, rol: newRole };
     if (newPassword && newPassword !== originalPassword) {
         updatedData.password = newPassword;
     }
@@ -348,7 +451,7 @@ async function saveUserChanges() {
         if (response.ok) {
             await loadUsersFromBackend();
             closeUserDetailsModal();
-            showToast('Cambios registrados correctamente', 'success');
+            showToast('✅ Cambios registrados correctamente', 'success');
         } else {
             showToast(data.message || 'Error al actualizar usuario', 'error');
         }
@@ -358,7 +461,20 @@ async function saveUserChanges() {
     }
 }
 
-// ── Modales ───────────────────────────────────────────────────────────────────
+// =============================================================================
+// MODALES
+// =============================================================================
+
+function openCreateUserModal() {
+    const modal = document.getElementById('createUserModal');
+    if (!modal) return;
+    modal.classList.add('active');
+    document.getElementById('createUserForm').reset();
+    setTimeout(() => {
+        const input = document.getElementById('newUsername');
+        if (input) input.value = '';
+    }, 150);
+}
 
 function closeCreateUserModal() {
     document.getElementById('createUserModal').classList.remove('active');
@@ -378,7 +494,6 @@ function showUserDetails(userId) {
 
     const passwordEl   = document.getElementById('detailPassword');
     const userPassword = user.password || '';
-
     if (!userPassword) {
         passwordEl.textContent      = '[No disponible]';
         passwordEl.dataset.password = '';
@@ -421,7 +536,9 @@ function closeAllModals() {
     document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
 }
 
-// ── Modo edición ──────────────────────────────────────────────────────────────
+// =============================================================================
+// MODO EDICIÓN
+// =============================================================================
 
 function enterEditMode() {
     hideContextMenu();
@@ -433,7 +550,7 @@ function enterEditMode() {
     document.getElementById('editUsername').value = user.usuario;
     document.getElementById('editName').value     = user.nombre_completo || '';
 
-    const passInput = document.getElementById('editPassword');
+    const passInput    = document.getElementById('editPassword');
     const userPassword = user.password || '';
     passInput.value       = userPassword;
     passInput.placeholder = userPassword ? 'Contraseña actual' : 'Establecer nueva contraseña';
@@ -471,7 +588,9 @@ function cancelEditMode() {
     _setModoLectura();
 }
 
-// ── Contraseñas ───────────────────────────────────────────────────────────────
+// =============================================================================
+// CONTRASEÑAS
+// =============================================================================
 
 function toggleDetailPassword() {
     const el             = document.getElementById('detailPassword');
@@ -501,7 +620,9 @@ function toggleEditPassword() {
     if (input) input.type = input.type === 'password' ? 'text' : 'password';
 }
 
-// ── Menú de contexto ──────────────────────────────────────────────────────────
+// =============================================================================
+// MENÚ DE CONTEXTO
+// =============================================================================
 
 function showContextMenu(x, y, userId) {
     const menu         = document.getElementById('contextMenu');
@@ -518,7 +639,9 @@ function hideContextMenu() {
     document.removeEventListener('click', hideContextMenu);
 }
 
-// ── Helpers internos ──────────────────────────────────────────────────────────
+// =============================================================================
+// HELPERS INTERNOS DE MODAL
+// =============================================================================
 
 function _setModoLectura() {
     document.getElementById('detailUsername').style.display        = '';
@@ -550,12 +673,14 @@ function _setModoEdicion() {
     document.getElementById('closeBtn').style.display              = 'none';
 }
 
-// ── WebSocket — se conecta desde main.js, NO al cargar el archivo ─────────────
+// =============================================================================
+// WEBSOCKET — conectar desde main.js (NO desde aquí)
+// =============================================================================
 
 let socketAdmin = null;
 
 function conectarSocketAdmin() {
-    if (socketAdmin && socketAdmin.connected) return; // evitar reconexiones duplicadas
+    if (socketAdmin && socketAdmin.connected) return;
 
     socketAdmin = io();
 
@@ -568,25 +693,52 @@ function conectarSocketAdmin() {
         console.log('🔌 Socket admin desconectado');
     });
 
+    // ── Nuevo usuario creado ──
     socketAdmin.on('usuario_creado', (data) => {
-        console.log('📨 Nuevo usuario creado en tiempo real:', data);
-        recargarUsuarios(); // ← debounce: evita múltiples recargas en ráfaga
+        console.log('📨 Nuevo usuario creado:', data);
+        recargarUsuarios();
         showToast(`👤 Nuevo usuario: ${data.usuario.nombre_completo} (${getRoleLabel(data.usuario.rol)})`, 'success');
     });
 
+    // ── Usuario editado ──
     socketAdmin.on('usuario_actualizado', (data) => {
         if (data.tipo === 'edicion') {
-            console.log('📨 Usuario actualizado en tiempo real:', data);
-            recargarUsuarios(); // ← debounce
+            console.log('📨 Usuario actualizado:', data);
+            recargarUsuarios();
             showToast(`✏️ Usuario actualizado: ${data.usuario.nombre_completo}`, 'success');
         }
     });
 
+    // ── Usuario desactivado (movido a papelera) ──
+    // En admin solo recargamos, no hacemos "caer" la página
+    socketAdmin.on('usuario_desactivado', (data) => {
+        console.log('🗑️ Usuario movido a papelera:', data);
+        recargarUsuarios();
+        // Si el modal de detalles está abierto para este usuario, cerrarlo
+        if (selectedUserId === data.usuario_id) {
+            closeUserDetailsModal();
+        }
+    });
+
+    // ── Usuario restaurado desde papelera ──
+    socketAdmin.on('usuario_restaurado', (data) => {
+        console.log('✅ Usuario restaurado:', data);
+        recargarUsuarios();
+        showToast(`✅ Restaurado: ${data.usuario.nombre_completo}`, 'success');
+    });
+
+    // ── Usuario eliminado definitivamente (desde papelera) ──
+    socketAdmin.on('usuario_eliminado_definitivo', (data) => {
+        console.log('💀 Usuario eliminado definitivamente:', data);
+        // En admin solo limpiamos el estado, ya se maneja en deleteUserForever/vaciar
+        users      = users.filter(u => u.id !== data.usuario_id);
+        usersTrash = usersTrash.filter(u => u.id !== data.usuario_id);
+        loadUsers();
+        updateStats();
+    });
+
+    // ── Pantallas ──
     socketAdmin.on('pantalla_vinculada',     () => { if (typeof cargarPantallas === 'function') cargarPantallas(); });
     socketAdmin.on('pantalla_desvinculada',  () => { if (typeof cargarPantallas === 'function') cargarPantallas(); });
     socketAdmin.on('recepcionista_asignado', () => { if (typeof cargarPantallas === 'function') cargarPantallas(); });
 }
-
-// ── IMPORTANTE: NO llamar conectarSocketAdmin() aquí ─────────────────────────
-// Se llama desde main.js dentro del DOMContentLoaded para garantizar
-// que el DOM y la sesión estén listos antes de conectar el socket.
