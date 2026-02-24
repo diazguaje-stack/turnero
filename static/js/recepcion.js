@@ -2,10 +2,6 @@
  * recepcion.js - Página de recepción
  * Requiere: auth.js cargado antes en el HTML
  * Requiere: socket.io cargado antes en el HTML
- *
- * Actualización en tiempo real vía WebSocket:
- * - Cuando registro genera un código, recepción lo recibe INMEDIATAMENTE
- * - El intervalo de 15s sigue como respaldo (fallback)
  */
 
 // ── Estado global ─────────────────────────────────────────
@@ -14,7 +10,7 @@ let papelera          = [];
 let codigosAnteriores = {};
 let intervaloRefresco = null;
 let socket            = null;
-let historialLlamados=[];
+let historialLlamados = [];
 const INTERVALO_REFRESCO_MS = 15_000;
 
 // ==================== INICIALIZACIÓN ====================
@@ -24,8 +20,6 @@ document.addEventListener('DOMContentLoaded', () => {
     cargarPacientes();
     cargarPapelera();
     conectarSocket();
-
-    // Fallback: refresco cada 15s por si el socket falla
     intervaloRefresco = setInterval(cargarPacientes, INTERVALO_REFRESCO_MS);
 });
 
@@ -41,7 +35,6 @@ function conectarSocket() {
 
     socket.on('connect', () => {
         console.log('🔌 Socket conectado:', socket.id);
-        // Unirse a la sala de recepción para recibir eventos
         socket.emit('join', { room: 'recepcion' });
     });
 
@@ -49,180 +42,192 @@ function conectarSocket() {
         console.log('✅ Unido a sala:', data.room);
     });
 
-    socket.on('llamar_confirmado', (data) => {
-        console.log('✅ Pantalla recibió llamada:', data.codigo);
-    });
-    
     socket.on('disconnect', () => {
         console.log('🔌 Socket desconectado — usando fallback de 15s');
     });
 
-    // ── Evento principal: nuevo código generado en registro ──
+    // ── Nuevo código generado en registro ──
     socket.on('nuevo_codigo', (data) => {
         console.log('📨 Evento nuevo_codigo recibido:', data);
-
         if (data.tipo === 'nuevo') {
-            // Paciente nuevo → agregar directamente sin recargar todo
             agregarPacienteEnTiempoReal(data);
         } else if (data.tipo === 'reimpresion') {
-            // Re-registro → actualizar código existente
             actualizarCodigoEnTiempoReal(data);
         }
     });
+
     socket.on('usuario_actualizado', (data) => {
-    if (data.usuario.rol === 'medico') {
-        console.log('📨 Médico actualizado en recepción');
-        cargarPacientes(); // recarga todo incluyendo nombre del médico
-        mostrarToast(`👨‍⚕️ Datos de médico actualizados`, 'nuevo');
+        if (data.usuario.rol === 'medico') {
+            console.log('📨 Médico actualizado en recepción');
+            cargarPacientes();
+            mostrarToast(`👨‍⚕️ Datos de médico actualizados`, 'nuevo');
         }
     });
+
+    socket.on('llamar_confirmado', (data) => {
+        console.log('✅ Pantalla recibió llamada:', data.codigo);
+    });
+
     socket.on('llamar_paciente', (data) => {
-    // Guardar en historial local
         historialLlamados.unshift({
             codigo: data.codigo,
             nombre: data.nombre,
-            hora:   new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            hora:   new Date().toLocaleTimeString('es-ES', {
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            })
         });
-
-        // Limitar a 100 entradas
         if (historialLlamados.length > 100) historialLlamados = historialLlamados.slice(0, 100);
 
-        // Actualizar badge del botón historial
         const badgeEl = document.getElementById('historialBadge');
         if (badgeEl) {
             badgeEl.textContent = historialLlamados.length;
             badgeEl.style.display = 'inline-block';
         }
 
-        // Si el modal está abierto, actualizar en tiempo real
         const modal = document.getElementById('historialModal');
-        if (modal && modal.style.display === 'flex') {
-            renderizarHistorialModal();
-        }
+        if (modal && modal.style.display === 'flex') renderizarHistorialModal();
 
-        console.log(`📋 Llamado registrado en historial: ${data.codigo} — ${data.nombre}`);
+        console.log(`📋 Llamado registrado: ${data.codigo} — ${data.nombre}`);
     });
 
+    // ── Usuario movido a papelera (soft delete) ───────────────────────────────
+    socket.on('usuario_desactivado', (data) => {
+        console.log('🗑️ usuario_desactivado recibido en recepción:', data);
+        _manejarUsuarioInaccesible(data, 'desactivado');
+    });
+
+    // ── Usuario eliminado definitivamente de la BD ────────────────────────────
+    socket.on('usuario_eliminado_definitivo', (data) => {
+        console.log('💀 usuario_eliminado_definitivo recibido en recepción:', data);
+        _manejarUsuarioInaccesible(data, 'eliminado');
+    });
 }
 
-// ── Agregar paciente nuevo sin recargar la página ──────────
-function agregarPacienteEnTiempoReal(data) {
-    const medicoId   = data.paciente.medico_id;
-    const listaEl    = document.getElementById(`pacientes-${medicoId}`);
+// =============================================================================
+// MANEJO DE USUARIO INACCESIBLE (desactivado o eliminado)
+// Regla 1: Si ES este usuario → cerrar sesión forzada (página cae)
+// Regla 2: Si era un médico  → recargar lista de pacientes
+// =============================================================================
 
-    if (!listaEl) {
-        // El médico no está renderizado aún → recargar todo
-        cargarPacientes();
+function _manejarUsuarioInaccesible(data, motivo) {
+    // ── Leer sesión exactamente como auth.js la guarda ────────────────────────
+    // auth.js usa sessionStorage con claves sueltas: 'usuario', 'jwt_token'
+    let miId      = '';
+    let miUsuario = sessionStorage.getItem('usuario') || '';
+
+    // Extraer user_id del JWT (auth.js no guarda el ID por separado)
+    try {
+        const token = sessionStorage.getItem('jwt_token');
+        if (token) {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            miId      = String(payload.user_id || '');
+            if (!miUsuario) miUsuario = String(payload.usuario || '');
+        }
+    } catch (e) {
+        console.warn('[Socket] No se pudo decodificar el JWT:', e);
+    }
+
+    console.log(`[Socket:${motivo}] Afectado  → id="${data.usuario_id}" usuario="${data.usuario}" rol="${data.rol}"`);
+    console.log(`[Socket:${motivo}] Mi sesión → id="${miId}" usuario="${miUsuario}"`);
+
+    const esEsteUsuario =
+        (miId      && String(data.usuario_id) === miId)      ||
+        (miUsuario && String(data.usuario)    === miUsuario);
+
+    if (esEsteUsuario) {
+        // ── REGLA 1: Esta sesión ya no tiene acceso → página cae ─────────────
+        console.warn(`⚠️ Esta sesión de recepción fue ${motivo}. Forzando cierre...`);
+        _forzarCierreSesion(motivo);
         return;
     }
 
-    // Quitar mensaje "No hay pacientes" si existe
-    const noHay = listaEl.querySelector('.no-pacientes');
-    if (noHay) noHay.remove();
+    // ── REGLA 2: Era un médico → recargar pacientes ───────────────────────────
+    if (data.rol === 'medico') {
+        console.log('🔄 Médico afectado, recargando pacientes...');
+        cargarPacientes();
+        mostrarToast(`🗑️ Médico "${data.nombre || data.usuario}" fue dado de baja`, 'reimpresion');
+    }
+}
 
-    // Crear fila del nuevo paciente con animación
-    const nuevaFila = document.createElement('div');
-    nuevaFila.className = 'paciente-chip nuevo-ingreso';
-    nuevaFila.id        = `paciente-row-${data.paciente.id}`;
-    nuevaFila.setAttribute('onclick', `toggleAcciones('${data.paciente.id}', '${medicoId}')`);
-    nuevaFila.innerHTML = `
-        <div class="chip-codigo">
-            ${data.codigo_turno}
-            <span class="badge-reimpresion" style="background:#28a745;">🆕</span>
-        </div>
-        <div class="chip-nombre">${data.paciente.nombre}</div>
-        <div class="chip-acciones" id="acciones-${data.paciente.id}" style="display:none;">
-            <button class="btn-llamar"
-                    onclick="event.stopPropagation(); llamarPaciente('${data.paciente.id}', '${data.codigo_turno}', '${data.paciente.nombre}')">
-                📢 Llamar
-            </button>
-            <button class="btn-retirar"
-                    onclick="event.stopPropagation(); retirarPaciente('${data.paciente.id}', '${medicoId}')">
-                🗑️ Retirar
-            </button>
+/**
+ * Cierra sesión forzada cuando el usuario fue desactivado o eliminado.
+ * Limpia tokens exactamente como los guarda auth.js y muestra pantalla de bloqueo.
+ */
+function _forzarCierreSesion(motivo) {
+    // Detener intervalos y socket antes de limpiar
+    if (intervaloRefresco) clearInterval(intervaloRefresco);
+    if (socket) socket.disconnect();
+
+    // Limpiar exactamente lo que auth.js guarda
+    const role = sessionStorage.getItem('jwt_role');
+    if (role) localStorage.removeItem(`jwt_token_${role}`);
+
+    sessionStorage.removeItem('jwt_token');
+    sessionStorage.removeItem('jwt_role');
+    sessionStorage.removeItem('usuario');
+    sessionStorage.removeItem('rol');
+    sessionStorage.removeItem('nombre_completo');
+
+    // También limpiar localStorage por si acaso
+    localStorage.removeItem('jwt_token_recepcion');
+    localStorage.removeItem('jwt_token_admin');
+    localStorage.removeItem('jwt_token_registro');
+
+    const mensajes = {
+        desactivado: {
+            icono:  '🔒',
+            titulo: 'Acceso suspendido',
+            cuerpo: 'Tu cuenta de recepción ha sido movida a la papelera por un administrador.',
+            sub:    'Contacta al administrador si crees que es un error.',
+            color:  '#f59e0b',
+        },
+        eliminado: {
+            icono:  '❌',
+            titulo: 'Cuenta eliminada',
+            cuerpo: 'Tu cuenta de recepción ha sido eliminada del sistema.',
+            sub:    'Solicita una nueva cuenta al administrador.',
+            color:  '#dc2626',
+        }
+    };
+    const msg = mensajes[motivo] || mensajes['desactivado'];
+
+    // Mostrar pantalla de bloqueo sobre todo el contenido
+    document.body.innerHTML = `
+        <div style="
+            position:fixed; inset:0; background:#0f172a;
+            display:flex; flex-direction:column;
+            align-items:center; justify-content:center;
+            z-index:99999; font-family:system-ui,sans-serif;
+            text-align:center; padding:32px;">
+            <div style="
+                background:#1e293b; border:2px solid ${msg.color};
+                border-radius:16px; padding:48px 40px;
+                max-width:440px; width:100%;
+                box-shadow:0 25px 50px rgba(0,0,0,0.5);">
+                <div style="font-size:3.5rem; margin-bottom:16px">${msg.icono}</div>
+                <h2 style="color:${msg.color}; font-size:1.4rem; margin:0 0 16px">
+                    ${msg.titulo}
+                </h2>
+                <p style="color:#cbd5e1; font-size:1rem; margin:0 0 10px; line-height:1.6">
+                    ${msg.cuerpo}
+                </p>
+                <p style="color:#64748b; font-size:0.85rem; margin:0 0 32px">
+                    ${msg.sub}
+                </p>
+                <p style="color:#475569; font-size:0.8rem; margin:0 0 20px">
+                    Redirigiendo al inicio en 5 segundos...
+                </p>
+                <button onclick="location.href='/'"
+                    style="
+                        background:${msg.color}; color:#fff; border:none;
+                        padding:12px 32px; border-radius:8px; cursor:pointer;
+                        font-size:1rem; font-weight:600; width:100%">
+                    Ir al inicio de sesión
+                </button>
+            </div>
         </div>`;
 
-    // Agregar al contenedor horizontal (no a listaEl directamente)
-    let horizontalEl = listaEl.querySelector('.pacientes-horizontal');
-    if (!horizontalEl) {
-        horizontalEl = document.createElement('div');
-        horizontalEl.className = 'pacientes-horizontal';
-        listaEl.appendChild(horizontalEl);
-    }
-    horizontalEl.appendChild(nuevaFila);
-        listaEl.appendChild(nuevaFila);
-
-    // Actualizar estado global
-    if (pacientesData[medicoId]) {
-        pacientesData[medicoId].pacientes.push({
-            id:     data.paciente.id,
-            nombre: data.paciente.nombre,
-            codigo: data.codigo_turno,
-            motivo: data.paciente.motivo
-        });
-    }
-
-    // Actualizar badge de contador
-    actualizarBadgeContador(medicoId);
-
-    // Animación de entrada + toast
-    setTimeout(() => nuevaFila.classList.remove('nuevo-ingreso'), 3000);
-    mostrarToast(`🆕 Nuevo paciente: ${data.paciente.nombre} — ${data.codigo_turno}`, 'nuevo');
-
-    console.log(`✅ Paciente agregado en tiempo real: ${data.codigo_turno}`);
-}
-
-// ── Actualizar código de paciente re-registrado ────────────
-function actualizarCodigoEnTiempoReal(data) {
-    const pacienteId = data.paciente.id;
-    const filaEl     = document.getElementById(`paciente-row-${pacienteId}`);
-
-    if (!filaEl) {
-        // No está visible aún → recargar
-        cargarPacientes();
-        return;
-    }
-
-    // Resaltar fila con nuevo código
-    filaEl.style.borderLeft  = '4px solid #ffc107';
-    filaEl.style.background  = '#fffbf0';
-
-    const codigoEl = filaEl.querySelector('.paciente-codigo');
-    if (codigoEl) {
-        codigoEl.innerHTML = `
-            🎫 <strong>${data.codigo_turno}</strong>
-            <span style="background:#ffc107;color:#333;
-                         font-size:0.72em;font-weight:bold;
-                         padding:2px 7px;border-radius:10px;margin-left:6px;">
-                ♻️ NUEVO CÓDIGO
-            </span>
-            <br>
-            <span style="font-size:0.78em;color:#856404;">
-                Anterior: <s>${data.codigo_anterior || '—'}</s>
-            </span>`;
-    }
-
-    // Actualizar estado global
-    const medicoId = data.paciente.medico_id;
-    if (pacientesData[medicoId]) {
-        const p = pacientesData[medicoId].pacientes.find(x => x.id === pacienteId);
-        if (p) p.codigo = data.codigo_turno;
-    }
-    codigosAnteriores[pacienteId] = data.codigo_turno;
-
-    mostrarToast(`♻️ Código actualizado: ${data.paciente.nombre} → ${data.codigo_turno}`, 'reimpresion');
-
-    console.log(`♻️ Código actualizado en tiempo real: ${data.codigo_anterior} → ${data.codigo_turno}`);
-}
-
-// ── Actualizar badge de contador del médico ────────────────
-function actualizarBadgeContador(medicoId) {
-    const listaEl = document.getElementById(`pacientes-${medicoId}`);
-    if (!listaEl) return;
-
-    const total   = listaEl.querySelectorAll('.paciente-item').length;
-    const badgeEl = listaEl.closest('.medico-card')?.querySelector('.badge');
-    if (badgeEl) badgeEl.textContent = `${total} paciente(s)`;
+    setTimeout(() => { location.href = '/'; }, 5000);
 }
 
 // ==================== VERIFICAR SESIÓN ====================
@@ -350,19 +355,13 @@ function renderizarPacientes(pacientes, medicoId, cambios = {}) {
     return `
         <div class="pacientes-horizontal">
             ${pacientes.map(p => {
-                const cambiado = cambios[p.id];
-                const badgeNuevo = cambiado
-                    ? `<span class="badge-reimpresion">♻️</span>`
-                    : '';
-
+                const cambiado   = cambios[p.id];
+                const badgeNuevo = cambiado ? `<span class="badge-reimpresion">♻️</span>` : '';
                 return `
                 <div class="paciente-chip" id="paciente-row-${p.id}"
                      onclick="toggleAcciones('${p.id}', '${medicoId}')">
-                    <div class="chip-codigo">
-                        ${p.codigo || '—'} ${badgeNuevo}
-                    </div>
+                    <div class="chip-codigo">${p.codigo || '—'} ${badgeNuevo}</div>
                     <div class="chip-nombre">${p.nombre}</div>
-
                     <div class="chip-acciones" id="acciones-${p.id}" style="display:none;">
                         <button class="btn-llamar"
                                 onclick="event.stopPropagation(); llamarPaciente('${p.id}', '${p.codigo}', '${p.nombre}')">
@@ -378,12 +377,12 @@ function renderizarPacientes(pacientes, medicoId, cambios = {}) {
         </div>`;
 }
 
-// ── Toggle botones al hacer clic en el chip ────────────────
+// ==================== ACCIONES ====================
+
 function toggleAcciones(pacienteId, medicoId) {
     const accionesEl = document.getElementById(`acciones-${pacienteId}`);
     if (!accionesEl) return;
 
-    // Cerrar todos los demás chips abiertos
     document.querySelectorAll('.chip-acciones').forEach(el => {
         if (el.id !== `acciones-${pacienteId}`) {
             el.style.display = 'none';
@@ -396,7 +395,6 @@ function toggleAcciones(pacienteId, medicoId) {
     accionesEl.closest('.paciente-chip')?.classList.toggle('chip-activo', !estaAbierto);
 }
 
-
 function llamarPaciente(pacienteId, codigo, nombre, numeroPantalla) {
     mostrarToast(`📢 Llamando: ${codigo} — ${nombre}`, 'nuevo');
 
@@ -407,7 +405,7 @@ function llamarPaciente(pacienteId, codigo, nombre, numeroPantalla) {
             nombre:     nombre,
             recepcion:  numeroPantalla || obtenerNumeroRecepcionActual()
         });
-        console.log(`📢 Emitido llamar_paciente: ${codigo} — ${nombre} — Recepción: ${numeroPantalla}`);
+        console.log(`📢 Emitido llamar_paciente: ${codigo} — ${nombre}`);
     } else {
         console.warn('⚠️ Socket no conectado — llamada no enviada a pantalla');
     }
@@ -424,20 +422,109 @@ function llamarPaciente(pacienteId, codigo, nombre, numeroPantalla) {
 }
 
 function obtenerNumeroRecepcionActual() {
-    // Opción A: leer de una variable global que hayas seteado al cargar la página
-    if (window._numeroPantallaRecepcion) {
-        return window._numeroPantallaRecepcion;
-    }
-
-    // Opción B: leer del nombre de usuario en el header
+    if (window._numeroPantallaRecepcion) return window._numeroPantallaRecepcion;
     const userNameEl = document.getElementById('userName');
     if (userNameEl) {
         const match = userNameEl.textContent.match(/\d+/);
         if (match) return match[0];
     }
-
-    // Fallback: sin número de recepción
     return null;
+}
+
+// ── Actualizar badge de contador del médico ────────────────
+function actualizarBadgeContador(medicoId) {
+    const listaEl = document.getElementById(`pacientes-${medicoId}`);
+    if (!listaEl) return;
+    const total   = listaEl.querySelectorAll('.paciente-item').length;
+    const badgeEl = listaEl.closest('.medico-card')?.querySelector('.badge');
+    if (badgeEl) badgeEl.textContent = `${total} paciente(s)`;
+}
+
+// ── Agregar paciente nuevo sin recargar la página ──────────
+function agregarPacienteEnTiempoReal(data) {
+    const medicoId   = data.paciente.medico_id;
+    const listaEl    = document.getElementById(`pacientes-${medicoId}`);
+
+    if (!listaEl) { cargarPacientes(); return; }
+
+    const noHay = listaEl.querySelector('.no-pacientes');
+    if (noHay) noHay.remove();
+
+    const nuevaFila     = document.createElement('div');
+    nuevaFila.className = 'paciente-chip nuevo-ingreso';
+    nuevaFila.id        = `paciente-row-${data.paciente.id}`;
+    nuevaFila.setAttribute('onclick', `toggleAcciones('${data.paciente.id}', '${medicoId}')`);
+    nuevaFila.innerHTML = `
+        <div class="chip-codigo">
+            ${data.codigo_turno}
+            <span class="badge-reimpresion" style="background:#28a745;">🆕</span>
+        </div>
+        <div class="chip-nombre">${data.paciente.nombre}</div>
+        <div class="chip-acciones" id="acciones-${data.paciente.id}" style="display:none;">
+            <button class="btn-llamar"
+                    onclick="event.stopPropagation(); llamarPaciente('${data.paciente.id}', '${data.codigo_turno}', '${data.paciente.nombre}')">
+                📢 Llamar
+            </button>
+            <button class="btn-retirar"
+                    onclick="event.stopPropagation(); retirarPaciente('${data.paciente.id}', '${medicoId}')">
+                🗑️ Retirar
+            </button>
+        </div>`;
+
+    let horizontalEl = listaEl.querySelector('.pacientes-horizontal');
+    if (!horizontalEl) {
+        horizontalEl = document.createElement('div');
+        horizontalEl.className = 'pacientes-horizontal';
+        listaEl.appendChild(horizontalEl);
+    }
+    horizontalEl.appendChild(nuevaFila);
+
+    if (pacientesData[medicoId]) {
+        pacientesData[medicoId].pacientes.push({
+            id:     data.paciente.id,
+            nombre: data.paciente.nombre,
+            codigo: data.codigo_turno,
+            motivo: data.paciente.motivo
+        });
+    }
+
+    actualizarBadgeContador(medicoId);
+    setTimeout(() => nuevaFila.classList.remove('nuevo-ingreso'), 3000);
+    mostrarToast(`🆕 Nuevo paciente: ${data.paciente.nombre} — ${data.codigo_turno}`, 'nuevo');
+    console.log(`✅ Paciente agregado en tiempo real: ${data.codigo_turno}`);
+}
+
+// ── Actualizar código de paciente re-registrado ────────────
+function actualizarCodigoEnTiempoReal(data) {
+    const pacienteId = data.paciente.id;
+    const filaEl     = document.getElementById(`paciente-row-${pacienteId}`);
+
+    if (!filaEl) { cargarPacientes(); return; }
+
+    filaEl.style.borderLeft = '4px solid #ffc107';
+    filaEl.style.background = '#fffbf0';
+
+    const codigoEl = filaEl.querySelector('.paciente-codigo');
+    if (codigoEl) {
+        codigoEl.innerHTML = `
+            🎫 <strong>${data.codigo_turno}</strong>
+            <span style="background:#ffc107;color:#333;font-size:0.72em;font-weight:bold;
+                         padding:2px 7px;border-radius:10px;margin-left:6px;">♻️ NUEVO CÓDIGO</span>
+            <br>
+            <span style="font-size:0.78em;color:#856404;">
+                Anterior: <s>${data.codigo_anterior || '—'}</s>
+            </span>`;
+    }
+
+    const medicoId = data.paciente.medico_id;
+    if (pacientesData[medicoId]) {
+        const p = pacientesData[medicoId].pacientes.find(x => x.id === pacienteId);
+        if (p) p.codigo = data.codigo_turno;
+    }
+    codigosAnteriores[pacienteId] = data.codigo_turno;
+
+    mostrarToast(`♻️ Código actualizado: ${data.paciente.nombre} → ${data.codigo_turno}`, 'reimpresion');
+    console.log(`♻️ Código actualizado: ${data.codigo_anterior} → ${data.codigo_turno}`);
 }
 
 // ==================== PAPELERA ====================
@@ -575,19 +662,19 @@ function mostrarToast(msg, tipo = 'nuevo') {
         toast = document.createElement('div');
         toast.id = 'toastCambio';
         toast.style.cssText = `
-            position:fixed;top:16px;right:16px;z-index:9999;
-            border-radius:8px;padding:12px 20px;
-            font-size:0.9em;font-weight:500;
+            position:fixed; top:16px; right:16px; z-index:9999;
+            border-radius:8px; padding:12px 20px;
+            font-size:0.9em; font-weight:500;
             box-shadow:0 4px 12px rgba(0,0,0,0.15);
-            transition:opacity 0.4s ease;max-width:320px;`;
+            transition:opacity 0.4s ease; max-width:320px;`;
         document.body.appendChild(toast);
     }
 
-    toast.style.background  = c.bg;
-    toast.style.color       = c.color;
-    toast.style.border      = `1px solid ${c.border}`;
-    toast.textContent       = msg;
-    toast.style.opacity     = '1';
+    toast.style.background = c.bg;
+    toast.style.color      = c.color;
+    toast.style.border     = `1px solid ${c.border}`;
+    toast.textContent      = msg;
+    toast.style.opacity    = '1';
 
     clearTimeout(toast._timeout);
     toast._timeout = setTimeout(() => { toast.style.opacity = '0'; }, 5000);
@@ -615,6 +702,8 @@ function mostrarEmptyState(containerId, mensaje) {
         <div class="empty-state"><h3>😕 Sin datos</h3><p>${mensaje}</p></div>`;
 }
 
+// ==================== HISTORIAL ====================
+
 function abrirHistorialLlamados() {
     const modal = document.getElementById('historialModal');
     if (!modal) return;
@@ -635,7 +724,9 @@ function renderizarHistorialModal() {
         body.innerHTML = `
             <div style="text-align:center; padding:48px 0; opacity:0.5;">
                 <div style="font-size:40px; margin-bottom:12px;">◇</div>
-                <p style="font-size:14px; letter-spacing:0.1em; color:#888;">Aún no se han llamado pacientes</p>
+                <p style="font-size:14px; letter-spacing:0.1em; color:#888;">
+                    Aún no se han llamado pacientes
+                </p>
             </div>`;
         return;
     }
@@ -646,37 +737,42 @@ function renderizarHistorialModal() {
             padding:14px 20px;
             background: ${idx === 0 ? 'rgba(79,142,247,0.08)' : 'rgba(255,255,255,0.03)'};
             border: 1px solid ${idx === 0 ? 'rgba(79,142,247,0.25)' : 'rgba(255,255,255,0.07)'};
-            border-radius:6px;
-            margin-bottom:8px;
+            border-radius:6px; margin-bottom:8px;
             animation: fadeInItem 0.3s ease both;
-            animation-delay: ${idx * 0.03}s;
-        ">
-            <span style="
-                font-size:11px; color:#4f8ef7; font-weight:600;
-                min-width:28px; text-align:center;
-                background:rgba(79,142,247,0.1); padding:3px 6px; border-radius:20px;
-            ">${historialLlamados.length - idx}</span>
-            <span style="
-                font-family:'Georgia', serif;
-                font-size:22px; font-weight:700;
-                color:#f0f4ff; letter-spacing:2px; flex:1;
-            ">${item.codigo}</span>
-            <span style="
-                font-size:13px; color:rgba(240,244,255,0.55);
-                max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-            ">${item.nombre || '—'}</span>
-            <span style="
-                font-size:11px; color:rgba(240,244,255,0.3);
-                min-width:52px; text-align:right; font-variant-numeric:tabular-nums;
-            ">${item.hora}</span>
-        </div>
-    `).join('');
+            animation-delay: ${idx * 0.03}s;">
+            <span style="font-size:11px; color:#4f8ef7; font-weight:600;
+                         min-width:28px; text-align:center;
+                         background:rgba(79,142,247,0.1); padding:3px 6px; border-radius:20px;">
+                ${historialLlamados.length - idx}
+            </span>
+            <span style="font-family:'Georgia',serif; font-size:22px; font-weight:700;
+                         color:#f0f4ff; letter-spacing:2px; flex:1;">
+                ${item.codigo}
+            </span>
+            <span style="font-size:13px; color:rgba(240,244,255,0.55);
+                         max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                ${item.nombre || '—'}
+            </span>
+            <span style="font-size:11px; color:rgba(240,244,255,0.3);
+                         min-width:52px; text-align:right; font-variant-numeric:tabular-nums;">
+                ${item.hora}
+            </span>
+        </div>`).join('');
 }
 
 function limpiarHistorialLlamados() {
-    if (!confirm('¿Limpiar todo el historial de llamados?')) return;
+    if (!confirm('¿Limpiar todo el historial de llamados?\nEsto también limpiará la pantalla de turnos.')) return;
+    
     historialLlamados = [];
+    
     const badgeEl = document.getElementById('historialBadge');
     if (badgeEl) { badgeEl.textContent = '0'; badgeEl.style.display = 'none'; }
+    
     renderizarHistorialModal();
+
+    // ── NUEVO: notificar al servidor para que limpie screen ──
+    if (socket && socket.connected) {
+        socket.emit('limpiar_historial', {});
+        console.log('🧹 Historial limpiado — notificado a screen');
+    }
 }

@@ -184,6 +184,40 @@ function agregarAlHistorial(codigo, nombre) {
     renderizarHistorial();
 }
 
+// ── NUEVO: limpiar historial completo (llamado desde socket) ──────────────────
+function limpiarHistorialScreen() {
+    console.log('[TUR] 🧹 Limpiando historial por orden de recepción...');
+
+    historial = [];
+
+    try {
+        localStorage.removeItem(STORAGE_HISTORY_KEY);
+        localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {}
+
+    window._llamadaPendiente = null;
+
+    // Resetear panel izquierdo (turno actual)
+    const idleState   = document.getElementById('idleState');
+    const turnoActivo = document.getElementById('turnoActivo');
+    const turnoCodigo = document.getElementById('turnoCodigo');
+    const turnoNombre = document.getElementById('turnoNombre');
+    const turnoLabel  = document.getElementById('turnoLabel');
+    const goldDivider = document.getElementById('goldDivider');
+
+    if (turnoActivo)  turnoActivo.style.display = 'none';
+    if (idleState)    idleState.classList.remove('hidden');
+    if (turnoCodigo)  { turnoCodigo.textContent = '—'; turnoCodigo.classList.remove('visible', 'llamando'); }
+    if (turnoNombre)  { turnoNombre.textContent = ''; turnoNombre.classList.remove('visible'); }
+    if (turnoLabel)   turnoLabel.classList.remove('visible');
+    if (goldDivider)  goldDivider.classList.remove('visible');
+
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+    renderizarHistorial();
+    console.log('[TUR] ✅ Pantalla limpiada');
+}
+
 function renderizarHistorial() {
     const listEl  = document.getElementById('historyList');
     const countEl = document.getElementById('historyCount');
@@ -257,6 +291,11 @@ function esperarSocketYRegistrar() {
 // =========================
 
 function registrarListeners(socket) {
+
+    socket.on('limpiar_historial', () => {
+        console.log('[TUR] 📨 Evento limpiar_historial recibido');
+        limpiarHistorialScreen();
+    });
 
     socket.on('llamar_paciente', (data) => {
         guardarUltimoLlamado(data.codigo, data.nombre);

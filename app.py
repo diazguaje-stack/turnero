@@ -1325,33 +1325,59 @@ def on_join(data):
 def on_llamar_paciente(data):
     global _ultimo_llamado
 
-    codigo     = data.get('codigo', '')
-    nombre     = data.get('nombre', '')
+    codigo      = data.get('codigo', '')
+    nombre      = data.get('nombre', '')
     paciente_id = data.get('pacienteId', '')
     recepcion   = data.get('recepcion', '')
-    print(f"[WS] 📢 Llamando paciente: {codigo} — {nombre} - Rececpión: {recepcion}")
+
+    print(f"[WS] 📢 Llamando: {codigo} — {nombre} — Recepción: {recepcion}")
 
     _ultimo_llamado = {
         'codigo':     codigo,
         'nombre':     nombre,
         'pacienteId': paciente_id,
-        'recepcion': recepcion,
+        'recepcion':  recepcion,
+        'timestamp':  datetime.utcnow().isoformat()
     }
 
-    # Reenviar a todos los clientes en sala 'screen'
-    socketio.emit('llamar_paciente', {
+    payload = {
         'codigo':     codigo,
         'nombre':     nombre,
         'pacienteId': paciente_id,
-        'recepcion': recepcion
-    }, to='screen')
+        'recepcion':  recepcion
+    }
+
+    # Enviar a pantallas
+    socketio.emit('llamar_paciente', payload, to='screen')
+
+    # ── NUEVO: reenviar a recepción para que llene el historial ──
+    socketio.emit('llamar_paciente', payload, to='recepcion')
 
 @socketio.on('pedir_ultimo_llamado')
 def on_pedir_ultimo_llamado():
-    if _ultimo_llamado:
-        emit('llamar_paciente', _ultimo_llamado)
-        print(f"[WS] 🔄 Enviando último llamado a nueva pantalla: {_ultimo_llamado['codigo']}")
+    if not _ultimo_llamado:
+        return
 
+    # Solo reenviar si fue hace menos de 30 segundos
+    try:
+        ts       = datetime.fromisoformat(_ultimo_llamado['timestamp'])
+        antiguedad = (datetime.utcnow() - ts).total_seconds()
+        if antiguedad <= 30:
+            emit('llamar_paciente', _ultimo_llamado)
+        else:
+            print(f"[WS] Último llamado ignorado — tiene {antiguedad:.0f}s de antigüedad")
+    except Exception:
+        pass  # si no tiene timestamp, ignorar
+
+    # Reenviar a todos los clientes en sala 'screen'
+    
+@socketio.on('limpiar_historial')
+def on_limpiar_historial(data=None):
+    global _ultimo_llamado
+    _ultimo_llamado = None
+    print(f"[WS] 🧹 Historial limpiado por recepción")
+    # Notificar a screen para que limpie su display
+    socketio.emit('limpiar_historial', {}, to='screen')
 
 if __name__ == '__main__':
     port  = int(os.environ.get('PORT', 5000))
