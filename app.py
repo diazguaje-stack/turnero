@@ -4,7 +4,8 @@ from flask import Flask, request, jsonify, render_template, redirect
 from flask_cors import CORS
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-import os
+import os, hashlib
+from gtts import gTTS
 import jwt
 from models import db, Usuario, init_db, Pantalla, Paciente,Turno, uuid
 from config import config
@@ -20,6 +21,10 @@ app = Flask(__name__)
 env = os.environ.get('FLASK_ENV', 'development')
 app.config.from_object(config[env])
 
+TTS_CACHE_DIR = os.path.join(os.path.dirname(__file__), 'static', 'tts_cache')
+os.makedirs(TTS_CACHE_DIR, exist_ok=True)
+
+
 # JWT Secret — en produccion usa variable de entorno
 JWT_SECRET = os.environ.get('JWT_SECRET', 'jwt-secret-turnero-2024-cambiar-en-produccion')
 JWT_EXPIRATION_HOURS = 8  # Token expira en 8 horas
@@ -30,6 +35,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', logger=F
 
 _ultimo_llamado=None
 _screen_sids={}
+_screen_pantalla = {}  
 # ===================================
 # HELPERS JWT
 # ===================================
@@ -270,9 +276,47 @@ def screen():
     return render_template('screen.html')
 
 
+@app.route('/api/tts', methods=['POST'])
+def generar_tts():
+    """
+    Genera o devuelve desde cache un MP3 con el texto del turno.
+    Body: { "texto": "Paciente Juan García. Código A C 1. Diríjase a recepción 2." }
+    """
+    try:
+        data  = request.get_json()
+        texto = data.get('texto', '').strip()
+
+        if not texto:
+            return jsonify({'success': False, 'message': 'Texto vacío'}), 400
+
+        # Cache por hash del texto — evita regenerar el mismo anuncio
+        hash_key   = hashlib.md5(texto.encode()).hexdigest()
+        nombre_mp3 = f"{hash_key}.mp3"
+        ruta_mp3   = os.path.join(TTS_CACHE_DIR, nombre_mp3)
+
+        if not os.path.exists(ruta_mp3):
+            tts = gTTS(text=texto, lang='es', slow=False)
+            tts.save(ruta_mp3)
+            print(f"[TTS] 🔊 MP3 generado: {nombre_mp3}")
+        else:
+            print(f"[TTS] 📦 MP3 desde cache: {nombre_mp3}")
+
+        return jsonify({
+            'success': True,
+            'url':     f'/static/tts_cache/{nombre_mp3}'
+        }), 200
+
+    except Exception as e:
+        print(f"[TTS] ❌ Error: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+
 # ===================================
 # RUTAS DE GESTION DE USUARIOS
 # ===================================
+
+
 
 @app.route('/api/users', methods=['GET'])
 @rol_requerido('admin')
@@ -1362,45 +1406,36 @@ def on_connect():
 def on_disconnect():
     print(f"[WS] Cliente desconectado: {request.sid}")
 
-    # ¿Era una pantalla /screen?
+    _screen_pantalla.pop(request.sid, None)  # ← limpiar también este dict
     device_fp = _screen_sids.pop(request.sid, None)
     if not device_fp:
         return
 
     print(f"[WS] 📺 Screen desconectada: {device_fp[:20]}...")
 
-    with app.app_context():
-        pantalla = Pantalla.query.filter_by(device_id=device_fp).first()
-        if not pantalla:
-            return
+    pantalla = Pantalla.query.filter_by(device_id=device_fp).first()
+    if not pantalla:
+        return
 
-        numero_pantalla = pantalla.numero
-        pantalla_id     = str(pantalla.id)
+    numero_pantalla = pantalla.numero
+    pantalla_id     = str(pantalla.id)
 
-        if pantalla.estado == 'pendiente':
-            # Limpiar completamente: el dispositivo cerró antes de vincularse
-            pantalla.device_id            = None
-            pantalla.codigo_vinculacion   = None
-            pantalla.estado               = 'disponible'
+    if pantalla.estado in ('pendiente', 'vinculada'):
+        pantalla.device_id          = None
+        pantalla.codigo_vinculacion = None
+        pantalla.estado             = 'disponible'
+        pantalla.vinculada_at       = None
+        pantalla.recepcionista_id   = None
 
-        elif pantalla.estado == 'vinculada':
-            # Desvincular: el TV se apagó o cerró la pestaña
-            pantalla.device_id            = None
-            pantalla.codigo_vinculacion   = None
-            pantalla.estado               = 'disponible'
-            pantalla.vinculada_at         = None
-            pantalla.recepcionista_id     = None
+    db.session.commit()
+    print(f"[WS] ✅ Pantalla {numero_pantalla} reseteada a 'disponible'")
 
-        db.session.commit()
-        print(f"[WS] ✅ Pantalla {numero_pantalla} reseteada a 'disponible'")
-
-        # Notificar al admin panel
-        socketio.emit('pantalla_desvinculada', {
-            'pantalla_id': pantalla_id,
-            'numero':      numero_pantalla,
-            'estado':      'disponible',
-            'motivo':      'screen_cerrada'
-        }, room='admin')
+    socketio.emit('pantalla_desvinculada', {
+        'pantalla_id': pantalla_id,
+        'numero':      numero_pantalla,
+        'estado':      'disponible',
+        'motivo':      'screen_cerrada'
+    }, room='admin')
 
 @socketio.on('join')
 def on_join(data):
@@ -1412,36 +1447,53 @@ def on_join(data):
     if room == 'screen' and device_fp:
         _screen_sids[request.sid] = device_fp
 
-        # Buscar a qué pantalla pertenece este device y unirla a su sala propia
-        with app.app_context():
-            pantalla = Pantalla.query.filter_by(device_id=device_fp).first()
-            if pantalla:
-                sala_propia = f'screen_{pantalla.id}'
-                join_room(sala_propia)
-                print(f"[WS] Screen unida a sala propia: {sala_propia}")
+        # Buscar pantalla — puede ser pendiente O vinculada
+        pantalla = Pantalla.query.filter_by(device_id=device_fp).first()
+        if pantalla:
+            sala_propia = f'screen_{pantalla.id}'
+            join_room(sala_propia)
+            _screen_pantalla[request.sid] = str(pantalla.id)
+            print(f"[WS] ✅ Screen {request.sid} → sala {sala_propia} (estado: {pantalla.estado})")
+        else:
+            print(f"[WS] ⚠️ Screen {request.sid} sin pantalla aún — se unirá al vincularse")
 
     emit('joined', {'room': room, 'status': 'ok'})
+
+
+@socketio.on('join_screen_propia')
+def on_join_screen_propia(data):
+    """
+    Llamado por screen_vinculacion.js cuando recibe 'pantalla_vinculada'.
+    Asegura que el sid quede en su sala propia incluso si en 'join' no había pantalla aún.
+    """
+    pantalla_id = data.get('pantalla_id', '')
+    device_fp   = data.get('device_fingerprint', '')
+
+    if not pantalla_id:
+        return
+
+    sala_propia = f'screen_{pantalla_id}'
+    join_room(sala_propia)
+    _screen_pantalla[request.sid] = str(pantalla_id)
+
+    if device_fp:
+        _screen_sids[request.sid] = device_fp
+
+    print(f"[WS] ✅ Screen vinculada al sid {request.sid} → sala {sala_propia}")
+    emit('joined_screen_propia', {'sala': sala_propia, 'pantalla_id': pantalla_id})
+
 
 @socketio.on('llamar_paciente')
 def on_llamar_paciente(data):
     global _ultimo_llamado
 
-    codigo          = data.get('codigo', '')
-    nombre          = data.get('nombre', '')
-    paciente_id     = data.get('pacienteId', '')
-    recepcion       = data.get('recepcion', '')
-    recepcionista_id = data.get('recepcionistaId', '')  # ← frontend debe enviarlo
+    codigo           = data.get('codigo', '')
+    nombre           = data.get('nombre', '')
+    paciente_id      = data.get('pacienteId', '')
+    recepcion        = data.get('recepcion', '')
+    recepcionista_id = data.get('recepcionistaId', '')
 
-    print(f"[WS] 📢 Llamando: {codigo} — {nombre} — Recepción: {recepcion}")
-
-    _ultimo_llamado = {
-        'codigo':          codigo,
-        'nombre':          nombre,
-        'pacienteId':      paciente_id,
-        'recepcion':       recepcion,
-        'recepcionistaId': recepcionista_id,
-        'timestamp':       datetime.utcnow().isoformat()
-    }
+    print(f"[WS] 📢 Llamando: {codigo} — {nombre} — recepcionistaId: {recepcionista_id}")
 
     payload = {
         'codigo':     codigo,
@@ -1450,44 +1502,74 @@ def on_llamar_paciente(data):
         'recepcion':  recepcion
     }
 
-    # Buscar la pantalla asignada a este recepcionista
-    sala_destino = None
+    # ── Buscar pantalla vinculada a este recepcionista ──────────────
+    sala_destino  = None
+    pantalla_num  = None
+
     if recepcionista_id:
         pantalla = Pantalla.query.filter_by(
-            recepcionista_id=recepcionista_id,
-            estado='vinculada'
+            recepcionista_id = recepcionista_id,
+            estado           = 'vinculada'
         ).first()
+
         if pantalla:
             sala_destino = f'screen_{pantalla.id}'
-            print(f"[WS] 📺 Enviando a sala: {sala_destino} (Pantalla {pantalla.numero})")
+            pantalla_num = pantalla.numero
+            print(f"[WS] 📺 Destino: {sala_destino} (Pantalla {pantalla_num})")
+        else:
+            print(f"[WS] ❌ recepcionista {recepcionista_id} no tiene pantalla vinculada")
+    else:
+        print(f"[WS] ❌ recepcionistaId vacío — llamada sin destino")
+
+    # ── Guardar último llamado CON sala destino ─────────────────────
+    _ultimo_llamado = {
+        'codigo':        codigo,
+        'nombre':        nombre,
+        'pacienteId':    paciente_id,
+        'recepcion':     recepcion,
+        'recepcionistaId': recepcionista_id,
+        'sala_destino':  sala_destino,        # ← guardar para pedir_ultimo_llamado
+        'timestamp':     datetime.utcnow().isoformat()
+    }
 
     if sala_destino:
         socketio.emit('llamar_paciente', payload, to=sala_destino)
     else:
-        # Fallback: si no encuentra pantalla asignada, emitir a todas
-        print(f"[WS] ⚠️ Sin pantalla asignada para recepcionista {recepcionista_id}, broadcast a screen")
-        socketio.emit('llamar_paciente', payload, to='screen')
+        # Sin destino claro → NO hacer broadcast, solo loguear
+        print(f"[WS] ⚠️ Llamada descartada — no hay pantalla destino identificada")
 
-    # Reenviar a recepción para historial
+    # Reenviar a recepción solo para historial (no a screen)
     socketio.emit('llamar_paciente', payload, to='recepcion')
 
 @socketio.on('pedir_ultimo_llamado')
 def on_pedir_ultimo_llamado():
+    """
+    Solo reenvía el último llamado si pertenece a la sala de ESTA screen.
+    """
     if not _ultimo_llamado:
         return
 
-    # Solo reenviar si fue hace menos de 30 segundos
+    # Verificar antigüedad
     try:
-        ts       = datetime.fromisoformat(_ultimo_llamado['timestamp'])
+        ts        = datetime.fromisoformat(_ultimo_llamado['timestamp'])
         antiguedad = (datetime.utcnow() - ts).total_seconds()
-        if antiguedad <= 30:
-            emit('llamar_paciente', _ultimo_llamado)
-        else:
-            print(f"[WS] Último llamado ignorado — tiene {antiguedad:.0f}s de antigüedad")
+        if antiguedad > 30:
+            print(f"[WS] Último llamado ignorado — {antiguedad:.0f}s de antigüedad")
+            return
     except Exception:
-        pass  # si no tiene timestamp, ignorar
+        return
 
-    # Reenviar a todos los clientes en sala 'screen'
+    # Verificar que esta screen sea la destinataria
+    sala_destino   = _ultimo_llamado.get('sala_destino')
+    mi_pantalla_id = _screen_pantalla.get(request.sid)
+
+    if sala_destino and mi_pantalla_id:
+        if sala_destino == f'screen_{mi_pantalla_id}':
+            emit('llamar_paciente', _ultimo_llamado)
+            print(f"[WS] ↩️ Último llamado restaurado → {request.sid}")
+        else:
+            print(f"[WS] ↩️ Último llamado NO es para esta screen ({sala_destino} ≠ screen_{mi_pantalla_id})")
+    # Si no hay sala_destino definida, no reenviar a nadie
     
 @socketio.on('limpiar_historial')
 def on_limpiar_historial(data=None):

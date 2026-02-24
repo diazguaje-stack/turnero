@@ -76,13 +76,13 @@ function conectarSocket() {
     _socket.on('pantalla_vinculada', (data) => {
         console.log('[VIN] pantalla_vinculada:', data);
 
-        // Unirse a la sala propia de esta pantalla
-        if (data.sala_propia) {
-            _socket.emit('join', {
-                room:               data.sala_propia,
+        // ── Unirse a sala propia usando el nuevo evento dedicado ──
+        if (data.pantalla_id) {
+            _socket.emit('join_screen_propia', {
+                pantalla_id:        data.pantalla_id,
                 device_fingerprint: deviceFingerprint
             });
-            console.log('[VIN] Unido a sala propia:', data.sala_propia);
+            console.log('[VIN] Solicitando unión a sala propia:', `screen_${data.pantalla_id}`);
         }
 
         consultarStatus().then(sd => {

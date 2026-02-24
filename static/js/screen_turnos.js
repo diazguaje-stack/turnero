@@ -2,7 +2,7 @@
 // screen_turnos.js
 // - Turno actual → panel izquierdo
 // - Historial de llamados → panel derecho
-// - Text-to-Speech: anuncia código, nombre y recepción
+// - Text-to-Speech: via servidor gTTS (MP3) — compatible Smart TV y Android
 // ============================================================
 
 const STORAGE_KEY         = 'screen_ultimo_llamado';
@@ -39,130 +39,105 @@ function recuperarHistorial() {
 }
 
 // =========================
-// TEXT-TO-SPEECH
+// TEXT-TO-SPEECH — via servidor gTTS (MP3)
+// Compatible con Smart TV, Android, iOS, PC
 // =========================
 
-let _vocesListas = false;
-let _colaHablar  = [];
+let _audioEl            = null;   // elemento <audio> reutilizable
+let _audioDesbloqueado  = false;  // true tras primer tap del usuario
 
-function inicializarTTS() {
-    if (!window.speechSynthesis) {
-        console.warn('[TTS] ⚠️ Web Speech API no disponible en este navegador.');
-        return;
+function _getAudio() {
+    if (!_audioEl) {
+        _audioEl         = new Audio();
+        _audioEl.preload = 'auto';
     }
-
-    const cargarVoces = () => {
-        const voces = window.speechSynthesis.getVoices();
-        if (voces.length > 0) {
-            _vocesListas = true;
-            console.log('[TTS] ✅ Voces cargadas:', voces.length);
-            while (_colaHablar.length > 0) {
-                const item = _colaHablar.shift();
-                _hablar(item.texto);
-            }
-        }
-    };
-
-    window.speechSynthesis.onvoiceschanged = cargarVoces;
-    cargarVoces();
+    return _audioEl;
 }
 
 /**
- * Construye y pronuncia el anuncio del turno.
- * Ejemplo: "Paciente Juan García. Código A, C, 1. Diríjase a recepción 2."
- *
- * @param {string} nombre    - Nombre del paciente
- * @param {string} codigo    - Código del turno (ej: "A-C-001")
- * @param {string} recepcion - Número o nombre de recepción (ej: "1", "Recepción 2")
+ * Desbloquea el contexto de audio en el primer tap/click.
+ * Android y algunos Smart TVs bloquean autoplay sin interacción previa.
  */
-function anunciarTurno(nombre, codigo, recepcion) {
-    if (!window.speechSynthesis) return;
+function _desbloquearAudio() {
+    if (_audioDesbloqueado) return;
+    _audioDesbloqueado = true;
+    console.log('[TTS] 🔓 Audio desbloqueado por interacción del usuario');
 
-    const codigoHablado = formatearCodigoParaVoz(codigo);
+    // Reproducir silencio para "despertar" el contexto de audio del navegador
+    const audio = _getAudio();
+    audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+    audio.play().catch(() => {});
 
-    // Extraer solo el número si viene "Recepción 1" o "recepcion 1"
-    const numRecepcion = recepcion
-        ? String(recepcion).replace(/recepci[oó]n\s*/i, '').trim()
-        : null;
-
-    let texto = '';
-    if (nombre && nombre.trim()) {
-        texto += `Paciente ${nombre}. `;
+    // Si había un audio pendiente por autoplay bloqueado, reproducirlo ahora
+    if (window._audioPendiente) {
+        window._audioPendiente.play().catch(() => {});
+        window._audioPendiente = null;
     }
-    texto += `Código ${codigoHablado}. `;
-    if (numRecepcion) {
-        texto += `Diríjase a recepción ${numRecepcion}.`;
-    }
-
-    console.log('[TTS] 🔊 Anunciando:', texto);
-
-    if (!_vocesListas) {
-        _colaHablar.push({ texto });
-        return;
-    }
-
-    _hablar(texto);
 }
 
 /**
- * Formatea el código para que se lea letra por letra de forma clara.
+ * Formatea el código para que se lea letra por letra.
  * "A-C-001" → "A, C, 1"
- * "DR-005"  → "D R, 5"
  */
 function formatearCodigoParaVoz(codigo) {
     if (!codigo) return '';
-
     return codigo
         .split(/[-_]/)
         .map(parte => {
-            if (/^[A-Za-z]+$/.test(parte)) {
-                // Letras: espaciar cada una para que se pronuncien individualmente
-                return parte.split('').join(' ');
-            }
-            if (/^\d+$/.test(parte)) {
-                // Números: eliminar ceros iniciales (001 → 1)
-                return parseInt(parte, 10).toString();
-            }
+            if (/^[A-Za-z]+$/.test(parte)) return parte.split('').join(' ');
+            if (/^\d+$/.test(parte))        return parseInt(parte, 10).toString();
             return parte;
         })
         .join(', ');
 }
 
-function _hablar(texto) {
-    window.speechSynthesis.cancel();
+/**
+ * Construye el texto del anuncio, solicita MP3 al servidor y lo reproduce.
+ */
+async function anunciarTurno(nombre, codigo, recepcion) {
+    const codigoHablado = formatearCodigoParaVoz(codigo);
+    const numRecepcion  = recepcion
+        ? String(recepcion).replace(/recepci[oó]n\s*/i, '').trim()
+        : null;
 
-    const utterance = new SpeechSynthesisUtterance(texto);
+    let texto = '';
+    if (nombre && nombre.trim()) texto += `Paciente ${nombre}. `;
+    texto += `Código ${codigoHablado}. `;
+    if (numRecepcion)              texto += `Diríjase a recepción ${numRecepcion}.`;
 
-    // Buscar voz en español (preferir local, luego remota, luego inglés de fallback)
-    const voces = window.speechSynthesis.getVoices();
-    const vozEs  = voces.find(v => v.lang === 'es-CO') ||
-                   voces.find(v => v.lang === 'es-ES' && v.localService) ||
-                   voces.find(v => v.lang.startsWith('es') && v.localService) ||
-                   voces.find(v => v.lang.startsWith('es')) ||
-                   voces.find(v => v.lang.startsWith('en'));
+    console.log('[TTS] 🔊 Solicitando audio:', texto);
 
-    if (vozEs) {
-        utterance.voice = vozEs;
-        console.log('[TTS] Usando voz:', vozEs.name, vozEs.lang);
+    try {
+        const res  = await fetch('/api/tts', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ texto })
+        });
+        const data = await res.json();
+
+        if (!data.success) {
+            console.warn('[TTS] ❌ Error del servidor:', data.message);
+            return;
+        }
+
+        const audio = _getAudio();
+        audio.src    = data.url + '?t=' + Date.now(); // evitar cache del navegador
+        audio.volume = 1.0;
+
+        const playPromise = audio.play();
+        if (playPromise) {
+            playPromise
+                .then(() => console.log('[TTS] ✅ Audio reproduciéndose'))
+                .catch(err => {
+                    console.warn('[TTS] ⚠️ Autoplay bloqueado, esperando interacción:', err.message);
+                    window._audioPendiente = audio;
+                });
+        }
+
+    } catch (err) {
+        console.error('[TTS] ❌ Error al obtener audio del servidor:', err);
     }
-
-    utterance.lang   = 'es-CO';
-    utterance.rate   = 0.85;    // más lento para mayor claridad
-    utterance.pitch  = 1.0;
-    utterance.volume = 1.0;
-
-    utterance.onerror = (e) => console.warn('[TTS] Error:', e.error);
-    utterance.onend   = ()  => console.log('[TTS] ✅ Anuncio completado');
-
-    window.speechSynthesis.speak(utterance);
 }
-
-// Fix Chrome: speechSynthesis se pausa solo después de ~15 segundos en algunos navegadores
-setInterval(() => {
-    if (window.speechSynthesis && window.speechSynthesis.paused && window.speechSynthesis.speaking) {
-        window.speechSynthesis.resume();
-    }
-}, 5000);
 
 // =========================
 // HISTORIAL EN PANEL DERECHO
@@ -174,7 +149,7 @@ function agregarAlHistorial(codigo, nombre) {
     const entrada = {
         codigo,
         nombre: nombre || '',
-        hora: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+        hora:   new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
     };
 
     historial.unshift(entrada);
@@ -184,20 +159,25 @@ function agregarAlHistorial(codigo, nombre) {
     renderizarHistorial();
 }
 
-// ── NUEVO: limpiar historial completo (llamado desde socket) ──────────────────
 function limpiarHistorialScreen() {
     console.log('[TUR] 🧹 Limpiando historial por orden de recepción...');
 
-    historial = [];
+    historial              = [];
+    window._llamadaPendiente = null;
+    window._audioPendiente   = null;
 
     try {
         localStorage.removeItem(STORAGE_HISTORY_KEY);
         localStorage.removeItem(STORAGE_KEY);
     } catch (e) {}
 
-    window._llamadaPendiente = null;
+    // Detener audio en curso
+    if (_audioEl) {
+        _audioEl.pause();
+        _audioEl.src = '';
+    }
 
-    // Resetear panel izquierdo (turno actual)
+    // Resetear panel izquierdo
     const idleState   = document.getElementById('idleState');
     const turnoActivo = document.getElementById('turnoActivo');
     const turnoCodigo = document.getElementById('turnoCodigo');
@@ -208,11 +188,9 @@ function limpiarHistorialScreen() {
     if (turnoActivo)  turnoActivo.style.display = 'none';
     if (idleState)    idleState.classList.remove('hidden');
     if (turnoCodigo)  { turnoCodigo.textContent = '—'; turnoCodigo.classList.remove('visible', 'llamando'); }
-    if (turnoNombre)  { turnoNombre.textContent = ''; turnoNombre.classList.remove('visible'); }
+    if (turnoNombre)  { turnoNombre.textContent = '';  turnoNombre.classList.remove('visible'); }
     if (turnoLabel)   turnoLabel.classList.remove('visible');
     if (goldDivider)  goldDivider.classList.remove('visible');
-
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
 
     renderizarHistorial();
     console.log('[TUR] ✅ Pantalla limpiada');
@@ -236,9 +214,9 @@ function renderizarHistorial() {
     Array.from(listEl.children).forEach(c => { if (c.id !== 'historyEmpty') c.remove(); });
 
     historial.forEach((item, idx) => {
-        const div = document.createElement('div');
-        div.className = 'history-item';
-        div.innerHTML = `
+        const div       = document.createElement('div');
+        div.className   = 'history-item';
+        div.innerHTML   = `
             <span class="history-item-num">${historial.length - idx}</span>
             <span class="history-item-code">${item.codigo}</span>
             <span class="history-item-name">${item.nombre}</span>
@@ -254,23 +232,13 @@ function renderizarHistorial() {
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[TUR] Iniciando módulo de turnos...');
-    inicializarTTS();
     renderizarHistorial();
     esperarSocketYRegistrar();
 
-    // Los navegadores requieren interacción del usuario antes de reproducir audio
-    // Al primer click/touch en la pantalla, desbloqueamos el contexto de audio
+    // Primer tap/click desbloquea el contexto de audio del navegador
     document.addEventListener('click',      _desbloquearAudio, { once: true });
     document.addEventListener('touchstart', _desbloquearAudio, { once: true });
 });
-
-function _desbloquearAudio() {
-    if (!window.speechSynthesis) return;
-    const u = new SpeechSynthesisUtterance('');
-    u.volume = 0;
-    window.speechSynthesis.speak(u);
-    console.log('[TTS] 🔓 Contexto de audio desbloqueado');
-}
 
 // =========================
 // ESPERAR SOCKET
@@ -287,7 +255,7 @@ function esperarSocketYRegistrar() {
 }
 
 // =========================
-// LISTENERS
+// LISTENERS DE SOCKET
 // =========================
 
 function registrarListeners(socket) {
@@ -304,13 +272,12 @@ function registrarListeners(socket) {
         const estaVinculada = linkedState && linkedState.style.display !== 'none';
 
         if (estaVinculada) {
-            // Mover turno anterior al historial
+            // Mover turno anterior al historial antes de mostrar el nuevo
             const codigoAnterior = document.getElementById('turnoCodigo')?.textContent?.trim();
             const nombreAnterior = document.getElementById('turnoNombre')?.textContent?.trim();
-            if (codigoAnterior && codigoAnterior !== '—' && codigoAnterior != data.codigo) {
+            if (codigoAnterior && codigoAnterior !== '—' && codigoAnterior !== data.codigo) {
                 agregarAlHistorial(codigoAnterior, nombreAnterior);
             }
-
             mostrarTurnoLlamado(data.codigo, data.nombre, data.recepcion, true);
         } else {
             window._llamadaPendiente = data;
@@ -325,14 +292,13 @@ function registrarListeners(socket) {
     function intentarRestaurar() {
         if (linkedState.style.display === 'none') return;
         if (window._llamadaPendiente) {
-            const p = window._llamadaPendiente;
+            const p              = window._llamadaPendiente;
             window._llamadaPendiente = null;
             mostrarTurnoLlamado(p.codigo, p.nombre, p.recepcion, true);
             return;
         }
         const guardado = recuperarUltimoLlamado();
         if (guardado) {
-            // Restaurar desde localStorage: mostrar sin voz (ya se anunció)
             mostrarTurnoLlamado(guardado.codigo, guardado.nombre, null, false);
         }
     }
@@ -347,12 +313,6 @@ function registrarListeners(socket) {
 // MOSTRAR TURNO LLAMADO
 // =========================
 
-/**
- * @param {string}  codigo    - Código del turno
- * @param {string}  nombre    - Nombre del paciente
- * @param {string}  recepcion - Número/nombre de recepción
- * @param {boolean} hablar    - Reproducir anuncio de voz
- */
 function mostrarTurnoLlamado(codigo, nombre, recepcion = null, hablar = true) {
     console.log(`[TUR] Mostrando: ${codigo} — ${nombre} — Recepción: ${recepcion}`);
 
@@ -369,7 +329,6 @@ function mostrarTurnoLlamado(codigo, nombre, recepcion = null, hablar = true) {
     }
 
     if (idleState) idleState.classList.add('hidden');
-
     turnoActivo.style.display = 'flex';
 
     turnoCodigo.classList.remove('visible', 'llamando');
@@ -391,7 +350,6 @@ function mostrarTurnoLlamado(codigo, nombre, recepcion = null, hablar = true) {
         }, 350);
     });
 
-    // Anuncio de voz con pequeño delay para que la animación arranque primero
     if (hablar) {
         setTimeout(() => anunciarTurno(nombre, codigo, recepcion), 500);
     }
