@@ -69,15 +69,18 @@ function conectarSocket() {
     });
 
     socket.on('llamar_paciente', (data) => {
-        historialLlamados.unshift({
-            codigo: data.codigo,
-            nombre: data.nombre,
-            hora:   new Date().toLocaleTimeString('es-ES', {
-                hour: '2-digit', minute: '2-digit', second: '2-digit'
-            })
-        });
-        if (historialLlamados.length > 100) historialLlamados = historialLlamados.slice(0, 100);
-
+        // ── Si el código ya existe en el historial, no duplicar ──
+        const yaExiste = historialLlamados.some(item => item.codigo === data.codigo);
+        if (!yaExiste) {
+            historialLlamados.unshift({
+                codigo: data.codigo,
+                nombre: data.nombre,
+                hora:   new Date().toLocaleTimeString('es-ES', {
+                    hour: '2-digit', minute: '2-digit', second: '2-digit'
+                })
+            });
+            if (historialLlamados.length > 100) historialLlamados = historialLlamados.slice(0, 100);
+        }
         const badgeEl = document.getElementById('historialBadge');
         if (badgeEl) {
             badgeEl.textContent = historialLlamados.length;
@@ -783,8 +786,19 @@ function limpiarHistorialLlamados() {
     renderizarHistorialModal();
 
     // ── NUEVO: notificar al servidor para que limpie screen ──
+    // DESPUÉS:
     if (socket && socket.connected) {
-        socket.emit('limpiar_historial', {});
-        console.log('🧹 Historial limpiado — notificado a screen');
+        // Leer recepcionistaId del JWT para limpiar solo SU pantalla
+        let recepcionistaId = null;
+        try {
+            const token = sessionStorage.getItem('jwt_token');
+            if (token) {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                recepcionistaId = payload.user_id || null;
+            }
+        } catch (e) {}
+
+        socket.emit('limpiar_historial', { recepcionistaId });
+        console.log('🧹 Historial limpiado — notificado solo a pantalla propia:', recepcionistaId);
     }
 }

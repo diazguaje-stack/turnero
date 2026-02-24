@@ -1487,6 +1487,9 @@ def on_join_screen_propia(data):
 def on_llamar_paciente(data):
     global _ultimo_llamado
 
+    sid_recepcion = request.sid  # ← capturar aquí
+    print(f"[WS] SID recepción: {sid_recepcion}")  # ← ver qué sid tiene
+
     codigo           = data.get('codigo', '')
     nombre           = data.get('nombre', '')
     paciente_id      = data.get('pacienteId', '')
@@ -1532,6 +1535,7 @@ def on_llamar_paciente(data):
         'timestamp':     datetime.utcnow().isoformat()
     }
 
+
     if sala_destino:
         socketio.emit('llamar_paciente', payload, to=sala_destino)
     else:
@@ -1539,7 +1543,8 @@ def on_llamar_paciente(data):
         print(f"[WS] ⚠️ Llamada descartada — no hay pantalla destino identificada")
 
     # Reenviar a recepción solo para historial (no a screen)
-    socketio.emit('llamar_paciente', payload, to='recepcion')
+    print(f"[WS] Emitiendo historial a sid: {sid_recepcion}")
+    socketio.emit('llamar_paciente', payload, room=sid_recepcion)
 
 @socketio.on('pedir_ultimo_llamado')
 def on_pedir_ultimo_llamado():
@@ -1571,13 +1576,36 @@ def on_pedir_ultimo_llamado():
             print(f"[WS] ↩️ Último llamado NO es para esta screen ({sala_destino} ≠ screen_{mi_pantalla_id})")
     # Si no hay sala_destino definida, no reenviar a nadie
     
+# DESPUÉS:
 @socketio.on('limpiar_historial')
 def on_limpiar_historial(data=None):
     global _ultimo_llamado
-    _ultimo_llamado = None
-    print(f"[WS] 🧹 Historial limpiado por recepción")
-    # Notificar a screen para que limpie su display
-    socketio.emit('limpiar_historial', {}, to='screen')
+    recepcionista_id = (data or {}).get('recepcionistaId')
+
+    print(f"[WS] 🧹 Historial limpiado — recepcionistaId: {recepcionista_id}")
+
+    if recepcionista_id:
+        # Buscar la pantalla vinculada a ESTE recepcionista
+        pantalla = Pantalla.query.filter_by(
+            recepcionista_id = recepcionista_id,
+            estado           = 'vinculada'
+        ).first()
+
+        if pantalla:
+            sala_destino = f'screen_{pantalla.id}'
+            print(f"[WS] 🧹 Limpiando solo: {sala_destino} (Pantalla {pantalla.numero})")
+            socketio.emit('limpiar_historial', {}, to=sala_destino)
+
+            # Limpiar _ultimo_llamado solo si era de esta pantalla
+            if _ultimo_llamado and _ultimo_llamado.get('sala_destino') == sala_destino:
+                _ultimo_llamado = None
+        else:
+            print(f"[WS] ⚠️ Recepcionista {recepcionista_id} no tiene pantalla vinculada — nada que limpiar")
+    else:
+        # Fallback: sin recepcionistaId → limpiar global (comportamiento anterior)
+        print(f"[WS] 🧹 Sin recepcionistaId → limpieza global")
+        _ultimo_llamado = None
+        socketio.emit('limpiar_historial', {}, to='screen')
 
 if __name__ == '__main__':
     port  = int(os.environ.get('PORT', 5000))
