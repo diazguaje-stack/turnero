@@ -10,6 +10,9 @@ import jwt
 from models import db, Usuario, init_db, Pantalla, Paciente,Turno, uuid
 from config import config
 from flask_socketio  import SocketIO, emit, join_room
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+import atexit
 
 # ===================================
 # CONFIGURACION
@@ -39,6 +42,72 @@ _screen_pantalla = {}
 # ===================================
 # HELPERS JWT
 # ===================================
+
+# ===================================
+# LIMPIEZA DIARIA AUTOMÁTICA 00:00
+# ===================================
+
+def limpiar_pacientes_diario():
+    """
+    Ejecuta a las 00:00 todos los días:
+    - Elimina todos los turnos de la BD
+    - Elimina todos los pacientes de la BD
+    - Notifica a todas las screens para limpiar su display
+    - Notifica a todas las recepciones para limpiar su vista
+    - Limpia _ultimo_llamado global
+    """
+    global _ultimo_llamado
+
+    with app.app_context():
+        try:
+            ahora = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"\n[CRON] ⏰ Limpieza diaria iniciada: {ahora}")
+
+            total_turnos    = Turno.query.count()
+            total_pacientes = Paciente.query.count()
+
+            # Borrar en orden por FK: primero turnos, luego pacientes
+            Turno.query.delete()
+            Paciente.query.delete()
+            db.session.commit()
+
+            _ultimo_llamado = None
+
+            print(f"[CRON] ✅ Eliminados: {total_turnos} turnos, {total_pacientes} pacientes")
+
+            # Notificar a screens para limpiar display
+            socketio.emit('limpiar_historial', {
+                'motivo': 'limpieza_diaria'
+            }, to='screen')
+
+            # Notificar a recepciones para limpiar su lista y historial
+            socketio.emit('limpieza_diaria', {
+                'mensaje': 'Limpieza diaria automática ejecutada',
+                'hora':    ahora
+            }, to='recepcion')
+
+            print(f"[CRON] 📡 Notificaciones enviadas a screen y recepcion")
+
+        except Exception as e:
+            db.session.rollback()
+            print(f"[CRON] ❌ Error en limpieza diaria: {str(e)}")
+
+
+# Scheduler — usa gevent-compatible background scheduler
+scheduler = BackgroundScheduler()
+scheduler.add_job(
+    func    = limpiar_pacientes_diario,
+    trigger = CronTrigger(hour=0, minute=0, second=0),
+    id      = 'limpieza_diaria',
+    name    = 'Limpiar pacientes a medianoche',
+    replace_existing = True
+)
+scheduler.start()
+
+# Apagar el scheduler limpiamente al cerrar la app
+atexit.register(lambda: scheduler.shutdown(wait=False))
+print(f"[CRON] ✅ Scheduler activo — limpieza programada a las 00:00")
+
 
 def pagina_protegida(*roles):
     """

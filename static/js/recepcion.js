@@ -104,6 +104,31 @@ function conectarSocket() {
         console.log('💀 usuario_eliminado_definitivo recibido en recepción:', data);
         _manejarUsuarioInaccesible(data, 'eliminado');
     });
+
+    // Limpieza diaria automática — servidor notifica a todas las recepciones
+    socket.on('limpieza_diaria', (data) => {
+        console.log('[CRON] 🧹 Limpieza diaria recibida:', data.hora);
+
+        // Limpiar historial de llamados
+        historialLlamados = [];
+        const badgeEl = document.getElementById('historialBadge');
+        if (badgeEl) { badgeEl.textContent = '0'; badgeEl.style.display = 'none'; }
+
+        // Limpiar pacientes en pantalla
+        pacientesData     = {};
+        codigosAnteriores = {};
+
+        const container = document.getElementById('medicosContainer');
+        if (container) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <h3>🌙 Nuevo día</h3>
+                    <p>Los registros fueron limpiados automáticamente a las 00:00</p>
+                </div>`;
+        }
+
+        mostrarToast('🌙 Limpieza diaria completada. Sistema listo para el nuevo día.', 'nuevo');
+    });
 }
 
 // =============================================================================
