@@ -153,21 +153,14 @@ function renderAccionesPantalla(p) {
     }
 
     if (p.estado === 'vinculada') {
-        return `
-            <div class="pantalla-actions">
-                <button class="btn btn-primary btn-cambiar-recepcionista"
-                    data-id="${p.id}" data-numero="${p.numero}"
-                    data-recepcionista="${p.recepcionista_id || ''}"
-                    style="background:#059669;margin-bottom:8px;width:100%;">
-                    👤 Cambiar Recepcionista
-                </button>
-                <button class="btn btn-danger btn-desvincular"
-                    data-id="${p.id}" data-numero="${p.numero}">
-                    🔓 Desvincular
-                </button>
-            </div>`;
+    return `
+        <div class="pantalla-actions">
+            <button class="btn btn-danger btn-desvincular"
+                data-id="${p.id}" data-numero="${p.numero}">
+                🔓 Desvincular
+            </button>
+        </div>`;
     }
-
     return '';
 }
 
@@ -186,6 +179,7 @@ function agregarEventListenersPantallas() {
             confirmarDesvincularPantalla(e.currentTarget.dataset.id, e.currentTarget.dataset.numero)));
 
     // Cambiar recepcionista (solo en pantallas ya vinculadas)
+    // Cambiar recepcionista (solo en pantallas ya vinculadas)
     document.querySelectorAll('.btn-cambiar-recepcionista').forEach(btn =>
         btn.addEventListener('click', e =>
             mostrarModalAsignarRecepcionista(
@@ -193,7 +187,6 @@ function agregarEventListenersPantallas() {
                 e.currentTarget.dataset.numero,
                 e.currentTarget.dataset.recepcionista
             )));
-
     document.querySelectorAll('.codigo-input').forEach(input => {
         input.addEventListener('input', e => {
             e.target.value = e.target.value.replace(/[^0-9]/g, '').substring(0, 6);

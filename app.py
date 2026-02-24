@@ -29,6 +29,7 @@ CORS(app, supports_credentials=True, origins=['*'])
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', logger=False, engineio_logger=False)
 
 _ultimo_llamado=None
+_screen_sids={}
 # ===================================
 # HELPERS JWT
 # ===================================
@@ -1314,11 +1315,58 @@ def on_connect():
 def on_disconnect():
     print(f"[WS] Cliente desconectado: {request.sid}")
 
+    # ¿Era una pantalla /screen?
+    device_fp = _screen_sids.pop(request.sid, None)
+    if not device_fp:
+        return
+
+    print(f"[WS] 📺 Screen desconectada: {device_fp[:20]}...")
+
+    with app.app_context():
+        pantalla = Pantalla.query.filter_by(device_id=device_fp).first()
+        if not pantalla:
+            return
+
+        numero_pantalla = pantalla.numero
+        pantalla_id     = str(pantalla.id)
+
+        if pantalla.estado == 'pendiente':
+            # Limpiar completamente: el dispositivo cerró antes de vincularse
+            pantalla.device_id            = None
+            pantalla.codigo_vinculacion   = None
+            pantalla.estado               = 'disponible'
+
+        elif pantalla.estado == 'vinculada':
+            # Desvincular: el TV se apagó o cerró la pestaña
+            pantalla.device_id            = None
+            pantalla.codigo_vinculacion   = None
+            pantalla.estado               = 'disponible'
+            pantalla.vinculada_at         = None
+            pantalla.recepcionista_id     = None
+
+        db.session.commit()
+        print(f"[WS] ✅ Pantalla {numero_pantalla} reseteada a 'disponible'")
+
+        # Notificar al admin panel
+        socketio.emit('pantalla_desvinculada', {
+            'pantalla_id': pantalla_id,
+            'numero':      numero_pantalla,
+            'estado':      'disponible',
+            'motivo':      'screen_cerrada'
+        }, room='admin')
+        
 @socketio.on('join')
 def on_join(data):
     room = data.get('room', '')
+    device_fp = data.get('device_fingerprint', None)  # ← screen_vinculacion.js enviará esto
     join_room(room)
     print(f"[WS] Cliente {request.sid} entró a sala: {room}")
+
+    # Rastrear sid → device_fingerprint solo para sala 'screen'
+    if room == 'screen' and device_fp:
+        _screen_sids[request.sid] = device_fp
+        print(f"[WS] Screen registrado: {request.sid} → {device_fp[:20]}...")
+
     emit('joined', {'room': room, 'status': 'ok'})
 
 @socketio.on('llamar_paciente')

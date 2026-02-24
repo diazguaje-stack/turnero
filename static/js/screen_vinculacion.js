@@ -35,10 +35,11 @@ window.getSocketScreen = () => (_socketListo ? _socket : null);
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[VIN] Iniciando módulo de vinculación...');
-    conectarSocket();       // 1. socket primero
-    inicializarPantalla();  // 2. HTTP después
+    // Generar fingerprint ANTES de conectar el socket
+    deviceFingerprint = generarDeviceFingerprint();
+    conectarSocket();       // ya tiene el fingerprint disponible
+    inicializarPantalla();
 });
-
 window.addEventListener('beforeunload', () => {
     if (_socket) _socket.disconnect();
 });
@@ -53,7 +54,10 @@ function conectarSocket() {
     _socket.on('connect', () => {
         console.log('[VIN] Socket conectado:', _socket.id);
         _socketListo = false;                          // resetear en cada reconexión
-        _socket.emit('join', { room: 'screen' });     // pedir unirse a la sala
+        _socket.emit('join', { 
+            room: 'screen',
+            device_fingerprint: deviceFingerprint 
+        });     // pedir unirse a la sala
     });
 
     // ← join confirmado por el backend → AHORA el socket está en la sala
