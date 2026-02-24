@@ -83,6 +83,7 @@ function renderizarPantallas() {
 
 function renderInfoPantalla(p) {
     if (p.estado === 'disponible') {
+        // ── Sin label de recepcionista aquí, aún no hay dispositivo ──
         return `
             <div style="text-align:center;color:#6b7280;padding:20px 0;">
                 <p>⚪ Esperando dispositivo...</p>
@@ -91,10 +92,19 @@ function renderInfoPantalla(p) {
     }
 
     if (p.estado === 'pendiente') {
-        // ── NUEVO: selector de recepcionista incluido en el panel de vinculación ──
-        const opciones = recepcionistasDisponibles.map(r =>
-            `<option value="${r.id}">${r.nombre_completo || r.usuario}</option>`
-        ).join('');
+        // Filtrar recepcionistas ya ocupados en otras pantallas vinculadas
+        const ocupados = new Set(
+            pantallasList
+                .filter(x => x.estado === 'vinculada' && x.recepcionista_id)
+                .map(x => String(x.recepcionista_id))
+        );
+
+        const opciones = recepcionistasDisponibles.map(r => {
+            const estaOcupado = ocupados.has(String(r.id));
+            return `<option value="${r.id}" ${estaOcupado ? 'disabled' : ''}>
+                ${r.nombre_completo || r.usuario}${estaOcupado ? ' (ocupado)' : ''}
+            </option>`;
+        }).join('');
 
         return `
             <div class="instrucciones-vinculacion">📱 Dispositivo conectado — Ingresa el código y asigna recepcionista</div>
@@ -104,19 +114,21 @@ function renderInfoPantalla(p) {
                     placeholder="Código de 6 dígitos" maxlength="6" pattern="[0-9]*">
             </div>
             <div style="margin-top:10px;">
-                <label style="font-size:12px;color:#6b7280;display:block;margin-bottom:4px;">
-                    👤 Asignar recepcionista (opcional)
+                <label style="font-size:12px;color:#dc2626;display:block;margin-bottom:4px;font-weight:600;">
+                    👤 Recepcionista (obligatorio) *
                 </label>
                 <select id="recepcionista-${p.id}" style="
-                    width:100%;padding:8px 10px;border:1px solid #d1d5db;
-                    border-radius:6px;font-size:13px;background:#fff;color:#374151;
+                    width:100%;padding:8px 10px;border:2px solid #fbbf24;
+                    border-radius:6px;font-size:13px;background:#fffbeb;color:#374151;
                 ">
-                    <option value="">Sin asignar</option>
+                    <option value="" disabled selected>— Selecciona recepcionista —</option>
                     ${opciones}
                 </select>
             </div>
             ${p.device_id ? `<div class="device-id-small">Device: ${p.device_id.substring(0,30)}...</div>` : ''}`;
     }
+
+    // ... resto igual
 
     if (p.estado === 'vinculada') {
         const recepInfo = p.recepcionista_nombre
@@ -209,31 +221,67 @@ async function vincularPantallaAdmin(pantallaId) {
         return;
     }
 
-    // Leer recepcionista seleccionado (puede estar vacío)
-    const selectEl       = document.getElementById(`recepcionista-${pantallaId}`);
+    // ── VALIDACIÓN 1: Recepcionista obligatorio ──────────────────
+    const selectEl        = document.getElementById(`recepcionista-${pantallaId}`);
     const recepcionistaId = selectEl ? (selectEl.value || null) : null;
 
+    if (!recepcionistaId) {
+        mostrarMensajePantallas('⚠️ Debes asignar un recepcionista antes de vincular', 'error');
+        if (selectEl) {
+            selectEl.style.border = '2px solid #ef4444';
+            selectEl.focus();
+            setTimeout(() => selectEl.style.border = '2px solid #fbbf24', 3000);
+        }
+        return;
+    }
+
+    // ── VALIDACIÓN 2: Recepcionista ocupado — consultar backend directamente ──
+    // NO confiar en pantallasList local porque recepcionista_id puede estar ausente
     try {
-        // Paso 1: vincular
+        const checkRes  = await fetch(PANTALLAS_API.getAll, { headers: getAuthHeaders() });
+        const checkData = await checkRes.json();
+        const todasPantallas = checkData.pantallas || [];
+
+        const pantallaOcupada = todasPantallas.find(p =>
+            String(p.recepcionista_id) === String(recepcionistaId) &&
+            p.estado === 'vinculada' &&
+            String(p.id) !== String(pantallaId)
+        );
+
+        if (pantallaOcupada) {
+            const nombreRecep = recepcionistasDisponibles.find(r =>
+                String(r.id) === String(recepcionistaId)
+            )?.nombre_completo || 'Este recepcionista';
+
+            mostrarMensajePantallas(
+                `🚫 "${nombreRecep}" ya está asignado a la Pantalla ${pantallaOcupada.numero}. Selecciona otro.`,
+                'error'
+            );
+            if (selectEl) {
+                selectEl.style.border = '2px solid #ef4444';
+                setTimeout(() => selectEl.style.border = '2px solid #fbbf24', 3000);
+            }
+            return;
+        }
+
+        // También actualizar pantallasList con data fresca
+        pantallasList = todasPantallas;
+
+    } catch (error) {
+        console.warn('No se pudo verificar disponibilidad, continuando...', error);
+    }
+
+    try {
         const resVincular = await fetch(PANTALLAS_API.vincular(pantallaId), {
             method:  'POST',
             headers: getAuthHeaders(),
-            body:    JSON.stringify({ codigo })
+            body:    JSON.stringify({ codigo, recepcionista_id: recepcionistaId })
         });
         const dataVincular = await resVincular.json();
 
         if (!dataVincular.success) {
             mostrarMensajePantallas(dataVincular.message || 'Código incorrecto', 'error');
             return;
-        }
-
-        // Paso 2: asignar recepcionista si fue seleccionado
-        if (recepcionistaId) {
-            await fetch(PANTALLAS_API.asignarRecepcionista(pantallaId), {
-                method:  'POST',
-                headers: getAuthHeaders(),
-                body:    JSON.stringify({ recepcionista_id: recepcionistaId })
-            });
         }
 
         mostrarMensajePantallas('✅ Pantalla vinculada exitosamente', 'success');

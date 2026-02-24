@@ -154,23 +154,27 @@ class Pantalla(db.Model):
     
     def to_dict(self):
         recepcionista_nombre = None
-        if self.recepcionista_id and self.recepcionista:
-            recepcionista_nombre = self.recepcionista.nombre_completo or self.recepcionista.usuario
-        
+        recepcionista_id     = self.recepcionista_id  # guardar antes de acceder a relación
+
+        try:
+            if recepcionista_id and self.recepcionista:
+                recepcionista_nombre = self.recepcionista.nombre_completo or self.recepcionista.usuario
+        except Exception:
+            pass  # protección ante detached instance
+
         return {
-            'id': self.id,
-            'numero': self.numero,
-            'nombre': self.nombre,
-            'device_id': self.device_id,
-            'codigo_vinculacion': self.codigo_vinculacion,
-            'estado': self.estado,
-            'ultima_conexion': self.ultima_conexion.isoformat() if self.ultima_conexion else None,
-            'vinculada_at': self.vinculada_at.isoformat() if self.vinculada_at else None,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'recepcionista_id': self.recepcionista_id,
+            'id':                  self.id,
+            'numero':              self.numero,
+            'nombre':              self.nombre,
+            'device_id':           self.device_id,
+            'codigo_vinculacion':  self.codigo_vinculacion,
+            'estado':              self.estado,
+            'ultima_conexion':     self.ultima_conexion.isoformat() if self.ultima_conexion else None,
+            'vinculada_at':        self.vinculada_at.isoformat() if self.vinculada_at else None,
+            'created_at':          self.created_at.isoformat() if self.created_at else None,
+            'recepcionista_id':    recepcionista_id,          # ← siempre presente
             'recepcionista_nombre': recepcionista_nombre
         }
-    
     def __repr__(self):
         return f'<Pantalla {self.numero} - {self.estado}>'
 

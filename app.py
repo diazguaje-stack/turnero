@@ -638,11 +638,14 @@ def update_user(user_id):
 @rol_requerido('admin')
 def get_pantallas():
     try:
-        pantallas = Pantalla.query.order_by(Pantalla.numero).all()
+        from sqlalchemy.orm import joinedload
+        pantallas = (Pantalla.query
+                     .options(joinedload(Pantalla.recepcionista))  # ← carga la relación en 1 query
+                     .order_by(Pantalla.numero)
+                     .all())
         return jsonify({'success': True, 'pantallas': [p.to_dict() for p in pantallas]}), 200
     except Exception as e:
         return jsonify({'success': False, 'message': 'Error al obtener pantallas'}), 500
-
 
 @app.route('/api/recepcion/pantallas', methods=['GET'])
 @rol_requerido('recepcion', 'admin')
@@ -658,36 +661,79 @@ def get_pantallas_recepcion():
 @rol_requerido('admin')
 def vincular_pantalla(pantalla_id):
     try:
-        data   = request.get_json()
-        codigo = data.get('codigo', '').strip()
+        data             = request.get_json()
+        codigo           = data.get('codigo', '').strip()
+        recepcionista_id = data.get('recepcionista_id', None)
 
         if not codigo or len(codigo) != 6:
             return jsonify({'success': False, 'message': 'Codigo invalido'}), 400
 
+        # ── Validación 1: recepcionista obligatorio ──────────────────
+        if not recepcionista_id:
+            return jsonify({
+                'success': False,
+                'message': 'Debes asignar un recepcionista para vincular la pantalla'
+            }), 400
+
+        # ── Validación 2: recepcionista exclusivo ────────────────────
+        pantalla_ocupada = (Pantalla.query
+            .filter(
+                Pantalla.recepcionista_id == recepcionista_id,
+                Pantalla.estado           == 'vinculada',
+                Pantalla.id               != pantalla_id
+            ).first())
+
+        if pantalla_ocupada:
+            recep        = db.session.get(Usuario, recepcionista_id)
+            nombre_recep = recep.nombre_completo if recep else 'El recepcionista'
+            return jsonify({
+                'success': False,
+                'message': f'"{nombre_recep}" ya está asignado a la Pantalla {pantalla_ocupada.numero}'
+            }), 409
+
+        # ── Buscar pantalla pendiente con ese código ──────────────────
         pantalla = Pantalla.query.filter_by(
             id=pantalla_id, codigo_vinculacion=codigo, estado='pendiente'
         ).first()
 
         if not pantalla:
-            return jsonify({'success': False, 'message': 'Codigo incorrecto o pantalla no disponible'}), 404
+            return jsonify({
+                'success': False,
+                'message': 'Código incorrecto o pantalla no disponible'
+            }), 404
 
-        pantalla.estado       = 'vinculada'
-        pantalla.vinculada_at = datetime.utcnow()
+        # ── Validar recepcionista existe y está activo ────────────────
+        recepcionista = db.session.get(Usuario, recepcionista_id)
+        if not recepcionista or recepcionista.rol != 'recepcion' or not recepcionista.activo:
+            return jsonify({'success': False, 'message': 'Recepcionista no válido'}), 400
+
+        # ── Vincular + asignar en una sola transacción ───────────────
+        pantalla.estado           = 'vinculada'
+        pantalla.vinculada_at     = datetime.utcnow()
+        pantalla.recepcionista_id = recepcionista_id  # ← atómico
         db.session.commit()
 
         socketio.emit('pantalla_vinculada', {
-            'pantalla_id': str(pantalla.id),
-            'numero':      pantalla.numero,
-            'estado':      'vinculada'
+            'pantalla_id':          str(pantalla.id),
+            'numero':               pantalla.numero,
+            'estado':               'vinculada',
+            'recepcionista_nombre': recepcionista.nombre_completo
         }, room='screen')
 
+        socketio.emit('recepcionista_asignado', {
+            'pantalla_id':          str(pantalla.id),
+            'recepcionista_nombre': recepcionista.nombre_completo
+        }, room='screen')
 
-        return jsonify({'success': True, 'message': 'Pantalla vinculada', 'pantalla': pantalla.to_dict()}), 200
+        return jsonify({
+            'success':  True,
+            'message':  'Pantalla vinculada',
+            'pantalla': pantalla.to_dict()
+        }), 200
 
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': 'Error al vincular pantalla'}), 500
-
 
 @app.route('/api/pantallas/<pantalla_id>/desvincular', methods=['POST'])
 @rol_requerido('admin')
@@ -1354,7 +1400,7 @@ def on_disconnect():
             'estado':      'disponible',
             'motivo':      'screen_cerrada'
         }, room='admin')
-        
+
 @socketio.on('join')
 def on_join(data):
     room = data.get('room', '')
