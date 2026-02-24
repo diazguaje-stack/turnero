@@ -37,12 +37,13 @@ EXPOSE 5000
 # --keep-alive 65       → mayor que el timeout del load balancer de Render (60s)
 # --worker-connections 100 → conexiones simultáneas por worker
 # ─────────────────────────────────────────────────────────
+
 CMD ["sh", "-c", "gunicorn \
-     --worker-class eventlet \
+     --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker \
      --workers 1 \
      --worker-connections 100 \
      --bind 0.0.0.0:${PORT:-10000} \
-     --timeout 0 \
+     --timeout 120 \
      --graceful-timeout 30 \
      --keep-alive 65 \
      --log-level info \
