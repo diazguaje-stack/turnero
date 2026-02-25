@@ -7,7 +7,7 @@ from functools import wraps
 import os, hashlib
 from gtts import gTTS
 import jwt
-from models import db, Usuario, init_db, Pantalla, Paciente,Turno, uuid
+from models import db, Usuario, init_db, Pantalla, Paciente,Turno, uuid,seed_data
 from config import config
 from flask_socketio  import SocketIO, emit, join_room
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -32,9 +32,17 @@ os.makedirs(TTS_CACHE_DIR, exist_ok=True)
 JWT_SECRET = os.environ.get('JWT_SECRET', 'jwt-secret-turnero-2024-cambiar-en-produccion')
 JWT_EXPIRATION_HOURS = 8  # Token expira en 8 horas
 
-init_db(app)
 CORS(app, supports_credentials=True, origins=['*'])
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', logger=False, engineio_logger=False)
+
+init_db(app)
+
+# Solo en desarrollo, crea tablas y seed
+if app.config.get("DEBUG"):
+    with app.app_context():
+        db.create_all()   # crea tablas si no existen
+        seed_data()       # datos iniciales de prueba
+
 
 _ultimo_llamado=None
 _screen_sids={}
