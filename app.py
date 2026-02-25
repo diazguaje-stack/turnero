@@ -33,9 +33,16 @@ os.makedirs(TTS_CACHE_DIR, exist_ok=True)
 JWT_SECRET = os.environ.get('JWT_SECRET', 'jwt-secret-turnero-2024-cambiar-en-produccion')
 JWT_EXPIRATION_HOURS = 8  # Token expira en 8 horas
 
+db.init_app(app)
 migrate = Migrate(app, db)
 
-# REEMPLAZA init_db(app) por:
+CORS(app, supports_credentials=True, origins=['*'])
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', logger=False, engineio_logger=False)
+
+_ultimo_llamado=None
+_screen_sids={}
+_screen_pantalla = {}  
+
 if __name__ == '__main__':
     with app.app_context():
         # Solo verificar conexión, NO crear tablas
@@ -46,13 +53,8 @@ if __name__ == '__main__':
             print(f'❌ Error de conexión: {e}')
 
 
-CORS(app, supports_credentials=True, origins=['*'])
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', logger=False, engineio_logger=False)
 
 
-_ultimo_llamado=None
-_screen_sids={}
-_screen_pantalla = {}  
 # ===================================
 # HELPERS JWT
 # ===================================
