@@ -300,10 +300,13 @@ def init_db(app):
             db.session.execute(db.text('SELECT 1'))
             print('✅ Conexión a base de datos exitosa')
             
-            print('🔄 Creando tablas si no existen...')
-            db.create_all()
-            print('✅ Tablas verificadas/creadas')
-
+            # ❌ NUNCA LLAMAR db.create_all() AQUÍ
+            # El esquema de la BD se gestiona SOLO con Flask-Migrate
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f'❌ Error durante inicialización: {str(e)}')
+            print('⚠️  Asegúrate que la BD existe y que ejecutaste "flask db upgrade"')
         
             
             # Verificar/Crear usuario admin
