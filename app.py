@@ -7,11 +7,12 @@ from functools import wraps
 import os, hashlib
 from gtts import gTTS
 import jwt
-from models import db, Usuario, init_db, Pantalla, Paciente,Turno, uuid,seed_data
+from models import db, Usuario, init_db, Pantalla, Paciente,Turno, uuid
 from config import config
 from flask_socketio  import SocketIO, emit, join_room
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from flask_migrate import Migrate
 import atexit
 
 # ===================================
@@ -32,16 +33,21 @@ os.makedirs(TTS_CACHE_DIR, exist_ok=True)
 JWT_SECRET = os.environ.get('JWT_SECRET', 'jwt-secret-turnero-2024-cambiar-en-produccion')
 JWT_EXPIRATION_HOURS = 8  # Token expira en 8 horas
 
+migrate = Migrate(app, db)
+
+# REEMPLAZA init_db(app) por:
+if __name__ == '__main__':
+    with app.app_context():
+        # Solo verificar conexión, NO crear tablas
+        try:
+            db.session.execute(db.text('SELECT 1'))
+            print('✅ Conexión a BD exitosa')
+        except Exception as e:
+            print(f'❌ Error de conexión: {e}')
+
+
 CORS(app, supports_credentials=True, origins=['*'])
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', logger=False, engineio_logger=False)
-
-init_db(app)
-
-# Solo en desarrollo, crea tablas y seed
-if app.config.get("DEBUG"):
-    with app.app_context():
-        db.create_all()   # crea tablas si no existen
-        seed_data()       # datos iniciales de prueba
 
 
 _ultimo_llamado=None

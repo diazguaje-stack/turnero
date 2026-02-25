@@ -13,3 +13,4 @@ gevent == 25.9.1
 gTTS == 2.5.4
 gevent-websocket == 0.10.1
 APScheduler == 3.11.2
+Flask-Migrate == 4.1.0
