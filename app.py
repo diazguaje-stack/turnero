@@ -33,7 +33,7 @@ os.makedirs(TTS_CACHE_DIR, exist_ok=True)
 JWT_SECRET = os.environ.get('JWT_SECRET', 'jwt-secret-turnero-2024-cambiar-en-produccion')
 JWT_EXPIRATION_HOURS = 8  # Token expira en 8 horas
 
-db.init_app(app)
+
 migrate = Migrate(app, db)
 
 CORS(app, supports_credentials=True, origins=['*'])
