@@ -292,6 +292,7 @@ class Turno(db.Model):
 # ==========================================
 
 def init_db(app):
+    """Inicializa la base de datos y datos por defecto"""
     db.init_app(app)
     
     with app.app_context():
@@ -300,87 +301,77 @@ def init_db(app):
             db.session.execute(db.text('SELECT 1'))
             print('✅ Conexión a base de datos exitosa')
             
-            # ❌ NUNCA LLAMAR db.create_all() AQUÍ
-            # El esquema de la BD se gestiona SOLO con Flask-Migrate
-            
         except Exception as e:
             db.session.rollback()
             print(f'❌ Error durante inicialización: {str(e)}')
             print('⚠️  Asegúrate que la BD existe y que ejecutaste "flask db upgrade"')
+            return  # ← SALIR si no hay conexión
         
-            
-            # Verificar/Crear usuario admin
-            try:
-                admin = Usuario.query.filter_by(usuario='admin').first()
-                if not admin:
-                    print('🔄 Creando usuario administrador...')
-                    admin = Usuario(
-                        usuario='admin',
-                        rol='admin',
-                        nombre_completo='Administrador del Sistema',
-                        created_by='sistema'
-                    )
-                    admin.set_password('admin123')
-                    db.session.add(admin)
+        # ✅ AQUÍ comienzan los bloques de creación de datos
+        # Verificar/Crear usuario admin
+        try:
+            admin = Usuario.query.filter_by(usuario='admin').first()
+            if not admin:
+                print('🔄 Creando usuario administrador...')
+                admin = Usuario(
+                    usuario='admin',
+                    rol='admin',
+                    nombre_completo='Administrador del Sistema',
+                    created_by='sistema'
+                )
+                admin.set_password('admin123')
+                db.session.add(admin)
+                db.session.commit()
+                print('✅ Usuario administrador creado')
+            else:
+                if admin.rol != 'admin':
+                    admin.rol = 'admin'
                     db.session.commit()
-                    print('✅ Usuario administrador creado')
-                else:
-                    if admin.rol != 'admin':
-                        admin.rol = 'admin'
-                        db.session.commit()
-                    print('✅ Usuario administrador ya existe')
-            except Exception as e:
-                db.session.rollback()
-                print(f'⚠️  Error al crear admin: {str(e)}')
-            
-            # Verificar/Crear usuario recepcionista
-            try:
-                recepcion = Usuario.query.filter_by(usuario='recepcion').first()
-                if not recepcion:
-                    print('🔄 Creando usuario recepcionista...')
-                    recepcion = Usuario(
-                        usuario='recepcion',
-                        rol='recepcion',
-                        nombre_completo='Usuario Recepción',
-                        created_by='sistema'
-                    )
-                    recepcion.set_password('recep123')
-                    db.session.add(recepcion)
-                    db.session.commit()
-                    print('✅ Usuario recepcionista creado')
-                else:
-                    print('✅ Usuario recepcionista ya existe')
-            except Exception as e:
-                db.session.rollback()
-                print(f'⚠️  Error al crear recepción: {str(e)}')
-            
-            # Verificar/Crear pantallas
-            try:
-                pantallas_existentes = Pantalla.query.count()
-                if pantallas_existentes == 0:
-                    print('🔄 Creando pantallas por defecto...')
-                    for i in range(1, 7):
-                        pantalla = Pantalla(
-                            numero=i,
-                            nombre=f'Pantalla {i}',
-                            estado='disponible',
-                            created_by='sistema'
-                        )
-                        db.session.add(pantalla)
-                    db.session.commit()
-                    print('✅ Pantallas creadas (1-6)')
-                else:
-                    print(f'✅ Pantallas ya existen ({pantallas_existentes} encontradas)')
-            except Exception as e:
-                db.session.rollback()
-                print(f'⚠️  Error al crear pantallas: {str(e)}')
-            
-            print('✅ Inicialización de base de datos completada')
-                
+                print('✅ Usuario administrador ya existe')
         except Exception as e:
             db.session.rollback()
-            error_msg = str(e).lower()
-            print(f'❌ Error durante inicialización: {str(e)}')
-            if 'column' in error_msg and 'does not exist' in error_msg:
-                print('⚠️  ADVERTENCIA: Falta una columna. Ejecuta db.create_all() o una migración.')
-            print('⚠️  La aplicación continuará pero puede haber problemas')
+            print(f'⚠️  Error al crear admin: {str(e)}')
+        
+        # Verificar/Crear usuario recepcionista
+        try:
+            recepcion = Usuario.query.filter_by(usuario='recepcion').first()
+            if not recepcion:
+                print('🔄 Creando usuario recepcionista...')
+                recepcion = Usuario(
+                    usuario='recepcion',
+                    rol='recepcion',
+                    nombre_completo='Usuario Recepción',
+                    created_by='sistema'
+                )
+                recepcion.set_password('recep123')
+                db.session.add(recepcion)
+                db.session.commit()
+                print('✅ Usuario recepcionista creado')
+            else:
+                print('✅ Usuario recepcionista ya existe')
+        except Exception as e:
+            db.session.rollback()
+            print(f'⚠️  Error al crear recepción: {str(e)}')
+        
+        # Verificar/Crear pantallas
+        try:
+            pantallas_existentes = Pantalla.query.count()
+            if pantallas_existentes == 0:
+                print('🔄 Creando pantallas por defecto...')
+                for i in range(1, 7):
+                    pantalla = Pantalla(
+                        numero=i,
+                        nombre=f'Pantalla {i}',
+                        estado='disponible',
+                        created_by='sistema'
+                    )
+                    db.session.add(pantalla)
+                db.session.commit()
+                print('✅ Pantallas creadas (1-6)')
+            else:
+                print(f'✅ Pantallas ya existen ({pantallas_existentes} encontradas)')
+        except Exception as e:
+            db.session.rollback()
+            print(f'⚠️  Error al crear pantallas: {str(e)}')
+        
+        print('✅ Inicialización de base de datos completada')

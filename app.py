@@ -1708,4 +1708,6 @@ if __name__ == '__main__':
     print("   recepcion / recep123")
     print("=" * 60 + "\n")
 
+    init_db(app)
+
     socketio.run(app, host='0.0.0.0', port=port, debug=debug, allow_unsafe_werkzeug=True)
