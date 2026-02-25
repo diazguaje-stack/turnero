@@ -1692,6 +1692,9 @@ def on_limpiar_historial(data=None):
         _ultimo_llamado = None
         socketio.emit('limpiar_historial', {}, to='screen')
 
+
+init_db(app)
+
 if __name__ == '__main__':
     port  = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
@@ -1708,6 +1711,5 @@ if __name__ == '__main__':
     print("   recepcion / recep123")
     print("=" * 60 + "\n")
 
-    init_db(app)
 
     socketio.run(app, host='0.0.0.0', port=port, debug=debug, allow_unsafe_werkzeug=True)
