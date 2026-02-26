@@ -64,8 +64,8 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', logger=F
 _ultimo_llamado=None
 _screen_sids={}
 _screen_pantalla = {}  
-
-
+_screen_disconnect_timers={}
+_screen_disconnect_active = {}      
 
 # ===================================
 # HELPERS JWT       
@@ -1576,44 +1576,90 @@ def internal_error(error):
 # INICIALIZACION
 # ===================================
 
+def resetear_pantalla_delayed(device_fp):
+    """
+    Resetea la pantalla DESPUÉS del grace period (5 segundos).
+    Solo se ejecuta si NO hubo reconexión en ese tiempo.
+    Usa flag para evitar ejecuciones duplicadas en gevent.
+    """
+    import time
+    time.sleep(5)
+    
+    # ← VERIFICAR si este timer debe ejecutarse
+    if not _screen_disconnect_active.get(device_fp, False):
+        print(f"[GRACE] ⏸️ Timer cancelado para {device_fp[:20]}... (reconexión detectada)")
+        return
+    
+    with app.app_context():
+        pantalla = Pantalla.query.filter_by(device_id=device_fp).first()
+        if not pantalla:
+            print(f"[GRACE] ❌ Pantalla con device_id {device_fp[:20]}... no encontrada")
+            _screen_disconnect_timers.pop(device_fp, None)
+            _screen_disconnect_active.pop(device_fp, None)
+            sids_to_remove = [sid for sid, fp in _screen_sids.items() if fp == device_fp]
+            for sid in sids_to_remove:
+                print(f"[GRACE] Removiendo {sid} de dicts")
+                _screen_sids.pop(sid, None)
+                _screen_pantalla.pop(sid, None)
+            return
+
+        numero_pantalla = pantalla.numero
+        pantalla_id     = str(pantalla.id)
+
+        print(f"[GRACE] ⏱️ Grace period expirado → reseteando Pantalla {numero_pantalla}")
+
+        if pantalla.estado in ('pendiente', 'vinculada'):
+            pantalla.device_id          = None
+            pantalla.codigo_vinculacion = None
+            pantalla.estado             = 'disponible'
+            pantalla.vinculada_at       = None
+            pantalla.recepcionista_id   = None
+
+        db.session.commit()
+        print(f"[GRACE] ✅ Pantalla {numero_pantalla} reseteada a 'disponible'")
+
+        socketio.emit('pantalla_desvinculada', {
+            'pantalla_id': pantalla_id,
+            'numero':      numero_pantalla,
+            'estado':      'disponible',
+            'motivo':      'screen_cerrada'
+        }, room='admin')
+
+        # Limpiar
+        _screen_disconnect_timers.pop(device_fp, None)
+        _screen_disconnect_active.pop(device_fp, None)
+        
+        sids_to_remove = [sid for sid, fp in _screen_sids.items() if fp == device_fp]
+        for sid in sids_to_remove:
+            print(f"[GRACE] Removiendo {sid} de dicts después de reset")
+            _screen_sids.pop(sid, None)
+            _screen_pantalla.pop(sid, None)
+
+
+
+
 @socketio.on('connect')
 def on_connect():
     print(f"[WS] Cliente conectado: {request.sid}")
+
 
 @socketio.on('disconnect')
 def on_disconnect():
     print(f"[WS] Cliente desconectado: {request.sid}")
 
-    _screen_pantalla.pop(request.sid, None)  # ← limpiar también este dict
-    device_fp = _screen_sids.pop(request.sid, None)
+    device_fp = _screen_sids.get(request.sid, None)
     if not device_fp:
         return
 
-    print(f"[WS] 📺 Screen desconectada: {device_fp[:20]}...")
+    print(f"[WS] 📺 Screen desconectada (GRACE PERIOD 5s): {device_fp[:20]}...")
 
-    pantalla = Pantalla.query.filter_by(device_id=device_fp).first()
-    if not pantalla:
-        return
-
-    numero_pantalla = pantalla.numero
-    pantalla_id     = str(pantalla.id)
-
-    if pantalla.estado in ('pendiente', 'vinculada'):
-        pantalla.device_id          = None
-        pantalla.codigo_vinculacion = None
-        pantalla.estado             = 'disponible'
-        pantalla.vinculada_at       = None
-        pantalla.recepcionista_id   = None
-
-    db.session.commit()
-    print(f"[WS] ✅ Pantalla {numero_pantalla} reseteada a 'disponible'")
-
-    socketio.emit('pantalla_desvinculada', {
-        'pantalla_id': pantalla_id,
-        'numero':      numero_pantalla,
-        'estado':      'disponible',
-        'motivo':      'screen_cerrada'
-    }, room='admin')
+    # ── Marcar que este timer DEBE ejecutarse ──────────────────────
+    _screen_disconnect_active[device_fp] = True
+    
+    # ── Iniciar grace period de 5 segundos ─────────────────────────
+    print(f"[GRACE] ⏳ Grace period iniciado — esperando reconexión...")
+    timer = socketio.start_background_task(resetear_pantalla_delayed, device_fp)
+    _screen_disconnect_timers[device_fp] = timer
 
 @socketio.on('join')
 def on_join(data):
@@ -1623,9 +1669,37 @@ def on_join(data):
     print(f"[WS] Cliente {request.sid} entró a sala: {room}")
 
     if room == 'screen' and device_fp:
+        # ── PASO 1: CANCELAR grace period si esta screen se reconecta ─────────
+        if device_fp in _screen_disconnect_timers:
+            print(f"[GRACE] ✅ Reconexión detectada → screen salvada")
+            # ← MARCAR que el timer NO debe ejecutarse
+            _screen_disconnect_active[device_fp] = False
+            _screen_disconnect_timers.pop(device_fp, None)
+        
+        # ── PASO 2: Encontrar el SID ANTIGUO del mismo device_fp ──────────────
+        old_sid = None
+        for sid, fp in list(_screen_sids.items()):
+            if fp == device_fp and sid != request.sid:
+                old_sid = sid
+                break
+        
+        if old_sid:
+            print(f"[WS] 🔄 Migrando de {old_sid} → {request.sid}")
+            
+            # Migrar pantalla_id del sid antiguo al nuevo
+            if old_sid in _screen_pantalla:
+                pantalla_id = _screen_pantalla[old_sid]
+                _screen_pantalla[request.sid] = pantalla_id
+                print(f"[WS] 📋 Pantalla ID migrada: {pantalla_id}")
+                del _screen_pantalla[old_sid]
+            
+            # Remover el sid antiguo
+            del _screen_sids[old_sid]
+        
+        # ── PASO 3: Agregar el nuevo sid ──────────────────────────────────────
         _screen_sids[request.sid] = device_fp
 
-        # Buscar pantalla — puede ser pendiente O vinculada
+        # ── PASO 4: Buscar pantalla y unirse a sala propia ────────────────────
         pantalla = Pantalla.query.filter_by(device_id=device_fp).first()
         if pantalla:
             sala_propia = f'screen_{pantalla.id}'
@@ -1633,7 +1707,7 @@ def on_join(data):
             _screen_pantalla[request.sid] = str(pantalla.id)
             print(f"[WS] ✅ Screen {request.sid} → sala {sala_propia} (estado: {pantalla.estado})")
         else:
-            print(f"[WS] ⚠️ Screen {request.sid} sin pantalla aún — se unirá al vincularse")
+            print(f"[WS] ⚠️ Screen {request.sid} sin pantalla aún")
 
     emit('joined', {'room': room, 'status': 'ok'})
 
@@ -1642,13 +1716,18 @@ def on_join(data):
 def on_join_screen_propia(data):
     """
     Llamado por screen_vinculacion.js cuando recibe 'pantalla_vinculada'.
-    Asegura que el sid quede en su sala propia incluso si en 'join' no había pantalla aún.
     """
     pantalla_id = data.get('pantalla_id', '')
     device_fp   = data.get('device_fingerprint', '')
 
     if not pantalla_id:
         return
+
+    if device_fp in _screen_disconnect_timers:
+        print(f"[GRACE] ✅ Vinculación detectada → timer cancelado")
+        # ← MARCAR que el timer NO debe ejecutarse
+        _screen_disconnect_active[device_fp] = False
+        _screen_disconnect_timers.pop(device_fp, None)
 
     sala_propia = f'screen_{pantalla_id}'
     join_room(sala_propia)
@@ -1665,17 +1744,45 @@ def on_join_screen_propia(data):
 def on_llamar_paciente(data):
     global _ultimo_llamado
 
-    sid_recepcion = request.sid  # ← capturar aquí
-    print(f"[WS] SID recepción: {sid_recepcion}")  # ← ver qué sid tiene
-
     codigo           = data.get('codigo', '')
     nombre           = data.get('nombre', '')
     paciente_id      = data.get('pacienteId', '')
     recepcion        = data.get('recepcion', '')
     recepcionista_id = data.get('recepcionistaId', '')
 
-    print(f"[WS] 📢 Llamando: {codigo} — {nombre} — recepcionistaId: {recepcionista_id}")
+    print(f"[WS] 📢 Llamando: {codigo} — {nombre}")
+    print(f"[WS] RecepcionistaId: {recepcionista_id}")
 
+    # ── VALIDACIÓN 1: Recepcionista ID es obligatorio ──────────────────────────
+    if not recepcionista_id:
+        print(f"[WS] ❌ RecepcionistaId vacío — NO se emite")
+        socketio.emit('error_llamada', {
+            'mensaje': 'No hay recepcionista asignado'
+        }, room=request.sid)
+        return
+
+    # ── VALIDACIÓN 2: Buscar pantalla vinculada a ESTE recepcionista ──────────
+    pantalla = Pantalla.query.filter_by(
+        recepcionista_id=recepcionista_id,
+        estado='vinculada'
+    ).first()
+
+    if not pantalla:
+        print(f"[WS] ❌ Recepcionista {recepcionista_id} no tiene pantalla vinculada")
+        socketio.emit('error_llamada', {
+            'mensaje': f'El recepcionista no tiene pantalla vinculada'
+        }, room=request.sid)
+        return
+
+    # ── VALIDACIÓN 3: Pantalla tiene device_id (conectada) ────────────────────
+    if not pantalla.device_id:
+        print(f"[WS] ⚠️ Pantalla {pantalla.numero} está desconectada")
+        socketio.emit('error_llamada', {
+            'mensaje': f'Pantalla {pantalla.numero} desconectada'
+        }, room=request.sid)
+        return
+
+    # ── TODO OK: Construir payload y sala destino ──────────────────────────────
     payload = {
         'codigo':     codigo,
         'nombre':     nombre,
@@ -1683,46 +1790,29 @@ def on_llamar_paciente(data):
         'recepcion':  recepcion
     }
 
-    # ── Buscar pantalla vinculada a este recepcionista ──────────────
-    sala_destino  = None
-    pantalla_num  = None
+    sala_destino = f'screen_{pantalla.id}'
 
-    if recepcionista_id:
-        pantalla = Pantalla.query.filter_by(
-            recepcionista_id = recepcionista_id,
-            estado           = 'vinculada'
-        ).first()
+    print(f"[WS] ✅ Emitiendo a {sala_destino} (Pantalla {pantalla.numero})")
+    
+    # ── EMITIR A LA PANTALLA VINCULADA ────────────────────────────────────────
+    socketio.emit('llamar_paciente', payload, to=sala_destino)
 
-        if pantalla:
-            sala_destino = f'screen_{pantalla.id}'
-            pantalla_num = pantalla.numero
-            print(f"[WS] 📺 Destino: {sala_destino} (Pantalla {pantalla_num})")
-        else:
-            print(f"[WS] ❌ recepcionista {recepcionista_id} no tiene pantalla vinculada")
-    else:
-        print(f"[WS] ❌ recepcionistaId vacío — llamada sin destino")
-
-    # ── Guardar último llamado CON sala destino ─────────────────────
+    # ── GUARDAR último llamado ────────────────────────────────────────────────
     _ultimo_llamado = {
         'codigo':        codigo,
         'nombre':        nombre,
         'pacienteId':    paciente_id,
         'recepcion':     recepcion,
         'recepcionistaId': recepcionista_id,
-        'sala_destino':  sala_destino,        # ← guardar para pedir_ultimo_llamado
+        'pantalla_id':   str(pantalla.id),
+        'sala_destino':  sala_destino,
         'timestamp':     datetime.utcnow().isoformat()
     }
 
-
-    if sala_destino:
-        socketio.emit('llamar_paciente', payload, to=sala_destino)
-    else:
-        # Sin destino claro → NO hacer broadcast, solo loguear
-        print(f"[WS] ⚠️ Llamada descartada — no hay pantalla destino identificada")
-
-    # Reenviar a recepción solo para historial (no a screen)
-    print(f"[WS] Emitiendo historial a sid: {sid_recepcion}")
-    socketio.emit('llamar_paciente', payload, room=sid_recepcion)
+    # ── REENVIAR A RECEPCIÓN PARA HISTORIAL ───────────────────────────────────
+    # (Enviar al sid actual del recepcionista, NO a toda la sala)
+    print(f"[WS] Emitiendo historial al recepcionista: {request.sid}")
+    socketio.emit('llamar_paciente', payload, room=request.sid)
 
 @socketio.on('pedir_ultimo_llamado')
 def on_pedir_ultimo_llamado():

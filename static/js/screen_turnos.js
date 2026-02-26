@@ -46,6 +46,7 @@ function recuperarHistorial() {
 
 let _audioEl            = null;   // elemento <audio> reutilizable
 let _audioDesbloqueado  = false;  // true tras primer tap del usuario
+let miPantallaid= null;
 
 function _getAudio() {
     if (!_audioEl) {
@@ -431,17 +432,39 @@ function registrarListeners(socket) {
         limpiarHistorialScreen();
     });
 
+    socket.on('pantalla_vinculada', (data) => {
+        console.log('[TURNOS] Pantalla vinculada:', data);
+        miPantallaId = data.pantalla_id;  // ← GUARDAR el ID
+        console.log('[TURNOS] Mi pantalla_id:', miPantallaId);
+    });
+
+    socket.on('joined_screen_propia', (data) => {
+        console.log('[TURNOS] Unido a sala propia:', data);
+        // Si viene en este evento, también guardar
+        if (data.pantalla_id) {
+            miPantallaId = data.pantalla_id;
+            console.log('[TURNOS] Mi pantalla_id (desde joined_screen_propia):', miPantallaId);
+        }
+    });
+
+
     socket.on('llamar_paciente', (data) => {
         console.log('=== SOCKET llamar_paciente RECIBIDO ===');
         console.log('DATA COMPLETO:');
         console.log(JSON.stringify(data, null, 2));
-        console.log('data.recepcion:', data.recepcion);
-        console.log('typeof data.recepcion:', typeof data.recepcion);
-        console.log('data.recepcion === undefined:', data.recepcion === undefined);
-        console.log('data.recepcion === null:', data.recepcion === null);
-        console.log('data.recepcion == false:', data.recepcion == false);
+        console.log('data.pantalla_id:', data.pantalla_id);
+        console.log('miPantallaId:', miPantallaId);
         console.log('========================================');
         
+        // ── VALIDACIÓN: ¿Es esta llamada para MI pantalla? ──────────────────────
+        if (data.pantalla_id && miPantallaId && data.pantalla_id !== miPantallaId) {
+            console.log(`[TURNOS] ⚠️ Llamada es para otra pantalla (${data.pantalla_id} ≠ ${miPantallaId}) - ignorando`);
+            return;  // ← IGNORAR si no es para esta pantalla
+        }
+        
+        console.log('[TURNOS] ✅ Llamada ES PARA ESTA PANTALLA - procesando');
+        
+        // ── Resto del código original ──────────────────────────────────────────
         guardarUltimoLlamado(data.codigo, data.nombre);
 
         const linkedState   = document.getElementById('linkedState');
@@ -457,6 +480,12 @@ function registrarListeners(socket) {
         } else {
             window._llamadaPendiente = data;
         }
+    });
+
+    socket.on('historial_llamada', (data) => {
+        console.log('[TURNOS] Historial de llamada recibido:', data);
+        // Aquí puedes actualizar un historial visual si quieres
+        // pero sin reproducir sonido
     });
 
     socket.emit('pedir_ultimo_llamado');

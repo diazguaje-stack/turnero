@@ -20,6 +20,7 @@ let pantallaData          = null;
 let intentoInicializacion = 0;
 let _socket               = null;
 let _socketListo          = false;   // true cuando 'joined' confirmó sala 'screen'
+let _desconexionIntencional = false; // flag para distinguir refresh de cierre
 
 const MAX_INTENTOS    = 5;
 const DELAY_REINTENTO = 3000;
@@ -40,9 +41,27 @@ document.addEventListener('DOMContentLoaded', () => {
     conectarSocket();       // ya tiene el fingerprint disponible
     inicializarPantalla();
 });
+
 window.addEventListener('beforeunload', () => {
-    if (_socket) _socket.disconnect();
+    // Detectar si es refresh (F5, Ctrl+R) vs cierre de pestaña
+    // En refresh, el socket se reconectará automáticamente
+    // Solo desconectar manualmente si es un cierre intencional
+    _desconexionIntencional = true;
+    if (_socket && !_isRefresh()) {
+        _socket.disconnect();
+    }
 });
+
+// Detecta si es un refresh en lugar de un cierre
+function _isRefresh() {
+    // Si hay performance.navigation (deprecated pero útil como fallback)
+    if (window.performance && window.performance.navigation) {
+        return window.performance.navigation.type === 1; // TYPE_RELOAD
+    }
+    // En navegadores modernos, asumir que beforeunload + navegación es refresh
+    // No hay forma 100% confiable, pero el socket se reconectará de todos modos
+    return true;
+}
 
 // =========================
 // WEBSOCKET
@@ -70,6 +89,8 @@ function conectarSocket() {
     _socket.on('disconnect', (reason) => {
         console.log('[VIN] Socket desconectado:', reason);
         _socketListo = false;
+        // NO recargar automáticamente en cada desconexión
+        // El socket se reconectará automáticamente con socket.io
     });
 
     // ── Admin vinculó → mostrar pantalla activa ──
@@ -90,7 +111,12 @@ function conectarSocket() {
                 pantallaData = sd.pantalla;
                 mostrarVinculada(pantallaData);
             }
-        }).catch(() => location.reload());
+        }).catch(() => {
+            // Solo recargar si es una desconexión real del servidor, no refresh
+            if (_desconexionIntencional === false) {
+                location.reload();
+            }
+        });
     });
     // ── Admin desvinculó → recargar ──
     _socket.on('pantalla_desvinculada', () => {
