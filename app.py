@@ -1623,6 +1623,7 @@ def resetear_pantalla_delayed(device_fp):
             'numero':      numero_pantalla,
             'estado':      'disponible',
             'motivo':      'screen_cerrada'
+            
         }, room='admin')
 
         # Limpiar

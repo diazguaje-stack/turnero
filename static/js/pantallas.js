@@ -461,11 +461,40 @@ document.addEventListener('DOMContentLoaded', () => {
         if (socket.connected) unirse();
         socket.on('connect', unirse);
 
+        // ── EVENTOS DE PANTALLA ────────────────────────────────────────────────
+        const EVENTOS_PANTALLA = [
+            'pantalla_vinculada',
+            'pantalla_desvinculada',
+            'pantalla_pendiente',
+            'recepcionista_asignado'
+        ];
+
         EVENTOS_PANTALLA.forEach(evento => {
             socket.on(evento, () => {
                 console.log(`📺 [${evento}] → cargarPantallas()`);
                 cargarPantallas();
             });
+        });
+
+        // ── AGREGAR: Escuchar desconexión de screen (grace period expirado) ──
+        socket.on('pantalla_desvinculada', (data) => {
+            console.log('[PAN] 📺 pantalla_desvinculada recibido:', data);
+            
+            // Cerrar modal si estaba abierto
+            const modal = document.getElementById('modalAsignarRecepcionista');
+            if (modal) {
+                console.log('[PAN] ✅ Cerrando modal de asignación');
+                modal.remove();
+            }
+            
+            // Actualizar lista
+            cargarPantallas();
+            
+            // Mostrar notificación
+            mostrarMensajePantallas(
+                `⚠️ Pantalla ${data.numero || '?'} se desconectó (motivo: ${data.motivo || 'desconocido'})`,
+                'warning'
+            );
         });
 
         // ── NUEVO: usuario eliminado o desactivado ──
@@ -507,7 +536,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         console.log('✅ pantallas.js: todos los eventos socket registrados');
     }
-
     let intentos = 0;
     const esperar = setInterval(() => {
         intentos++;
