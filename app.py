@@ -21,6 +21,7 @@ import atexit
 
 app = Flask(__name__)
 
+
 # ── Seleccionar config de forma segura ──
 # ✅ Detectar automáticamente: si DATABASE_URL existe, es producción
 if os.environ.get('DATABASE_URL'):
@@ -35,6 +36,16 @@ if env not in config:
 
 print(f"🔧 Entorno detectado: {env.upper()}")
 app.config.from_object(config[env])
+
+db.init_app(app)
+
+with app.app_context():
+    # Solo verificar conexión, NO crear tablas
+    try:
+        db.session.execute(db.text('SELECT 1'))
+        print('✅ Conexión a BD exitosa')
+    except Exception as e:
+        print(f'❌ Error de conexión: {e}')
 
 TTS_CACHE_DIR = os.path.join(os.path.dirname(__file__), 'static', 'tts_cache')
 os.makedirs(TTS_CACHE_DIR, exist_ok=True)
@@ -51,15 +62,6 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', logger=F
 _ultimo_llamado=None
 _screen_sids={}
 _screen_pantalla = {}  
-
-if __name__ == '__main__':
-    with app.app_context():
-        # Solo verificar conexión, NO crear tablas
-        try:
-            db.session.execute(db.text('SELECT 1'))
-            print('✅ Conexión a BD exitosa')
-        except Exception as e:
-            print(f'❌ Error de conexión: {e}')
 
 
 

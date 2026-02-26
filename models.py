@@ -293,7 +293,6 @@ class Turno(db.Model):
 
 def init_db(app):
     """Inicializa la base de datos y datos por defecto"""
-    db.init_app(app)
     
     with app.app_context():
         try:
