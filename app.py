@@ -7,9 +7,9 @@ from functools import wraps
 import os, hashlib
 from gtts import gTTS
 import jwt
-from models import db, Usuario, init_db, Pantalla, Paciente,Turno, uuid
+from models import db, Usuario, init_db, Pantalla, Paciente, Turno, uuid
 from config import config
-from flask_socketio  import SocketIO, emit, join_room
+from flask_socketio import SocketIO, emit, join_room
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from flask_migrate import Migrate
@@ -19,20 +19,29 @@ import atexit
 # CONFIGURACION
 # ===================================
 
-
 app = Flask(__name__)
 
-env = os.environ.get('FLASK_ENV', 'development')
+# ── Seleccionar config de forma segura ──
+# ✅ Detectar automáticamente: si DATABASE_URL existe, es producción
+if os.environ.get('DATABASE_URL'):
+    env = 'production'
+else:
+    env = os.environ.get('FLASK_ENV', 'development').lower().strip()
+
+if env not in config:
+    print(f"⚠️  Entorno '{env}' no reconocido. Usando 'development'")
+    env = 'development'
+
+
+print(f"🔧 Entorno detectado: {env.upper()}")
 app.config.from_object(config[env])
 
 TTS_CACHE_DIR = os.path.join(os.path.dirname(__file__), 'static', 'tts_cache')
 os.makedirs(TTS_CACHE_DIR, exist_ok=True)
 
-
 # JWT Secret — en produccion usa variable de entorno
 JWT_SECRET = os.environ.get('JWT_SECRET', 'jwt-secret-turnero-2024-cambiar-en-produccion')
 JWT_EXPIRATION_HOURS = 8  # Token expira en 8 horas
-
 
 migrate = Migrate(app, db)
 
@@ -54,9 +63,8 @@ if __name__ == '__main__':
 
 
 
-
 # ===================================
-# HELPERS JWT
+# HELPERS JWT       
 # ===================================
 
 # ===================================
