@@ -426,16 +426,6 @@ function toggleAcciones(pacienteId, medicoId) {
 function llamarPaciente(pacienteId, codigo, nombre, numeroPantalla) {
     mostrarToast(`📢 Llamando: ${codigo} — ${nombre}`, 'nuevo');
 
-    // ✅ DEBUG: Ver qué se calcula
-    console.log('=== DEBUG llamarPaciente ===');
-    console.log('numeroPantalla recibido:', numeroPantalla);
-    console.log('window._numeroPantallaRecepcion:', window._numeroPantallaRecepcion);
-    
-    let numRecepcion = numeroPantalla || obtenerNumeroRecepcionActual();
-    console.log('numRecepcion FINAL:', numRecepcion);
-    console.log('typeof numRecepcion:', typeof numRecepcion);
-    console.log('===========================');
-
     if (socket && socket.connected) {
         let recepcionistaId = null;
         try {
@@ -448,20 +438,20 @@ function llamarPaciente(pacienteId, codigo, nombre, numeroPantalla) {
             console.warn('No se pudo leer recepcionistaId del token:', e);
         }
 
-        // ✅ DEBUG: Ver el objeto completo antes de emitir
-        const dataAEmitir = {
+        // ✅ ASEGURAR QUE numRecepcion SIEMPRE TENGA UN VALOR
+        const numRecepcion = numeroPantalla || obtenerNumeroRecepcionActual() || '1';
+        
+        console.log('📢 [DEBUG] numRecepcion final:', numRecepcion);
+
+        // ✅ EMIT CON recepcion GARANTIZADO
+        socket.emit('llamar_paciente', {
             pacienteId:      pacienteId,
             codigo:          codigo,
             nombre:          nombre,
             recepcionistaId: recepcionistaId,
-            recepcion:       numRecepcion
-        };
-        
-        console.log('📡 EMITIENDO EN SOCKET - OBJETO COMPLETO:');
-        console.log(JSON.stringify(dataAEmitir, null, 2));
-        
-        socket.emit('llamar_paciente', dataAEmitir);
-        console.log(`📢 Emitido llamar_paciente`);
+            recepcion:       numRecepcion  // ← SIEMPRE TIENE VALOR
+        });
+        console.log(`📢 Emitido llamar_paciente: ${codigo} — ${nombre} — recepcion: ${numRecepcion}`);
     } else {
         console.warn('⚠️ Socket no conectado — llamada no enviada a pantalla');
     }
@@ -480,12 +470,28 @@ function llamarPaciente(pacienteId, codigo, nombre, numeroPantalla) {
 function obtenerNumeroRecepcionActual() {
     console.log('🔍 obtenerNumeroRecepcionActual() - buscando número...');
     
+    // Intento 1: Variable global
     if (window._numeroPantallaRecepcion) {
         console.log('✅ Encontrado en window._numeroPantallaRecepcion:', window._numeroPantallaRecepcion);
         return window._numeroPantallaRecepcion;
     }
     console.log('❌ window._numeroPantallaRecepcion no existe');
     
+    // Intento 2: Del JWT
+    try {
+        const token = sessionStorage.getItem('jwt_token');
+        if (token) {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            if (payload.numero_recepcion) {
+                console.log('✅ Encontrado en JWT:', payload.numero_recepcion);
+                return payload.numero_recepcion;
+            }
+        }
+    } catch (e) {
+        console.log('❌ No se pudo leer JWT');
+    }
+    
+    // Intento 3: Del nombre completo en sessionStorage
     const nombreCompleto = sessionStorage.getItem('nombre_completo') || '';
     console.log('nombre_completo en sessionStorage:', nombreCompleto);
     const match = nombreCompleto.match(/\d+/);
@@ -495,6 +501,7 @@ function obtenerNumeroRecepcionActual() {
     }
     console.log('❌ No hay números en nombre_completo');
     
+    // Intento 4: Del elemento userName del DOM
     const userNameEl = document.getElementById('userName');
     if (userNameEl) {
         console.log('userName elemento encontrado:', userNameEl.textContent);
@@ -506,9 +513,11 @@ function obtenerNumeroRecepcionActual() {
     }
     console.log('❌ No hay números en userName DOM');
     
-    console.log('⚠️ No se pudo obtener número de recepción');
-    return null;
+    // ✅ FALLBACK: Si no se encuentra nada, retornar '1' en lugar de null
+    console.warn('⚠️ No se pudo obtener número de recepción, usando fallback: "1"');
+    return '1';
 }
+
 
 // ── Actualizar badge de contador del médico ────────────────
 function actualizarBadgeContador(medicoId) {
