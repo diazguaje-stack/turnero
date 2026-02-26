@@ -163,7 +163,20 @@ const Auth = {
 
     // ── Logout ─────────────────────────────────────────────────────
 
-    
+    async logout() {
+        try {
+            const token = this.obtenerToken();
+            if (token) {
+                await this.fetch('/api/logout', { method: 'POST' }).catch(() => {});
+            }
+        } catch(e) {}
+        finally {
+            this.eliminarToken();
+            localStorage.removeItem('currentUser');
+            window.location.href = '/';
+        }
+    },
+
     // ── Mostrar info del usuario en navbar ────────────────────────
 
     mostrarUsuarioEnNavbar(data) {
