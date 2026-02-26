@@ -1,8 +1,9 @@
 // ============================================================
-// screen_turnos.js
+// screen_turnos.js (VERSIÓN CORREGIDA)
 // - Turno actual → panel izquierdo
 // - Historial de llamados → panel derecho
 // - Text-to-Speech: via servidor gTTS (MP3) — compatible Smart TV y Android
+// - FIX: Esperar a que el audio esté completamente cargado antes de reproducir
 // ============================================================
 
 const STORAGE_KEY         = 'screen_ultimo_llamado';
@@ -63,13 +64,14 @@ function _desbloquearAudio() {
     _audioDesbloqueado = true;
     console.log('[TTS] 🔓 Audio desbloqueado por interacción del usuario');
 
-    // Reproducir silencio para "despertar" el contexto de audio del navegador
+    // Reproducir silencio para "despertar" el contexto de audio
     const audio = _getAudio();
     audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
     audio.play().catch(() => {});
 
-    // Si había un audio pendiente por autoplay bloqueado, reproducirlo ahora
+    // Si hay audio pendiente, reproducirlo ahora
     if (window._audioPendiente) {
+        console.log('[TTS] 🎬 Reproduciendo audio pendiente que estaba bloqueado');
         window._audioPendiente.play().catch(() => {});
         window._audioPendiente = null;
     }
@@ -92,48 +94,212 @@ function formatearCodigoParaVoz(codigo) {
 }
 
 /**
- * Construye el texto del anuncio, solicita MP3 al servidor y lo reproduce.
+ * Reproduce audio secuencial: primero "Paciente X Código Y"
+ * Luego, si existe recepción: "Diríjase a recepción Z"
  */
 async function anunciarTurno(nombre, codigo, recepcion) {
     const codigoHablado = formatearCodigoParaVoz(codigo);
-    const numRecepcion  = recepcion
-        ? String(recepcion).replace(/recepci[oó]n\s*/i, '').trim()
-        : null;
+    
+    console.log('[TTS] ═══════════════════════════════════════════════════════');
+    console.log('[TTS] INICIANDO ANUNCIO COMPLETO');
+    console.log('[TTS] ═══════════════════════════════════════════════════════');
+    
+    // 1️⃣ PRIMER AUDIO: Paciente + Código
+    let texto1 = '';
+    if (nombre && nombre.trim()) texto1 += `Paciente ${nombre}. `;
+    texto1 += `Código ${codigoHablado}.`;
+    
+    console.log('[TTS] ');
+    console.log('[TTS] 📢 PARTE 1/2: PACIENTE + CÓDIGO');
+    console.log('[TTS] Texto:', texto1);
+    console.log('[TTS] Iniciando reproducción...');
+    const t1 = Date.now();
+    await reproducirAudio(texto1);
+    const t1_elapsed = Date.now() - t1;
+    console.log(`[TTS] ✅ PARTE 1 finalizada (${t1_elapsed}ms)`);
+    
+    // 2️⃣ PAUSA ESTRATÉGICA
+    console.log('[TTS] ');
+    console.log('[TTS] ⏸️ PAUSA de 800ms entre audios (para Smart TV)');
+    await new Promise(resolve => setTimeout(resolve, 800));
+    console.log('[TTS] ✅ Pausa completada');
+    
+    // 3️⃣ SEGUNDO AUDIO: Recepción
+    console.log('[TTS] ');
+    if (recepcion) {
+        const numRecepcion = String(recepcion).replace(/recepci[oó]n\s*/i, '').trim();
+        if (numRecepcion) {
+            const texto2 = `Diríjase a recepción ${numRecepcion}.`;
+            console.log('[TTS] 📢 PARTE 2/2: INSTRUCCIÓN DE RECEPCIÓN');
+            console.log('[TTS] Texto:', texto2);
+            console.log('[TTS] Iniciando reproducción...');
+            const t2 = Date.now();
+            await reproducirAudio(texto2);
+            const t2_elapsed = Date.now() - t2;
+            console.log(`[TTS] ✅ PARTE 2 finalizada (${t2_elapsed}ms)`);
+        } else {
+            console.warn('[TTS] ⚠️ recepcion vacío después de limpiar');
+        }
+    } else {
+        console.warn('[TTS] ⚠️ recepcion es NULL/UNDEFINED - omitiendo segunda parte');
+    }
+    
+    console.log('[TTS] ');
+    console.log('[TTS] ═══════════════════════════════════════════════════════');
+    console.log('[TTS] ✅ ANUNCIO COMPLETO FINALIZADO');
+    console.log('[TTS] ═══════════════════════════════════════════════════════');
+}
 
-    let texto = '';
-    if (nombre && nombre.trim()) texto += `Paciente ${nombre}. `;
-    texto += `Código ${codigoHablado}. `;
-    if (numRecepcion)              texto += `Diríjase a recepción ${numRecepcion}.`;
-
+/**
+ * Reproduce un fragmento de audio de forma confiable en Smart TV.
+ * Espera a que esté completamente cargado antes de reproducir.
+ */
+async function reproducirAudio(texto) {
     console.log('[TTS] 🔊 Solicitando audio:', texto);
-
+    
     try {
-        const res  = await fetch('/api/tts', {
+        const res = await fetch('/api/tts', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ texto })
         });
         const data = await res.json();
-
+        
         if (!data.success) {
             console.warn('[TTS] ❌ Error del servidor:', data.message);
             return;
         }
-
+        
         const audio = _getAudio();
-        audio.src    = data.url + '?t=' + Date.now(); // evitar cache del navegador
+        const audioUrl = data.url + '?t=' + Date.now();
+        audio.src = audioUrl;
         audio.volume = 1.0;
-
-        const playPromise = audio.play();
-        if (playPromise) {
-            playPromise
-                .then(() => console.log('[TTS] ✅ Audio reproduciéndose'))
-                .catch(err => {
-                    console.warn('[TTS] ⚠️ Autoplay bloqueado, esperando interacción:', err.message);
-                    window._audioPendiente = audio;
-                });
-        }
-
+        
+        console.log('[TTS] 📥 URL del audio:', audioUrl);
+        console.log('[TTS] Estado inicial del audio:', audio.readyState, 'HAVE_NOTHING=0, HAVE_METADATA=1, HAVE_CURRENT_DATA=2, HAVE_FUTURE_DATA=3, HAVE_ENOUGH_DATA=4');
+        
+        // Esperar a que el audio esté COMPLETAMENTE listo y reproducirlo
+        return new Promise((resolve, reject) => {
+            let playStarted = false;
+            let hasEnded = false;
+            let timedOut = false;
+            
+            // Timeout de 45 segundos (por si falla todo)
+            const timeoutId = setTimeout(() => {
+                timedOut = true;
+                console.warn('[TTS] ⏱️ TIMEOUT: Audio no se reprodujo en 45 segundos');
+                cleanup();
+                resolve(); // resolver sin error para que continúe
+            }, 45000);
+            
+            const cleanup = () => {
+                clearTimeout(timeoutId);
+                audio.removeEventListener('loadstart', onLoadStart);
+                audio.removeEventListener('durationchange', onDurationChange);
+                audio.removeEventListener('loadeddata', onLoadedData);
+                audio.removeEventListener('canplay', onCanPlay);
+                audio.removeEventListener('canplaythrough', onCanPlayThrough);
+                audio.removeEventListener('playing', onPlaying);
+                audio.removeEventListener('progress', onProgress);
+                audio.removeEventListener('ended', onEnded);
+                audio.removeEventListener('error', onError);
+                audio.removeEventListener('abort', onAbort);
+            };
+            
+            const onLoadStart = () => {
+                console.log('[TTS] 📡 loadstart: Comenzó la descarga');
+            };
+            
+            const onProgress = () => {
+                if (audio.buffered.length > 0) {
+                    const bufferedEnd = audio.buffered.end(audio.buffered.length - 1);
+                    const duration = audio.duration;
+                    if (duration > 0) {
+                        const percent = (bufferedEnd / duration * 100).toFixed(1);
+                        console.log(`[TTS] 📊 Progress: ${percent}% descargado (${bufferedEnd.toFixed(1)}s / ${duration.toFixed(1)}s)`);
+                    }
+                }
+            };
+            
+            const onDurationChange = () => {
+                console.log('[TTS] ⏱️ durationchange: Duración =', audio.duration, 's');
+            };
+            
+            const onLoadedData = () => {
+                console.log('[TTS] 📦 loadeddata: Datos cargados, readyState=', audio.readyState);
+            };
+            
+            const onCanPlay = () => {
+                console.log('[TTS] ▶️ canplay: Puede iniciar, readyState=', audio.readyState);
+            };
+            
+            const onCanPlayThrough = () => {
+                console.log('[TTS] ✅ canplaythrough: Completamente listo para reproducir sin buffering');
+                if (!playStarted && !timedOut) {
+                    playStarted = true;
+                    console.log('[TTS] 🎬 INICIANDO REPRODUCCIÓN');
+                    
+                    const playPromise = audio.play();
+                    if (playPromise) {
+                        playPromise
+                            .then(() => {
+                                console.log('[TTS] 🔊 REPRODUCCIÓN INICIADA EXITOSAMENTE');
+                            })
+                            .catch(err => {
+                                console.warn('[TTS] ⚠️ Autoplay bloqueado:', err.message);
+                                console.log('[TTS] Guardando audio como pendiente para reproducir después de interacción');
+                                window._audioPendiente = audio;
+                                cleanup();
+                                resolve();
+                            });
+                    }
+                }
+            };
+            
+            const onPlaying = () => {
+                console.log('[TTS] ▶️ REPRODUCIÉNDOSE ahora');
+            };
+            
+            const onEnded = () => {
+                if (!hasEnded) {
+                    hasEnded = true;
+                    console.log('[TTS] ✅ AUDIO FINALIZADO COMPLETAMENTE');
+                    cleanup();
+                    resolve();
+                }
+            };
+            
+            const onError = () => {
+                console.error('[TTS] ❌ ERROR EN AUDIO:', audio.error?.message || audio.error);
+                console.error('[TTS] Código de error:', audio.error?.code);
+                console.error('[TTS] URL intentada:', audioUrl);
+                cleanup();
+                resolve(); // resolver sin error para continuar
+            };
+            
+            const onAbort = () => {
+                console.warn('[TTS] ⚠️ ABORTADO');
+                cleanup();
+                resolve();
+            };
+            
+            // Registrar todos los listeners
+            audio.addEventListener('loadstart', onLoadStart);
+            audio.addEventListener('progress', onProgress);
+            audio.addEventListener('durationchange', onDurationChange);
+            audio.addEventListener('loadeddata', onLoadedData);
+            audio.addEventListener('canplay', onCanPlay);
+            audio.addEventListener('canplaythrough', onCanPlayThrough);
+            audio.addEventListener('playing', onPlaying);
+            audio.addEventListener('ended', onEnded);
+            audio.addEventListener('error', onError);
+            audio.addEventListener('abort', onAbort);
+            
+            // Forzar carga
+            console.log('[TTS] 🔄 Llamando a audio.load()');
+            audio.load();
+        });
+        
     } catch (err) {
         console.error('[TTS] ❌ Error al obtener audio del servidor:', err);
     }
@@ -266,13 +432,22 @@ function registrarListeners(socket) {
     });
 
     socket.on('llamar_paciente', (data) => {
+        console.log('=== SOCKET llamar_paciente RECIBIDO ===');
+        console.log('DATA COMPLETO:');
+        console.log(JSON.stringify(data, null, 2));
+        console.log('data.recepcion:', data.recepcion);
+        console.log('typeof data.recepcion:', typeof data.recepcion);
+        console.log('data.recepcion === undefined:', data.recepcion === undefined);
+        console.log('data.recepcion === null:', data.recepcion === null);
+        console.log('data.recepcion == false:', data.recepcion == false);
+        console.log('========================================');
+        
         guardarUltimoLlamado(data.codigo, data.nombre);
 
         const linkedState   = document.getElementById('linkedState');
         const estaVinculada = linkedState && linkedState.style.display !== 'none';
 
         if (estaVinculada) {
-            // Mover turno anterior al historial antes de mostrar el nuevo
             const codigoAnterior = document.getElementById('turnoCodigo')?.textContent?.trim();
             const nombreAnterior = document.getElementById('turnoNombre')?.textContent?.trim();
             if (codigoAnterior && codigoAnterior !== '—' && codigoAnterior !== data.codigo) {
@@ -314,7 +489,13 @@ function registrarListeners(socket) {
 // =========================
 
 function mostrarTurnoLlamado(codigo, nombre, recepcion = null, hablar = true) {
-    console.log(`[TUR] Mostrando: ${codigo} — ${nombre} — Recepción: ${recepcion}`);
+    console.log(`[TUR] === mostrarTurnoLlamado ===`);
+    console.log(`[TUR] codigo: ${codigo}`);
+    console.log(`[TUR] nombre: ${nombre}`);
+    console.log(`[TUR] recepcion: ${recepcion}`);
+    console.log(`[TUR] typeof recepcion: ${typeof recepcion}`);
+    console.log(`[TUR] hablar: ${hablar}`);
+    console.log(`[TUR] ===========================`);
 
     const idleState   = document.getElementById('idleState');
     const turnoActivo = document.getElementById('turnoActivo');
@@ -351,6 +532,7 @@ function mostrarTurnoLlamado(codigo, nombre, recepcion = null, hablar = true) {
     });
 
     if (hablar) {
+        console.log(`[TUR] Llamando a anunciarTurno con: nombre="${nombre}", codigo="${codigo}", recepcion="${recepcion}"`);
         setTimeout(() => anunciarTurno(nombre, codigo, recepcion), 500);
     }
 
