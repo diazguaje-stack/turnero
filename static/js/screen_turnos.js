@@ -337,45 +337,128 @@ function agregarAlHistorial(codigo, nombre) {
 }
 
 function limpiarHistorialScreen() {
-    console.log('[TURNOS] 🧹 Iniciando limpieza COMPLETA de historial en screen...');
+    console.log('[TURNOS] 🧹 Iniciando limpieza COMPLETA de screen...');
     
-    // 1. Limpiar array en memoria del historial (LLAMADOS ANTERIORES)
-    historial = [];
-    console.log('[TURNOS] ✅ Array historial limpiado (LLAMADOS ANTERIORES)');
+    // ===== 1. LIMPIAR TURNO ACTUAL (PANEL GRANDE) =====
+    console.log('[TURNOS] Limpiando turno actual...');
     
-    // 2. ← CRÍTICO: Limpiar AMBAS claves de localStorage
+    // Limpiar localStorage
     try {
-        // Clave 1: Último llamado actual
-        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(STORAGE_KEY);  // 'screen_ultimo_llamado'
         console.log(`[TURNOS] ✅ localStorage limpiado: ${STORAGE_KEY}`);
-        
-        // Clave 2: HISTORIAL COMPLETO (LLAMADOS ANTERIORES) ← IMPORTANTE
-        localStorage.removeItem(STORAGE_HISTORY_KEY);
+    } catch (error) {
+        console.error('[TURNOS] ❌ Error al limpiar STORAGE_KEY:', error);
+    }
+    
+    // Limpiar variables globales
+    window._ultimo_llamado = null;
+    window._llamadaPendiente = null;
+    console.log('[TURNOS] ✅ Variables globales limpiadas');
+    
+    // Ocultar panel de turno actual
+    const turnoActivo = document.getElementById('turnoActivo');
+    const idleState = document.getElementById('idleState');
+    
+    if (turnoActivo) {
+        turnoActivo.style.display = 'none';
+        console.log('[TURNOS] ✅ Panel de turno actual ocultado');
+    }
+    
+    if (idleState) {
+        idleState.classList.remove('hidden');
+        console.log('[TURNOS] ✅ Panel "Esperando llamada" mostrado');
+    }
+    
+    // Limpiar elementos del DOM del turno
+    const turnoCodigo = document.getElementById('turnoCodigo');
+    const turnoNombre = document.getElementById('turnoNombre');
+    const turnoLabel = document.getElementById('turnoLabel');
+    const goldDivider = document.getElementById('goldDivider');
+    
+    if (turnoCodigo) {
+        turnoCodigo.textContent = '—';
+        turnoCodigo.classList.remove('visible', 'llamando');
+        console.log('[TURNOS] ✅ Código limpiado');
+    }
+    
+    if (turnoNombre) {
+        turnoNombre.textContent = '';
+        turnoNombre.classList.remove('visible');
+        console.log('[TURNOS] ✅ Nombre limpiado');
+    }
+    
+    if (turnoLabel) {
+        turnoLabel.classList.remove('visible');
+    }
+    
+    if (goldDivider) {
+        goldDivider.classList.remove('visible');
+    }
+    
+    // ===== 2. LIMPIAR HISTORIAL (PANEL DERECHO) =====
+    console.log('[TURNOS] Limpiando historial de llamados anteriores...');
+    
+    // Limpiar array en memoria
+    historial = [];
+    console.log('[TURNOS] ✅ Array historial limpiado');
+    
+    // Limpiar localStorage
+    try {
+        localStorage.removeItem(STORAGE_HISTORY_KEY);  // 'screen_historial_llamados'
         console.log(`[TURNOS] ✅ localStorage limpiado: ${STORAGE_HISTORY_KEY}`);
     } catch (error) {
-        console.error('[TURNOS] ❌ Error al limpiar localStorage:', error);
+        console.error('[TURNOS] ❌ Error al limpiar STORAGE_HISTORY_KEY:', error);
     }
     
-    // 3. Limpiar también _ultimo_llamado si existe
-    if (typeof window._ultimo_llamado !== 'undefined') {
-        window._ultimo_llamado = null;
-        console.log('[TURNOS] ✅ _ultimo_llamado limpiado');
-    }
-    
-    // 4. Cerrar modal si está abierto
-    cerrarHistorialModal();
-    
-    // 5. Actualizar UI del historial
+    // Actualizar UI del historial
     renderizarHistorial();
     console.log('[TURNOS] ✅ UI del historial actualizada');
     
-    // 6. Log final
-    console.log('[TURNOS] ✅ LIMPIEZA COMPLETADA - Todos los historiales vacíos');
+    // ===== 3. CERRAR MODALES =====
+    console.log('[TURNOS] Cerrando modales...');
+    
+    const historialModal = document.getElementById('historialModal');
+    if (historialModal && historialModal.style.display !== 'none') {
+        cerrarHistorialModal();
+        console.log('[TURNOS] ✅ Modal de historial cerrado');
+    }
+    
+    // ===== 4. ACTUALIZAR TIMESTAMP =====
+    const tsEl = document.getElementById('ultimaActualizacion');
+    if (tsEl) {
+        tsEl.textContent = new Date().toLocaleTimeString('es-ES', {
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+        console.log('[TURNOS] ✅ Timestamp de "Última actualización" actualizado');
+    }
+    
+    // ===== 5. ACTUALIZAR INDICADOR DE CONEXIÓN =====
+    const dot = document.getElementById('conexionDot');
+    if (dot) {
+        dot.style.background = '#ef4444';  // Rojo indicando limpieza
+        dot.style.boxShadow = '0 0 12px #ef4444';
+        setTimeout(() => {
+            if (dot) { 
+                dot.style.background = '#22c55e'; 
+                dot.style.boxShadow = '0 0 8px #22c55e'; 
+            }
+        }, 1500);
+        console.log('[TURNOS] ✅ Indicador de conexión actualizado');
+    }
+    
+    // ===== 6. LOG FINAL =====
+    console.log('[TURNOS] ');
+    console.log('[TURNOS] ═══════════════════════════════════════════════════════');
+    console.log('[TURNOS] ✅ LIMPIEZA COMPLETADA');
+    console.log('[TURNOS] ═══════════════════════════════════════════════════════');
     console.log('[TURNOS] Estado actual:', {
-        historial: historial.length,
+        turnoCodigo: document.getElementById('turnoCodigo')?.textContent,
+        turnoNombre: document.getElementById('turnoNombre')?.textContent,
+        historialItems: historial.length,
         localStorage_ultimo: localStorage.getItem(STORAGE_KEY),
         localStorage_historial: localStorage.getItem(STORAGE_HISTORY_KEY)
     });
+    console.log('[TURNOS] ');
 }
 
 function renderizarHistorial() {
@@ -657,21 +740,23 @@ function mostrarTurnoLlamado(codigo, nombre, recepcion = null, hablar = true) {
     }
 }
 window.limpiarHistorialScreen = limpiarHistorialScreen;
-window.debugHistorial = () => {
-    console.log('=== DEBUG HISTORIAL ===');
-    console.log('historialLlamados:', historialLlamados);
-    console.log('localStorage STORAGE_KEY:', localStorage.getItem(STORAGE_KEY));
-    console.log('localStorage todos los items:', Object.keys(localStorage).filter(k => k.includes('historial')));
-    console.log('======================');
+window.debugScreenCompleto = () => {
+    console.log('=== DEBUG SCREEN COMPLETO ===');
+    console.log('Turno actual (DOM):', {
+        codigo: document.getElementById('turnoCodigo')?.textContent,
+        nombre: document.getElementById('turnoNombre')?.textContent,
+        visible: document.getElementById('turnoActivo')?.style.display !== 'none'
+    });
+    console.log('Historial (memoria):', historial.length, 'items');
+    console.log('localStorage:', {
+        ultimo_llamado: localStorage.getItem(STORAGE_KEY),
+        historial_llamados: localStorage.getItem(STORAGE_HISTORY_KEY)
+    });
+    console.log('Variables globales:', {
+        _ultimo_llamado: window._ultimo_llamado,
+        _llamadaPendiente: window._llamadaPendiente
+    });
+    console.log('==============================');
 };
-window.debugHistorial();
-
-
-
-
-
-
-
-
-
+window.debugScreenCompleto();
 
