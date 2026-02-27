@@ -1,52 +1,80 @@
 // ============================================================
-// screen_turnos.js (VERSIÓN CORREGIDA)
+// screen_turnos.js (HISTORIAL INDEPENDIENTE POR RECEPCIÓN)
 // - Turno actual → panel izquierdo
-// - Historial de llamados → panel derecho
-// - Text-to-Speech: via servidor gTTS (MP3) — compatible Smart TV y Android
-// - FIX: Esperar a que el audio esté completamente cargado antes de reproducir
+// - Historial de llamados → panel derecho (SOLO de ESTA recepción)
+// - Text-to-Speech: via servidor gTTS (MP3)
+// - SIN DUPLICACIÓN DE LISTENERS
 // ============================================================
 
-const STORAGE_KEY         = 'screen_ultimo_llamado';
-const STORAGE_HISTORY_KEY = 'screen_historial_llamados';
+// ========== CONSTANTES ==========
+const STORAGE_BASE_KEY = 'screen_historial_'; // Base para keys con número de recepción
+
+// ========== ESTADO GLOBAL ==========
+let miNumeroRecepcion = null;   // ← CRÍTICO: Número de recepción de esta pantalla
+let miHistorial       = [];     // ← Historial SOLO de esta recepción
+let socket            = null;
+let _audioEl          = null;
+let _audioDesbloqueado = false;
+let _listenersRegistrados = false;
 
 // =========================
-// PERSISTENCIA LOCAL
+// PERSISTENCIA LOCAL (POR RECEPCIÓN)
 // =========================
 
-function guardarUltimoLlamado(codigo, nombre) {
+/**
+ * Obtiene la clave de storage para el historial de una recepción específica
+ * Ej: "screen_historial_1", "screen_historial_2"
+ */
+function getStorageKeyParaRecepcion(numRecepcion) {
+    return `${STORAGE_BASE_KEY}${numRecepcion}`;
+}
+
+function guardarHistorialDeRecepcion(numRecepcion, historial) {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ codigo, nombre }));
+        const key = getStorageKeyParaRecepcion(numRecepcion);
+        localStorage.setItem(key, JSON.stringify(historial));
+        console.log(`[HIST] 💾 Historial de recepción ${numRecepcion} guardado: ${historial.length} items`);
     } catch (e) {
-        console.warn('[TUR] ⚠️ No se pudo guardar en localStorage:', e);
+        console.warn(`[HIST] ⚠️ No se pudo guardar historial de recepción ${numRecepcion}:`, e);
     }
 }
 
-function recuperarUltimoLlamado() {
+function recuperarHistorialDeRecepcion(numRecepcion) {
     try {
-        const data = localStorage.getItem(STORAGE_KEY);
+        const key = getStorageKeyParaRecepcion(numRecepcion);
+        const data = localStorage.getItem(key);
+        if (data) {
+            const historial = JSON.parse(data);
+            console.log(`[HIST] ✅ Historial de recepción ${numRecepcion} recuperado: ${historial.length} items`);
+            return historial;
+        }
+    } catch (e) {
+        console.warn(`[HIST] ⚠️ Error al recuperar historial de recepción ${numRecepcion}:`, e);
+    }
+    return [];
+}
+
+function guardarUltimoLlamadoDeRecepcion(numRecepcion, codigo, nombre) {
+    try {
+        const key = `screen_ultimo_llamado_${numRecepcion}`;
+        localStorage.setItem(key, JSON.stringify({ codigo, nombre, timestamp: Date.now() }));
+        console.log(`[HIST] 💾 Último llamado de recepción ${numRecepcion}: ${codigo}`);
+    } catch (e) {
+        console.warn(`[HIST] ⚠️ No se pudo guardar último llamado:`, e);
+    }
+}
+
+function recuperarUltimoLlamadoDeRecepcion(numRecepcion) {
+    try {
+        const key = `screen_ultimo_llamado_${numRecepcion}`;
+        const data = localStorage.getItem(key);
         return data ? JSON.parse(data) : null;
     } catch { return null; }
 }
 
-function guardarHistorial(h) {
-    try { localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(h)); } catch (e) {}
-}
-
-function recuperarHistorial() {
-    try {
-        const data = localStorage.getItem(STORAGE_HISTORY_KEY);
-        return data ? JSON.parse(data) : [];
-    } catch { return []; }
-}
-
 // =========================
-// TEXT-TO-SPEECH — via servidor gTTS (MP3)
-// Compatible con Smart TV, Android, iOS, PC
+// TEXT-TO-SPEECH
 // =========================
-
-let _audioEl            = null;   // elemento <audio> reutilizable
-let _audioDesbloqueado  = false;  // true tras primer tap del usuario
-let miPantallaid= null;
 
 function _getAudio() {
     if (!_audioEl) {
@@ -56,32 +84,22 @@ function _getAudio() {
     return _audioEl;
 }
 
-/**
- * Desbloquea el contexto de audio en el primer tap/click.
- * Android y algunos Smart TVs bloquean autoplay sin interacción previa.
- */
 function _desbloquearAudio() {
     if (_audioDesbloqueado) return;
     _audioDesbloqueado = true;
     console.log('[TTS] 🔓 Audio desbloqueado por interacción del usuario');
 
-    // Reproducir silencio para "despertar" el contexto de audio
     const audio = _getAudio();
     audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
     audio.play().catch(() => {});
 
-    // Si hay audio pendiente, reproducirlo ahora
     if (window._audioPendiente) {
-        console.log('[TTS] 🎬 Reproduciendo audio pendiente que estaba bloqueado');
+        console.log('[TTS] 🎬 Reproduciendo audio pendiente');
         window._audioPendiente.play().catch(() => {});
         window._audioPendiente = null;
     }
 }
 
-/**
- * Formatea el código para que se lea letra por letra.
- * "A-C-001" → "A, C, 1"
- */
 function formatearCodigoParaVoz(codigo) {
     if (!codigo) return '';
     return codigo
@@ -94,10 +112,6 @@ function formatearCodigoParaVoz(codigo) {
         .join(', ');
 }
 
-/**
- * Reproduce audio secuencial: primero "Paciente X Código Y"
- * Luego, si existe recepción: "Diríjase a recepción Z"
- */
 async function anunciarTurno(nombre, codigo, recepcion) {
     const codigoHablado = formatearCodigoParaVoz(codigo);
     
@@ -110,51 +124,40 @@ async function anunciarTurno(nombre, codigo, recepcion) {
     if (nombre && nombre.trim()) texto1 += `Paciente ${nombre}. `;
     texto1 += `Código ${codigoHablado}.`;
     
-    console.log('[TTS] ');
     console.log('[TTS] 📢 PARTE 1/2: PACIENTE + CÓDIGO');
     console.log('[TTS] Texto:', texto1);
-    console.log('[TTS] Iniciando reproducción...');
     const t1 = Date.now();
     await reproducirAudio(texto1);
     const t1_elapsed = Date.now() - t1;
     console.log(`[TTS] ✅ PARTE 1 finalizada (${t1_elapsed}ms)`);
     
     // 2️⃣ PAUSA ESTRATÉGICA
-    console.log('[TTS] ');
-    console.log('[TTS] ⏸️ PAUSA de 800ms entre audios (para Smart TV)');
+    console.log('[TTS] ⏸️ PAUSA de 800ms');
     await new Promise(resolve => setTimeout(resolve, 800));
-    console.log('[TTS] ✅ Pausa completada');
     
     // 3️⃣ SEGUNDO AUDIO: Recepción
-    console.log('[TTS] ');
+    console.log('[TTS] 📢 PARTE 2/2: INSTRUCCIÓN DE RECEPCIÓN');
     if (recepcion) {
         const numRecepcion = String(recepcion).replace(/recepci[oó]n\s*/i, '').trim();
         if (numRecepcion) {
             const texto2 = `Diríjase a recepción ${numRecepcion}.`;
-            console.log('[TTS] 📢 PARTE 2/2: INSTRUCCIÓN DE RECEPCIÓN');
             console.log('[TTS] Texto:', texto2);
-            console.log('[TTS] Iniciando reproducción...');
             const t2 = Date.now();
             await reproducirAudio(texto2);
             const t2_elapsed = Date.now() - t2;
             console.log(`[TTS] ✅ PARTE 2 finalizada (${t2_elapsed}ms)`);
         } else {
-            console.warn('[TTS] ⚠️ recepcion vacío después de limpiar');
+            console.warn('[TTS] ⚠️ recepcion sin número');
         }
     } else {
-        console.warn('[TTS] ⚠️ recepcion es NULL/UNDEFINED - omitiendo segunda parte');
+        console.warn('[TTS] ⚠️ recepcion es NULL - omitiendo segunda parte');
     }
     
-    console.log('[TTS] ');
     console.log('[TTS] ═══════════════════════════════════════════════════════');
     console.log('[TTS] ✅ ANUNCIO COMPLETO FINALIZADO');
     console.log('[TTS] ═══════════════════════════════════════════════════════');
 }
 
-/**
- * Reproduce un fragmento de audio de forma confiable en Smart TV.
- * Espera a que esté completamente cargado antes de reproducir.
- */
 async function reproducirAudio(texto) {
     console.log('[TTS] 🔊 Solicitando audio:', texto);
     
@@ -176,66 +179,51 @@ async function reproducirAudio(texto) {
         audio.src = audioUrl;
         audio.volume = 1.0;
         
-        console.log('[TTS] 📥 URL del audio:', audioUrl);
-        console.log('[TTS] Estado inicial del audio:', audio.readyState, 'HAVE_NOTHING=0, HAVE_METADATA=1, HAVE_CURRENT_DATA=2, HAVE_FUTURE_DATA=3, HAVE_ENOUGH_DATA=4');
+        console.log('[TTS] 📥 URL:', audioUrl);
         
-        // Esperar a que el audio esté COMPLETAMENTE listo y reproducirlo
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             let playStarted = false;
             let hasEnded = false;
             let timedOut = false;
             
-            // Timeout de 45 segundos (por si falla todo)
             const timeoutId = setTimeout(() => {
                 timedOut = true;
                 console.warn('[TTS] ⏱️ TIMEOUT: Audio no se reprodujo en 45 segundos');
                 cleanup();
-                resolve(); // resolver sin error para que continúe
+                resolve();
             }, 45000);
             
             const cleanup = () => {
                 clearTimeout(timeoutId);
                 audio.removeEventListener('loadstart', onLoadStart);
+                audio.removeEventListener('progress', onProgress);
                 audio.removeEventListener('durationchange', onDurationChange);
                 audio.removeEventListener('loadeddata', onLoadedData);
                 audio.removeEventListener('canplay', onCanPlay);
                 audio.removeEventListener('canplaythrough', onCanPlayThrough);
                 audio.removeEventListener('playing', onPlaying);
-                audio.removeEventListener('progress', onProgress);
                 audio.removeEventListener('ended', onEnded);
                 audio.removeEventListener('error', onError);
                 audio.removeEventListener('abort', onAbort);
             };
             
-            const onLoadStart = () => {
-                console.log('[TTS] 📡 loadstart: Comenzó la descarga');
-            };
-            
+            const onLoadStart = () => console.log('[TTS] 📡 loadstart');
             const onProgress = () => {
                 if (audio.buffered.length > 0) {
                     const bufferedEnd = audio.buffered.end(audio.buffered.length - 1);
                     const duration = audio.duration;
                     if (duration > 0) {
                         const percent = (bufferedEnd / duration * 100).toFixed(1);
-                        console.log(`[TTS] 📊 Progress: ${percent}% descargado (${bufferedEnd.toFixed(1)}s / ${duration.toFixed(1)}s)`);
+                        console.log(`[TTS] 📊 Progress: ${percent}%`);
                     }
                 }
             };
-            
-            const onDurationChange = () => {
-                console.log('[TTS] ⏱️ durationchange: Duración =', audio.duration, 's');
-            };
-            
-            const onLoadedData = () => {
-                console.log('[TTS] 📦 loadeddata: Datos cargados, readyState=', audio.readyState);
-            };
-            
-            const onCanPlay = () => {
-                console.log('[TTS] ▶️ canplay: Puede iniciar, readyState=', audio.readyState);
-            };
+            const onDurationChange = () => console.log('[TTS] ⏱️ durationchange:', audio.duration, 's');
+            const onLoadedData = () => console.log('[TTS] 📦 loadeddata');
+            const onCanPlay = () => console.log('[TTS] ▶️ canplay');
             
             const onCanPlayThrough = () => {
-                console.log('[TTS] ✅ canplaythrough: Completamente listo para reproducir sin buffering');
+                console.log('[TTS] ✅ canplaythrough - LISTO PARA REPRODUCIR');
                 if (!playStarted && !timedOut) {
                     playStarted = true;
                     console.log('[TTS] 🎬 INICIANDO REPRODUCCIÓN');
@@ -243,12 +231,9 @@ async function reproducirAudio(texto) {
                     const playPromise = audio.play();
                     if (playPromise) {
                         playPromise
-                            .then(() => {
-                                console.log('[TTS] 🔊 REPRODUCCIÓN INICIADA EXITOSAMENTE');
-                            })
+                            .then(() => console.log('[TTS] 🔊 REPRODUCCIÓN INICIADA EXITOSAMENTE'))
                             .catch(err => {
                                 console.warn('[TTS] ⚠️ Autoplay bloqueado:', err.message);
-                                console.log('[TTS] Guardando audio como pendiente para reproducir después de interacción');
                                 window._audioPendiente = audio;
                                 cleanup();
                                 resolve();
@@ -257,25 +242,21 @@ async function reproducirAudio(texto) {
                 }
             };
             
-            const onPlaying = () => {
-                console.log('[TTS] ▶️ REPRODUCIÉNDOSE ahora');
-            };
+            const onPlaying = () => console.log('[TTS] ▶️ REPRODUCIÉNDOSE');
             
             const onEnded = () => {
                 if (!hasEnded) {
                     hasEnded = true;
-                    console.log('[TTS] ✅ AUDIO FINALIZADO COMPLETAMENTE');
+                    console.log('[TTS] ✅ AUDIO FINALIZADO');
                     cleanup();
                     resolve();
                 }
             };
             
             const onError = () => {
-                console.error('[TTS] ❌ ERROR EN AUDIO:', audio.error?.message || audio.error);
-                console.error('[TTS] Código de error:', audio.error?.code);
-                console.error('[TTS] URL intentada:', audioUrl);
+                console.error('[TTS] ❌ ERROR EN AUDIO:', audio.error?.message);
                 cleanup();
-                resolve(); // resolver sin error para continuar
+                resolve();
             };
             
             const onAbort = () => {
@@ -284,7 +265,6 @@ async function reproducirAudio(texto) {
                 resolve();
             };
             
-            // Registrar todos los listeners
             audio.addEventListener('loadstart', onLoadStart);
             audio.addEventListener('progress', onProgress);
             audio.addEventListener('durationchange', onDurationChange);
@@ -296,24 +276,26 @@ async function reproducirAudio(texto) {
             audio.addEventListener('error', onError);
             audio.addEventListener('abort', onAbort);
             
-            // Forzar carga
             console.log('[TTS] 🔄 Llamando a audio.load()');
             audio.load();
         });
         
     } catch (err) {
-        console.error('[TTS] ❌ Error al obtener audio del servidor:', err);
+        console.error('[TTS] ❌ Error al obtener audio:', err);
     }
 }
 
 // =========================
-// HISTORIAL EN PANEL DERECHO
+// HISTORIAL EN PANEL DERECHO (POR RECEPCIÓN)
 // =========================
 
-let historial = recuperarHistorial();
-
 function agregarAlHistorial(codigo, nombre) {
-    console.log(`[TURNOS] Agregando al historial: ${codigo} - ${nombre}`);
+    if (!miNumeroRecepcion) {
+        console.warn('[HIST] ⚠️ No se conoce miNumeroRecepcion, no se puede agregar al historial');
+        return;
+    }
+    
+    console.log(`[HIST] Agregando al historial de recepción ${miNumeroRecepcion}: ${codigo} - ${nombre}`);
     
     const entrada = {
         codigo,
@@ -321,55 +303,51 @@ function agregarAlHistorial(codigo, nombre) {
         hora:   new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
     };
 
-    historial.unshift(entrada);
+    miHistorial.unshift(entrada);
     
-    // Limitar a 50 items máximo
-    if (historial.length > 50) {
-        historial = historial.slice(0, 50);
-        console.log('[TURNOS] ⚠️ Historial limitado a 50 items');
+    if (miHistorial.length > 50) {
+        miHistorial = miHistorial.slice(0, 50);
+        console.log('[HIST] ⚠️ Historial limitado a 50 items');
     }
 
-    // ← CRÍTICO: Guardar en localStorage para persistencia
-    guardarHistorial(historial);
-    console.log(`[TURNOS] ✅ Historial guardado (${historial.length} items)`);
+    guardarHistorialDeRecepcion(miNumeroRecepcion, miHistorial);
+    console.log(`[HIST] ✅ Historial guardado (${miHistorial.length} items)`);
     
     renderizarHistorial();
 }
 
 function limpiarHistorialScreen() {
-    console.log('[TURNOS] 🧹 Iniciando limpieza COMPLETA de screen...');
+    console.log(`[HIST] 🧹 Iniciando limpieza COMPLETA de screen (recepción: ${miNumeroRecepcion})...`);
     
-    // ===== 1. LIMPIAR TURNO ACTUAL (PANEL GRANDE) =====
-    console.log('[TURNOS] Limpiando turno actual...');
+    // ===== 1. LIMPIAR TURNO ACTUAL =====
+    console.log('[HIST] Limpiando turno actual...');
     
-    // Limpiar localStorage
-    try {
-        localStorage.removeItem(STORAGE_KEY);  // 'screen_ultimo_llamado'
-        console.log(`[TURNOS] ✅ localStorage limpiado: ${STORAGE_KEY}`);
-    } catch (error) {
-        console.error('[TURNOS] ❌ Error al limpiar STORAGE_KEY:', error);
+    if (miNumeroRecepcion) {
+        try {
+            localStorage.removeItem(`screen_ultimo_llamado_${miNumeroRecepcion}`);
+            console.log(`[HIST] ✅ localStorage limpiado: screen_ultimo_llamado_${miNumeroRecepcion}`);
+        } catch (error) {
+            console.error('[HIST] ❌ Error al limpiar último llamado:', error);
+        }
     }
     
-    // Limpiar variables globales
     window._ultimo_llamado = null;
     window._llamadaPendiente = null;
-    console.log('[TURNOS] ✅ Variables globales limpiadas');
+    console.log('[HIST] ✅ Variables globales limpiadas');
     
-    // Ocultar panel de turno actual
     const turnoActivo = document.getElementById('turnoActivo');
     const idleState = document.getElementById('idleState');
     
     if (turnoActivo) {
         turnoActivo.style.display = 'none';
-        console.log('[TURNOS] ✅ Panel de turno actual ocultado');
+        console.log('[HIST] ✅ Panel de turno actual ocultado');
     }
     
     if (idleState) {
         idleState.classList.remove('hidden');
-        console.log('[TURNOS] ✅ Panel "Esperando llamada" mostrado');
+        console.log('[HIST] ✅ Panel "Esperando llamada" mostrado');
     }
     
-    // Limpiar elementos del DOM del turno
     const turnoCodigo = document.getElementById('turnoCodigo');
     const turnoNombre = document.getElementById('turnoNombre');
     const turnoLabel = document.getElementById('turnoLabel');
@@ -378,49 +356,39 @@ function limpiarHistorialScreen() {
     if (turnoCodigo) {
         turnoCodigo.textContent = '—';
         turnoCodigo.classList.remove('visible', 'llamando');
-        console.log('[TURNOS] ✅ Código limpiado');
     }
     
     if (turnoNombre) {
         turnoNombre.textContent = '';
         turnoNombre.classList.remove('visible');
-        console.log('[TURNOS] ✅ Nombre limpiado');
     }
     
-    if (turnoLabel) {
-        turnoLabel.classList.remove('visible');
+    if (turnoLabel) turnoLabel.classList.remove('visible');
+    if (goldDivider) goldDivider.classList.remove('visible');
+    
+    // ===== 2. LIMPIAR HISTORIAL DE ESTA RECEPCIÓN =====
+    console.log(`[HIST] Limpiando historial de recepción ${miNumeroRecepcion}...`);
+    
+    miHistorial = [];
+    console.log('[HIST] ✅ Array historial limpiado');
+    
+    if (miNumeroRecepcion) {
+        try {
+            const key = getStorageKeyParaRecepcion(miNumeroRecepcion);
+            localStorage.removeItem(key);
+            console.log(`[HIST] ✅ localStorage limpiado: ${key}`);
+        } catch (error) {
+            console.error('[HIST] ❌ Error al limpiar historial:', error);
+        }
     }
     
-    if (goldDivider) {
-        goldDivider.classList.remove('visible');
-    }
-    
-    // ===== 2. LIMPIAR HISTORIAL (PANEL DERECHO) =====
-    console.log('[TURNOS] Limpiando historial de llamados anteriores...');
-    
-    // Limpiar array en memoria
-    historial = [];
-    console.log('[TURNOS] ✅ Array historial limpiado');
-    
-    // Limpiar localStorage
-    try {
-        localStorage.removeItem(STORAGE_HISTORY_KEY);  // 'screen_historial_llamados'
-        console.log(`[TURNOS] ✅ localStorage limpiado: ${STORAGE_HISTORY_KEY}`);
-    } catch (error) {
-        console.error('[TURNOS] ❌ Error al limpiar STORAGE_HISTORY_KEY:', error);
-    }
-    
-    // Actualizar UI del historial
     renderizarHistorial();
-    console.log('[TURNOS] ✅ UI del historial actualizada');
+    console.log('[HIST] ✅ UI del historial actualizada');
     
     // ===== 3. CERRAR MODALES =====
-    console.log('[TURNOS] Cerrando modales...');
-    
     const historialModal = document.getElementById('historialModal');
     if (historialModal && historialModal.style.display !== 'none') {
         cerrarHistorialModal();
-        console.log('[TURNOS] ✅ Modal de historial cerrado');
     }
     
     // ===== 4. ACTUALIZAR TIMESTAMP =====
@@ -429,13 +397,12 @@ function limpiarHistorialScreen() {
         tsEl.textContent = new Date().toLocaleTimeString('es-ES', {
             hour: '2-digit', minute: '2-digit', second: '2-digit'
         });
-        console.log('[TURNOS] ✅ Timestamp de "Última actualización" actualizado');
     }
     
-    // ===== 5. ACTUALIZAR INDICADOR DE CONEXIÓN =====
+    // ===== 5. INDICADOR DE CONEXIÓN =====
     const dot = document.getElementById('conexionDot');
     if (dot) {
-        dot.style.background = '#ef4444';  // Rojo indicando limpieza
+        dot.style.background = '#ef4444';
         dot.style.boxShadow = '0 0 12px #ef4444';
         setTimeout(() => {
             if (dot) { 
@@ -443,22 +410,11 @@ function limpiarHistorialScreen() {
                 dot.style.boxShadow = '0 0 8px #22c55e'; 
             }
         }, 1500);
-        console.log('[TURNOS] ✅ Indicador de conexión actualizado');
     }
     
-    // ===== 6. LOG FINAL =====
-    console.log('[TURNOS] ');
-    console.log('[TURNOS] ═══════════════════════════════════════════════════════');
-    console.log('[TURNOS] ✅ LIMPIEZA COMPLETADA');
-    console.log('[TURNOS] ═══════════════════════════════════════════════════════');
-    console.log('[TURNOS] Estado actual:', {
-        turnoCodigo: document.getElementById('turnoCodigo')?.textContent,
-        turnoNombre: document.getElementById('turnoNombre')?.textContent,
-        historialItems: historial.length,
-        localStorage_ultimo: localStorage.getItem(STORAGE_KEY),
-        localStorage_historial: localStorage.getItem(STORAGE_HISTORY_KEY)
-    });
-    console.log('[TURNOS] ');
+    console.log('[HIST] ═══════════════════════════════════════════════════════');
+    console.log('[HIST] ✅ LIMPIEZA COMPLETADA');
+    console.log('[HIST] ═══════════════════════════════════════════════════════');
 }
 
 function renderizarHistorial() {
@@ -467,9 +423,9 @@ function renderizarHistorial() {
     const emptyEl = document.getElementById('historyEmpty');
 
     if (!listEl) return;
-    if (countEl) countEl.textContent = historial.length;
+    if (countEl) countEl.textContent = miHistorial.length;
 
-    if (historial.length === 0) {
+    if (miHistorial.length === 0) {
         if (emptyEl) emptyEl.style.display = 'flex';
         Array.from(listEl.children).forEach(c => { if (c.id !== 'historyEmpty') c.remove(); });
         return;
@@ -478,11 +434,11 @@ function renderizarHistorial() {
     if (emptyEl) emptyEl.style.display = 'none';
     Array.from(listEl.children).forEach(c => { if (c.id !== 'historyEmpty') c.remove(); });
 
-    historial.forEach((item, idx) => {
+    miHistorial.forEach((item, idx) => {
         const div       = document.createElement('div');
         div.className   = 'history-item';
         div.innerHTML   = `
-            <span class="history-item-num">${historial.length - idx}</span>
+            <span class="history-item-num">${miHistorial.length - idx}</span>
             <span class="history-item-code">${item.codigo}</span>
             <span class="history-item-name">${item.nombre}</span>
             <span class="history-item-time">${item.hora}</span>
@@ -495,182 +451,8 @@ function cerrarHistorialModal() {
     const modal = document.getElementById('historialModal');
     if (modal) {
         modal.style.display = 'none';
-        console.log('[TURNOS] ✅ Modal cerrado');
+        console.log('[HIST] ✅ Modal cerrado');
     }
-}
-
-// =========================
-// INIT
-// =========================
-
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('[TURNOS] Inicializando módulo de turnos...');
-    
-    // ← AGREGAR: Cargar historial desde localStorage
-    console.log('[TURNOS] Cargando historial desde localStorage...');
-    historial = recuperarHistorial();
-    console.log(`[TURNOS] ✅ Historial cargado: ${historial.length} items`);
-    
-    renderizarHistorial();
-    esperarSocketYRegistrar();
-
-    // Primer tap/click desbloquea audio
-    document.addEventListener('click',      _desbloquearAudio, { once: true });
-    document.addEventListener('touchstart', _desbloquearAudio, { once: true });
-});
-
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('[TURNOS] Registrando listeners de limpiar_historial...');
-    
-    // LISTENER 1: Para limpieza diaria programada
-    socket.on('limpiar_historial', (data) => {
-        console.log('[TURNOS] 📢 Evento limpiar_historial recibido:', data);
-        
-        // ← VERIFICAR que es limpieza diaria
-        if (data.motivo === 'limpieza_diaria') {
-            console.log('[TURNOS] ⏰ LIMPIEZA DIARIA PROGRAMADA DETECTADA');
-            limpiarHistorialScreen();
-            return;
-        }
-        
-        // Si es limpieza manual de una pantalla específica
-        if (data.pantalla_id && miPantallaId && data.pantalla_id !== miPantallaId) {
-            console.log(`[TURNOS] ⚠️ Limpieza es para otra pantalla (${data.pantalla_id}) - ignorando`);
-            return;
-        }
-        
-        console.log('[TURNOS] 🧹 Limpieza de historial recibida');
-        limpiarHistorialScreen();
-    });
-    
-    // LISTENER 2: Escucha cualquier evento relacionado
-    socket.on('limpieza_completada', (data) => {
-        console.log('[TURNOS] Limpieza completada recibida:', data);
-        console.log('[TURNOS] Limpiando historial local como respuesta...');
-        limpiarHistorialScreen();
-    });
-    
-    console.log('[TURNOS] ✅ Listeners de limpieza registrados');
-});
-
-
-// =========================
-// ESPERAR SOCKET
-// =========================
-
-function esperarSocketYRegistrar() {
-    const socket = window.getSocketScreen ? window.getSocketScreen() : null;
-    if (socket) {
-        registrarListeners(socket);
-        console.log('[TUR] ✅ Socket obtenido y listeners registrados');
-    } else {
-        setTimeout(esperarSocketYRegistrar, 100);
-    }
-}
-
-// =========================
-// LISTENERS DE SOCKET
-// =========================
-
-function registrarListeners(socket) {
-    
-    // LISTENER DE LIMPIEZA DIARIA
-    socket.on('limpiar_historial', (data) => {
-        console.log('[TURNOS] 📢 Evento limpiar_historial recibido:', data);
-        
-        if (data.motivo === 'limpieza_diaria') {
-            console.log('[TURNOS] ⏰ LIMPIEZA DIARIA PROGRAMADA DETECTADA');
-            console.log('[TURNOS] Limpiando TODOS los historiales de screen');
-            limpiarHistorialScreen();  // ← Esta función limpia AMBAS claves
-            return;
-        }
-        
-        // Si es limpieza manual de una pantalla específica
-        if (data.pantalla_id && miPantallaId && data.pantalla_id !== miPantallaId) {
-            console.log(`[TURNOS] ⚠️ Limpieza es para otra pantalla - ignorando`);
-            return;
-        }
-        
-        console.log('[TURNOS] 🧹 Limpieza de historial recibida');
-        limpiarHistorialScreen();
-    });
-    
-    socket.on('limpieza_completada', (data) => {
-        console.log('[TURNOS] Limpieza completada recibida:', data);
-        console.log('[TURNOS] Limpiando historial local como respuesta...');
-        limpiarHistorialScreen();
-    });
-
-    socket.on('pantalla_vinculada', (data) => {
-        console.log('[TURNOS] Pantalla vinculada:', data);
-        miPantallaId = data.pantalla_id;
-    });
-
-    socket.on('joined_screen_propia', (data) => {
-        console.log('[TURNOS] Unido a sala propia:', data);
-        if (data.pantalla_id) {
-            miPantallaId = data.pantalla_id;
-        }
-    });
-
-    socket.on('llamar_paciente', (data) => {
-        console.log('[TURNOS] Evento llamar_paciente recibido');
-        
-        // Validar que es para esta pantalla
-        if (data.pantalla_id && miPantallaId && data.pantalla_id !== miPantallaId) {
-            console.log(`[TURNOS] ⚠️ Llamada es para otra pantalla - ignorando`);
-            return;
-        }
-        
-        console.log('[TURNOS] ✅ Llamada ES PARA ESTA PANTALLA');
-        
-        guardarUltimoLlamado(data.codigo, data.nombre);
-
-        const linkedState   = document.getElementById('linkedState');
-        const estaVinculada = linkedState && linkedState.style.display !== 'none';
-
-        if (estaVinculada) {
-            const codigoAnterior = document.getElementById('turnoCodigo')?.textContent?.trim();
-            const nombreAnterior = document.getElementById('turnoNombre')?.textContent?.trim();
-            
-            // ← IMPORTANTE: Agregar al historial (que se guarda en localStorage)
-            if (codigoAnterior && codigoAnterior !== '—' && codigoAnterior !== data.codigo) {
-                agregarAlHistorial(codigoAnterior, nombreAnterior);
-            }
-            
-            mostrarTurnoLlamado(data.codigo, data.nombre, data.recepcion, true);
-        } else {
-            window._llamadaPendiente = data;
-        }
-    });
-
-    socket.on('historial_llamada', (data) => {
-        console.log('[TURNOS] Historial de llamada recibido:', data);
-    });
-
-    socket.emit('pedir_ultimo_llamado');
-
-    const linkedState = document.getElementById('linkedState');
-    if (!linkedState) return;
-
-    function intentarRestaurar() {
-        if (linkedState.style.display === 'none') return;
-        if (window._llamadaPendiente) {
-            const p              = window._llamadaPendiente;
-            window._llamadaPendiente = null;
-            mostrarTurnoLlamado(p.codigo, p.nombre, p.recepcion, true);
-            return;
-        }
-        const guardado = recuperarUltimoLlamado();
-        if (guardado) {
-            mostrarTurnoLlamado(guardado.codigo, guardado.nombre, null, false);
-        }
-    }
-
-    new MutationObserver(intentarRestaurar)
-        .observe(linkedState, { attributes: true, attributeFilter: ['style'] });
-
-    setTimeout(intentarRestaurar, 200);
 }
 
 // =========================
@@ -682,9 +464,7 @@ function mostrarTurnoLlamado(codigo, nombre, recepcion = null, hablar = true) {
     console.log(`[TUR] codigo: ${codigo}`);
     console.log(`[TUR] nombre: ${nombre}`);
     console.log(`[TUR] recepcion: ${recepcion}`);
-    console.log(`[TUR] typeof recepcion: ${typeof recepcion}`);
     console.log(`[TUR] hablar: ${hablar}`);
-    console.log(`[TUR] ===========================`);
 
     const idleState   = document.getElementById('idleState');
     const turnoActivo = document.getElementById('turnoActivo');
@@ -721,7 +501,7 @@ function mostrarTurnoLlamado(codigo, nombre, recepcion = null, hablar = true) {
     });
 
     if (hablar) {
-        console.log(`[TUR] Llamando a anunciarTurno con: nombre="${nombre}", codigo="${codigo}", recepcion="${recepcion}"`);
+        console.log(`[TUR] Reproduciendo audio`);
         setTimeout(() => anunciarTurno(nombre, codigo, recepcion), 500);
     }
 
@@ -739,24 +519,193 @@ function mostrarTurnoLlamado(codigo, nombre, recepcion = null, hablar = true) {
         }, 1000);
     }
 }
+
+// =========================
+// REGISTRAR LISTENERS (UNA SOLA VEZ)
+// =========================
+
+function registrarListeners(socketInstance) {
+    if (_listenersRegistrados) {
+        console.log('[TURNOS] ⚠️ Listeners ya registrados, ignorando...');
+        return;
+    }
+    _listenersRegistrados = true;
+    console.log('[TURNOS] 📡 Registrando listeners de socket (UNA SOLA VEZ)...');
+    
+    socket = socketInstance;
+    
+    // ==================== LISTENER: limpiar_historial ====================
+    socket.on('limpiar_historial', (data) => {
+        console.log(`[HIST] 📢 Evento limpiar_historial recibido:`, data);
+        console.log(`[HIST] miNumeroRecepcion: ${miNumeroRecepcion}`);
+        
+        if (data.motivo === 'limpieza_diaria') {
+            console.log('[HIST] ⏰ LIMPIEZA DIARIA PROGRAMADA');
+            limpiarHistorialScreen();
+            return;
+        }
+        
+        // ← IMPORTANTE: Validar que la limpieza es SOLO para esta recepción
+        if (data.numRecepcion && miNumeroRecepcion && data.numRecepcion !== miNumeroRecepcion) {
+            console.log(`[HIST] ⚠️ Limpieza es para recepción ${data.numRecepcion}, esta es ${miNumeroRecepcion} - ignorando`);
+            return;
+        }
+        
+        console.log(`[HIST] 🧹 Limpieza de historial de recepción ${miNumeroRecepcion}`);
+        limpiarHistorialScreen();
+    });
+    
+    // ==================== LISTENER: limpieza_completada ====================
+    socket.on('limpieza_completada', (data) => {
+        console.log('[HIST] 📢 Limpieza completada recibida');
+        limpiarHistorialScreen();
+    });
+
+    // ==================== LISTENER: llamar_paciente ====================
+    socket.on('llamar_paciente', (data) => {
+        console.log('[TURNOS] 📢 Evento llamar_paciente recibido:', data);
+        console.log(`[TURNOS] miNumeroRecepcion: ${miNumeroRecepcion}, data.numRecepcion: ${data.numRecepcion}`);
+        
+        // ← CRÍTICO: Validar que el llamado es SOLO para esta recepción
+        if (data.numRecepcion && miNumeroRecepcion && data.numRecepcion !== miNumeroRecepcion) {
+            console.log(`[TURNOS] ⚠️ Llamada es para recepción ${data.numRecepcion}, esta es ${miNumeroRecepcion} - ignorando`);
+            return;
+        }
+        
+        console.log(`[TURNOS] ✅ Llamada ES PARA ESTA RECEPCIÓN (${miNumeroRecepcion})`);
+        
+        if (miNumeroRecepcion) {
+            guardarUltimoLlamadoDeRecepcion(miNumeroRecepcion, data.codigo, data.nombre);
+        }
+
+        const linkedState   = document.getElementById('linkedState');
+        const estaVinculada = linkedState && linkedState.style.display !== 'none';
+
+        if (estaVinculada) {
+            const codigoAnterior = document.getElementById('turnoCodigo')?.textContent?.trim();
+            const nombreAnterior = document.getElementById('turnoNombre')?.textContent?.trim();
+            
+            // Agregar al historial si hay un código anterior diferente
+            if (codigoAnterior && codigoAnterior !== '—' && codigoAnterior !== data.codigo) {
+                agregarAlHistorial(codigoAnterior, nombreAnterior);
+            }
+            
+            mostrarTurnoLlamado(data.codigo, data.nombre, data.recepcion, true);
+        } else {
+            console.log('[TURNOS] ⚠️ Pantalla no vinculada, guardando como pendiente');
+            window._llamadaPendiente = data;
+        }
+    });
+
+    // ==================== LISTENER: historial_llamada ====================
+    socket.on('historial_llamada', (data) => {
+        console.log('[TURNOS] 📢 Historial de llamada recibido:', data);
+    });
+
+    // ==================== LISTENER: numero_recepcion ====================
+    socket.on('numero_recepcion', (data) => {
+        miNumeroRecepcion = data.numRecepcion || data.numero_recepcion;
+        console.log(`[HIST] 📢 Número de recepción asignado: ${miNumeroRecepcion}`);
+        
+        // Cargar historial de ESTA recepción específica
+        miHistorial = recuperarHistorialDeRecepcion(miNumeroRecepcion);
+        renderizarHistorial();
+        console.log(`[HIST] ✅ Historial de recepción ${miNumeroRecepcion} cargado: ${miHistorial.length} items`);
+    });
+
+    // Pedir número de recepción
+    socket.emit('pedir_numero_recepcion');
+    console.log('[TURNOS] ✅ Listeners registrados correctamente (SIN DUPLICACIÓN)');
+
+    // ==================== OBSERVER DE VINCULACIÓN ====================
+    const linkedState = document.getElementById('linkedState');
+    if (!linkedState) {
+        console.warn('[TURNOS] ⚠️ linkedState no encontrado');
+        return;
+    }
+
+    function intentarRestaurar() {
+        if (linkedState.style.display === 'none') return;
+        
+        if (window._llamadaPendiente) {
+            console.log('[TURNOS] Restaurando llamada pendiente');
+            const p = window._llamadaPendiente;
+            window._llamadaPendiente = null;
+            mostrarTurnoLlamado(p.codigo, p.nombre, p.recepcion, true);
+            return;
+        }
+        
+        if (miNumeroRecepcion) {
+            const guardado = recuperarUltimoLlamadoDeRecepcion(miNumeroRecepcion);
+            if (guardado) {
+                console.log('[TURNOS] Restaurando último llamado guardado:', guardado);
+                mostrarTurnoLlamado(guardado.codigo, guardado.nombre, null, false);
+            }
+        }
+    }
+
+    new MutationObserver(intentarRestaurar)
+        .observe(linkedState, { attributes: true, attributeFilter: ['style'] });
+
+    setTimeout(intentarRestaurar, 200);
+}
+
+// =========================
+// INIT
+// =========================
+
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('[TURNOS] ═══════════════════════════════════════════════════════');
+    console.log('[TURNOS] INICIALIZANDO MÓDULO DE TURNOS');
+    console.log('[TURNOS] ═══════════════════════════════════════════════════════');
+    console.log('[TURNOS] Esperando socket...');
+    
+    // Esperar a que el socket esté disponible
+    esperarSocketYRegistrar();
+
+    // Desbloquear audio en primer tap/click
+    document.addEventListener('click',      _desbloquearAudio, { once: true });
+    document.addEventListener('touchstart', _desbloquearAudio, { once: true });
+    
+    console.log('[TURNOS] ═══════════════════════════════════════════════════════');
+});
+
+function esperarSocketYRegistrar() {
+    const socketInstance = window.getSocketScreen ? window.getSocketScreen() : null;
+    
+    if (socketInstance) {
+        console.log('[TURNOS] ✅ Socket obtenido');
+        registrarListeners(socketInstance);
+    } else {
+        console.log('[TURNOS] ⏳ Socket no disponible aún, reintentando en 100ms...');
+        setTimeout(esperarSocketYRegistrar, 100);
+    }
+}
+
+// =========================
+// FUNCIONES GLOBALES DE DEBUG
+// =========================
+
 window.limpiarHistorialScreen = limpiarHistorialScreen;
+
 window.debugScreenCompleto = () => {
-    console.log('=== DEBUG SCREEN COMPLETO ===');
+    console.log('═══════════════════════════════════════════════');
+    console.log('DEBUG SCREEN COMPLETO');
+    console.log('═══════════════════════════════════════════════');
+    console.log('Número de recepción:', miNumeroRecepcion);
     console.log('Turno actual (DOM):', {
         codigo: document.getElementById('turnoCodigo')?.textContent,
         nombre: document.getElementById('turnoNombre')?.textContent,
         visible: document.getElementById('turnoActivo')?.style.display !== 'none'
     });
-    console.log('Historial (memoria):', historial.length, 'items');
-    console.log('localStorage:', {
-        ultimo_llamado: localStorage.getItem(STORAGE_KEY),
-        historial_llamados: localStorage.getItem(STORAGE_HISTORY_KEY)
+    console.log('Historial (memoria):', miHistorial.length, 'items');
+    console.log('Socket conectado:', socket ? socket.connected : false);
+    console.log('Listeners registrados:', _listenersRegistrados);
+    console.log('localStorage (actual recepción):', {
+        historial: miNumeroRecepcion ? localStorage.getItem(getStorageKeyParaRecepcion(miNumeroRecepcion)) : 'N/A',
+        ultimo_llamado: miNumeroRecepcion ? localStorage.getItem(`screen_ultimo_llamado_${miNumeroRecepcion}`) : 'N/A'
     });
-    console.log('Variables globales:', {
-        _ultimo_llamado: window._ultimo_llamado,
-        _llamadaPendiente: window._llamadaPendiente
-    });
-    console.log('==============================');
+    console.log('═══════════════════════════════════════════════');
 };
-window.debugScreenCompleto();
 
+window.debugScreenCompleto();

@@ -12,10 +12,12 @@ let intervaloRefresco = null;
 let socket            = null;
 let historialLlamados = [];
 const INTERVALO_REFRESCO_MS = 15_000;
+const STORAGE_KEY = 'historial_llamados'; // ← CLAVE PARA PERSISTENCIA
 
 // ==================== INICIALIZACIÓN ====================
 
 document.addEventListener('DOMContentLoaded', () => {
+    cargarHistorialDelStorage(); // ← CARGAR ANTES QUE TODO
     verificarSesion();
     cargarPacientes();
     cargarPapelera();
@@ -72,14 +74,19 @@ function conectarSocket() {
         // ── Si el código ya existe en el historial, no duplicar ──
         const yaExiste = historialLlamados.some(item => item.codigo === data.codigo);
         if (!yaExiste) {
-            historialLlamados.unshift({
+            const nuevoItem = {
                 codigo: data.codigo,
                 nombre: data.nombre,
                 hora:   new Date().toLocaleTimeString('es-ES', {
                     hour: '2-digit', minute: '2-digit', second: '2-digit'
                 })
-            });
-            if (historialLlamados.length > 100) historialLlamados = historialLlamados.slice(0, 100);
+            };
+            historialLlamados.unshift(nuevoItem);
+            guardarHistorialEnStorage(); // ← GUARDAR EN STORAGE
+            if (historialLlamados.length > 100) {
+                historialLlamados = historialLlamados.slice(0, 100);
+                guardarHistorialEnStorage(); // ← GUARDAR DESPUÉS DE TRUNCAR
+            }
         }
         const badgeEl = document.getElementById('historialBadge');
         if (badgeEl) {
@@ -111,6 +118,7 @@ function conectarSocket() {
 
         // Limpiar historial de llamados
         historialLlamados = [];
+        guardarHistorialEnStorage(); // ← GUARDAR ESTADO LIMPIO
         const badgeEl = document.getElementById('historialBadge');
         if (badgeEl) { badgeEl.textContent = '0'; badgeEl.style.display = 'none'; }
 
@@ -160,9 +168,8 @@ function conectarSocket() {
             return;
         }
     });
-
-
 }
+
 function mostrarNotificacionRecepcion(mensaje, tipo = 'info', duracion = 3000) {
     // Si tienes un contenedor para mensajes:
     const container = document.getElementById('recepcionMessageContainer') 
@@ -177,7 +184,68 @@ function mostrarNotificacionRecepcion(mensaje, tipo = 'info', duracion = 3000) {
     }
 }
 
+// ==================== FUNCIONES DE PERSISTENCIA ====================
 
+/**
+ * Guarda el historial de llamados en localStorage
+ */
+function guardarHistorialEnStorage() {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(historialLlamados));
+        console.log(`💾 Historial guardado en localStorage (${historialLlamados.length} items)`);
+    } catch (error) {
+        console.error('❌ Error al guardar historial en localStorage:', error);
+        // Si localStorage está lleno, eliminar los más antiguos
+        if (error.name === 'QuotaExceededError') {
+            historialLlamados = historialLlamados.slice(0, Math.floor(historialLlamados.length / 2));
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(historialLlamados));
+                console.log('⚠️ localStorage lleno, se redujeron los registros');
+            } catch (e) {
+                console.error('❌ No se pudo guardar ni siquiera el historial reducido:', e);
+            }
+        }
+    }
+}
+
+/**
+ * Carga el historial desde localStorage
+ */
+function cargarHistorialDelStorage() {
+    try {
+        const guardado = localStorage.getItem(STORAGE_KEY);
+        if (guardado) {
+            historialLlamados = JSON.parse(guardado);
+            console.log(`✅ Historial cargado desde localStorage (${historialLlamados.length} items)`);
+            
+            // Actualizar badge si existe
+            const badgeEl = document.getElementById('historialBadge');
+            if (badgeEl && historialLlamados.length > 0) {
+                badgeEl.textContent = historialLlamados.length;
+                badgeEl.style.display = 'inline-block';
+            }
+        }
+    } catch (error) {
+        console.error('❌ Error al cargar historial de localStorage:', error);
+        historialLlamados = [];
+    }
+}
+
+/**
+ * Actualiza el badge del historial
+ */
+function actualizarBadgeHistorial() {
+    const badgeEl = document.getElementById('historialBadge');
+    if (badgeEl) {
+        if (historialLlamados.length > 0) {
+            badgeEl.textContent = historialLlamados.length;
+            badgeEl.style.display = 'inline-block';
+        } else {
+            badgeEl.textContent = '0';
+            badgeEl.style.display = 'none';
+        }
+    }
+}
 
 // =============================================================================
 // MANEJO DE USUARIO INACCESIBLE (desactivado o eliminado)
@@ -491,13 +559,14 @@ function llamarPaciente(pacienteId, codigo, nombre, numeroPantalla) {
         
         console.log('📢 [DEBUG] numRecepcion final:', numRecepcion);
 
-        // ✅ EMIT CON recepcion GARANTIZADO
+        // ✅ EMIT CON recepcion GARANTIZADO Y NÚMERO DE PANTALLA PARA FILTRAR HISTORIAL
         socket.emit('llamar_paciente', {
             pacienteId:      pacienteId,
             codigo:          codigo,
             nombre:          nombre,
             recepcionistaId: recepcionistaId,
-            recepcion:       numRecepcion  // ← SIEMPRE TIENE VALOR
+            recepcion:       numRecepcion,  // ← SIEMPRE TIENE VALOR
+            numRecepcion:    numRecepcion   // ← ADICIONAL: para filtrar historial en screen
         });
         console.log(`📢 Emitido llamar_paciente: ${codigo} — ${nombre} — recepcion: ${numRecepcion}`);
     } else {
@@ -900,6 +969,7 @@ function limpiarHistorialLlamados() {
     if (!confirm('¿Limpiar todo el historial de llamados?\nEsto también limpiará la pantalla de turnos.')) return;
     
     historialLlamados = [];
+    guardarHistorialEnStorage(); // ← GUARDAR ESTADO LIMPIO
     
     const badgeEl = document.getElementById('historialBadge');
     if (badgeEl) { badgeEl.textContent = '0'; badgeEl.style.display = 'none'; }
