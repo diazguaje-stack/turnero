@@ -313,6 +313,8 @@ async function reproducirAudio(texto) {
 let historial = recuperarHistorial();
 
 function agregarAlHistorial(codigo, nombre) {
+    console.log(`[TURNOS] Agregando al historial: ${codigo} - ${nombre}`);
+    
     const entrada = {
         codigo,
         nombre: nombre || '',
@@ -320,47 +322,60 @@ function agregarAlHistorial(codigo, nombre) {
     };
 
     historial.unshift(entrada);
-    if (historial.length > 50) historial = historial.slice(0, 50);
+    
+    // Limitar a 50 items máximo
+    if (historial.length > 50) {
+        historial = historial.slice(0, 50);
+        console.log('[TURNOS] ⚠️ Historial limitado a 50 items');
+    }
 
+    // ← CRÍTICO: Guardar en localStorage para persistencia
     guardarHistorial(historial);
+    console.log(`[TURNOS] ✅ Historial guardado (${historial.length} items)`);
+    
     renderizarHistorial();
 }
 
 function limpiarHistorialScreen() {
-    console.log('[TUR] 🧹 Limpiando historial por orden de recepción...');
-
-    historial              = [];
-    window._llamadaPendiente = null;
-    window._audioPendiente   = null;
-
+    console.log('[TURNOS] 🧹 Iniciando limpieza COMPLETA de historial en screen...');
+    
+    // 1. Limpiar array en memoria del historial (LLAMADOS ANTERIORES)
+    historial = [];
+    console.log('[TURNOS] ✅ Array historial limpiado (LLAMADOS ANTERIORES)');
+    
+    // 2. ← CRÍTICO: Limpiar AMBAS claves de localStorage
     try {
-        localStorage.removeItem(STORAGE_HISTORY_KEY);
+        // Clave 1: Último llamado actual
         localStorage.removeItem(STORAGE_KEY);
-    } catch (e) {}
-
-    // Detener audio en curso
-    if (_audioEl) {
-        _audioEl.pause();
-        _audioEl.src = '';
+        console.log(`[TURNOS] ✅ localStorage limpiado: ${STORAGE_KEY}`);
+        
+        // Clave 2: HISTORIAL COMPLETO (LLAMADOS ANTERIORES) ← IMPORTANTE
+        localStorage.removeItem(STORAGE_HISTORY_KEY);
+        console.log(`[TURNOS] ✅ localStorage limpiado: ${STORAGE_HISTORY_KEY}`);
+    } catch (error) {
+        console.error('[TURNOS] ❌ Error al limpiar localStorage:', error);
     }
-
-    // Resetear panel izquierdo
-    const idleState   = document.getElementById('idleState');
-    const turnoActivo = document.getElementById('turnoActivo');
-    const turnoCodigo = document.getElementById('turnoCodigo');
-    const turnoNombre = document.getElementById('turnoNombre');
-    const turnoLabel  = document.getElementById('turnoLabel');
-    const goldDivider = document.getElementById('goldDivider');
-
-    if (turnoActivo)  turnoActivo.style.display = 'none';
-    if (idleState)    idleState.classList.remove('hidden');
-    if (turnoCodigo)  { turnoCodigo.textContent = '—'; turnoCodigo.classList.remove('visible', 'llamando'); }
-    if (turnoNombre)  { turnoNombre.textContent = '';  turnoNombre.classList.remove('visible'); }
-    if (turnoLabel)   turnoLabel.classList.remove('visible');
-    if (goldDivider)  goldDivider.classList.remove('visible');
-
+    
+    // 3. Limpiar también _ultimo_llamado si existe
+    if (typeof window._ultimo_llamado !== 'undefined') {
+        window._ultimo_llamado = null;
+        console.log('[TURNOS] ✅ _ultimo_llamado limpiado');
+    }
+    
+    // 4. Cerrar modal si está abierto
+    cerrarHistorialModal();
+    
+    // 5. Actualizar UI del historial
     renderizarHistorial();
-    console.log('[TUR] ✅ Pantalla limpiada');
+    console.log('[TURNOS] ✅ UI del historial actualizada');
+    
+    // 6. Log final
+    console.log('[TURNOS] ✅ LIMPIEZA COMPLETADA - Todos los historiales vacíos');
+    console.log('[TURNOS] Estado actual:', {
+        historial: historial.length,
+        localStorage_ultimo: localStorage.getItem(STORAGE_KEY),
+        localStorage_historial: localStorage.getItem(STORAGE_HISTORY_KEY)
+    });
 }
 
 function renderizarHistorial() {
@@ -393,19 +408,68 @@ function renderizarHistorial() {
     });
 }
 
+function cerrarHistorialModal() {
+    const modal = document.getElementById('historialModal');
+    if (modal) {
+        modal.style.display = 'none';
+        console.log('[TURNOS] ✅ Modal cerrado');
+    }
+}
+
 // =========================
 // INIT
 // =========================
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('[TUR] Iniciando módulo de turnos...');
+    console.log('[TURNOS] Inicializando módulo de turnos...');
+    
+    // ← AGREGAR: Cargar historial desde localStorage
+    console.log('[TURNOS] Cargando historial desde localStorage...');
+    historial = recuperarHistorial();
+    console.log(`[TURNOS] ✅ Historial cargado: ${historial.length} items`);
+    
     renderizarHistorial();
     esperarSocketYRegistrar();
 
-    // Primer tap/click desbloquea el contexto de audio del navegador
+    // Primer tap/click desbloquea audio
     document.addEventListener('click',      _desbloquearAudio, { once: true });
     document.addEventListener('touchstart', _desbloquearAudio, { once: true });
 });
+
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('[TURNOS] Registrando listeners de limpiar_historial...');
+    
+    // LISTENER 1: Para limpieza diaria programada
+    socket.on('limpiar_historial', (data) => {
+        console.log('[TURNOS] 📢 Evento limpiar_historial recibido:', data);
+        
+        // ← VERIFICAR que es limpieza diaria
+        if (data.motivo === 'limpieza_diaria') {
+            console.log('[TURNOS] ⏰ LIMPIEZA DIARIA PROGRAMADA DETECTADA');
+            limpiarHistorialScreen();
+            return;
+        }
+        
+        // Si es limpieza manual de una pantalla específica
+        if (data.pantalla_id && miPantallaId && data.pantalla_id !== miPantallaId) {
+            console.log(`[TURNOS] ⚠️ Limpieza es para otra pantalla (${data.pantalla_id}) - ignorando`);
+            return;
+        }
+        
+        console.log('[TURNOS] 🧹 Limpieza de historial recibida');
+        limpiarHistorialScreen();
+    });
+    
+    // LISTENER 2: Escucha cualquier evento relacionado
+    socket.on('limpieza_completada', (data) => {
+        console.log('[TURNOS] Limpieza completada recibida:', data);
+        console.log('[TURNOS] Limpiando historial local como respuesta...');
+        limpiarHistorialScreen();
+    });
+    
+    console.log('[TURNOS] ✅ Listeners de limpieza registrados');
+});
+
 
 // =========================
 // ESPERAR SOCKET
@@ -426,45 +490,57 @@ function esperarSocketYRegistrar() {
 // =========================
 
 function registrarListeners(socket) {
-
-    socket.on('limpiar_historial', () => {
-        console.log('[TUR] 📨 Evento limpiar_historial recibido');
+    
+    // LISTENER DE LIMPIEZA DIARIA
+    socket.on('limpiar_historial', (data) => {
+        console.log('[TURNOS] 📢 Evento limpiar_historial recibido:', data);
+        
+        if (data.motivo === 'limpieza_diaria') {
+            console.log('[TURNOS] ⏰ LIMPIEZA DIARIA PROGRAMADA DETECTADA');
+            console.log('[TURNOS] Limpiando TODOS los historiales de screen');
+            limpiarHistorialScreen();  // ← Esta función limpia AMBAS claves
+            return;
+        }
+        
+        // Si es limpieza manual de una pantalla específica
+        if (data.pantalla_id && miPantallaId && data.pantalla_id !== miPantallaId) {
+            console.log(`[TURNOS] ⚠️ Limpieza es para otra pantalla - ignorando`);
+            return;
+        }
+        
+        console.log('[TURNOS] 🧹 Limpieza de historial recibida');
+        limpiarHistorialScreen();
+    });
+    
+    socket.on('limpieza_completada', (data) => {
+        console.log('[TURNOS] Limpieza completada recibida:', data);
+        console.log('[TURNOS] Limpiando historial local como respuesta...');
         limpiarHistorialScreen();
     });
 
     socket.on('pantalla_vinculada', (data) => {
         console.log('[TURNOS] Pantalla vinculada:', data);
-        miPantallaId = data.pantalla_id;  // ← GUARDAR el ID
-        console.log('[TURNOS] Mi pantalla_id:', miPantallaId);
+        miPantallaId = data.pantalla_id;
     });
 
     socket.on('joined_screen_propia', (data) => {
         console.log('[TURNOS] Unido a sala propia:', data);
-        // Si viene en este evento, también guardar
         if (data.pantalla_id) {
             miPantallaId = data.pantalla_id;
-            console.log('[TURNOS] Mi pantalla_id (desde joined_screen_propia):', miPantallaId);
         }
     });
 
-
     socket.on('llamar_paciente', (data) => {
-        console.log('=== SOCKET llamar_paciente RECIBIDO ===');
-        console.log('DATA COMPLETO:');
-        console.log(JSON.stringify(data, null, 2));
-        console.log('data.pantalla_id:', data.pantalla_id);
-        console.log('miPantallaId:', miPantallaId);
-        console.log('========================================');
+        console.log('[TURNOS] Evento llamar_paciente recibido');
         
-        // ── VALIDACIÓN: ¿Es esta llamada para MI pantalla? ──────────────────────
+        // Validar que es para esta pantalla
         if (data.pantalla_id && miPantallaId && data.pantalla_id !== miPantallaId) {
-            console.log(`[TURNOS] ⚠️ Llamada es para otra pantalla (${data.pantalla_id} ≠ ${miPantallaId}) - ignorando`);
-            return;  // ← IGNORAR si no es para esta pantalla
+            console.log(`[TURNOS] ⚠️ Llamada es para otra pantalla - ignorando`);
+            return;
         }
         
-        console.log('[TURNOS] ✅ Llamada ES PARA ESTA PANTALLA - procesando');
+        console.log('[TURNOS] ✅ Llamada ES PARA ESTA PANTALLA');
         
-        // ── Resto del código original ──────────────────────────────────────────
         guardarUltimoLlamado(data.codigo, data.nombre);
 
         const linkedState   = document.getElementById('linkedState');
@@ -473,9 +549,12 @@ function registrarListeners(socket) {
         if (estaVinculada) {
             const codigoAnterior = document.getElementById('turnoCodigo')?.textContent?.trim();
             const nombreAnterior = document.getElementById('turnoNombre')?.textContent?.trim();
+            
+            // ← IMPORTANTE: Agregar al historial (que se guarda en localStorage)
             if (codigoAnterior && codigoAnterior !== '—' && codigoAnterior !== data.codigo) {
                 agregarAlHistorial(codigoAnterior, nombreAnterior);
             }
+            
             mostrarTurnoLlamado(data.codigo, data.nombre, data.recepcion, true);
         } else {
             window._llamadaPendiente = data;
@@ -484,8 +563,6 @@ function registrarListeners(socket) {
 
     socket.on('historial_llamada', (data) => {
         console.log('[TURNOS] Historial de llamada recibido:', data);
-        // Aquí puedes actualizar un historial visual si quieres
-        // pero sin reproducir sonido
     });
 
     socket.emit('pedir_ultimo_llamado');
@@ -579,3 +656,22 @@ function mostrarTurnoLlamado(codigo, nombre, recepcion = null, hablar = true) {
         }, 1000);
     }
 }
+window.limpiarHistorialScreen = limpiarHistorialScreen;
+window.debugHistorial = () => {
+    console.log('=== DEBUG HISTORIAL ===');
+    console.log('historialLlamados:', historialLlamados);
+    console.log('localStorage STORAGE_KEY:', localStorage.getItem(STORAGE_KEY));
+    console.log('localStorage todos los items:', Object.keys(localStorage).filter(k => k.includes('historial')));
+    console.log('======================');
+};
+window.debugHistorial();
+
+
+
+
+
+
+
+
+
+

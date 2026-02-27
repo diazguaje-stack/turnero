@@ -129,7 +129,55 @@ function conectarSocket() {
 
         mostrarToast('🌙 Limpieza diaria completada. Sistema listo para el nuevo día.', 'nuevo');
     });
+
+    socket.on('limpiar_historial_diario', (data) => {
+        console.log('[RECEPCION] Evento limpiar_historial_diario recibido:', data);
+        
+        if (data.motivo === 'limpieza_diaria') {
+            console.log('[RECEPCION] ⏰ Limpieza diaria programada detectada');
+            
+            // Limpiar historial en memoria
+            historialLlamados = [];
+            
+            // ← CRÍTICO: Limpiar también del localStorage
+            try {
+                localStorage.removeItem(STORAGE_KEY);
+                console.log('[RECEPCION] ✅ localStorage limpiado por scheduler');
+            } catch (error) {
+                console.error('[RECEPCION] Error al limpiar localStorage:', error);
+            }
+            
+            // Actualizar badge
+            actualizarBadgeHistorial();
+            
+            // Si el modal está abierto, actualizar
+            const modal = document.getElementById('historialModal');
+            if (modal && modal.style.display !== 'none') {
+                renderizarHistorialModal();
+            }
+            
+            console.log('[RECEPCION] 📢 Historial limpiado por limpieza diaria automática');
+            return;
+        }
+    });
+
+
 }
+function mostrarNotificacionRecepcion(mensaje, tipo = 'info', duracion = 3000) {
+    // Si tienes un contenedor para mensajes:
+    const container = document.getElementById('recepcionMessageContainer') 
+                   || document.getElementById('messageContainer');
+    
+    if (container) {
+        container.innerHTML = `<div class="mensaje-${tipo}">${mensaje}</div>`;
+        setTimeout(() => { container.innerHTML = ''; }, duracion);
+    } else {
+        // Fallback: console
+        console.log(`[RECEPCION-${tipo.toUpperCase()}] ${mensaje}`);
+    }
+}
+
+
 
 // =============================================================================
 // MANEJO DE USUARIO INACCESIBLE (desactivado o eliminado)

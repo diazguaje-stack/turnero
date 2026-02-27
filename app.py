@@ -80,8 +80,8 @@ def limpiar_pacientes_diario():
     Ejecuta a las 00:00 todos los días:
     - Elimina todos los turnos de la BD
     - Elimina todos los pacientes de la BD
-    - Notifica a todas las screens para limpiar su display
-    - Notifica a todas las recepciones para limpiar su vista
+    - Notifica a TODAS las screens para limpiar su display
+    - Notifica a TODAS las recepciones para limpiar su historial
     - Limpia _ultimo_llamado global
     """
     global _ultimo_llamado
@@ -103,18 +103,55 @@ def limpiar_pacientes_diario():
 
             print(f"[CRON] ✅ Eliminados: {total_turnos} turnos, {total_pacientes} pacientes")
 
-            # Notificar a screens para limpiar display
+            # ── NOTIFICAR A SCREEN (VARIAS FORMAS) ──────────────────────────────
+            
+            # Forma 1: Emitir a sala 'screen'
+            print(f"[CRON] 📢 Emitiendo 'limpiar_historial' a sala 'screen'...")
             socketio.emit('limpiar_historial', {
-                'motivo': 'limpieza_diaria'
-            }, to='screen')
+                'motivo': 'limpieza_diaria',
+                'tipo': 'screen',
+                'timestamp': ahora
+            }, room='screen')
+            
+            # Forma 2: Emitir a TODAS las salas screen_* (una por pantalla)
+            print(f"[CRON] 📢 Emitiendo a salas screen_* (pantallas individuales)...")
+            pantallas = Pantalla.query.all()
+            for pantalla in pantallas:
+                sala_pantalla = f'screen_{pantalla.id}'
+                socketio.emit('limpiar_historial', {
+                    'motivo': 'limpieza_diaria',
+                    'tipo': 'screen',
+                    'pantalla_id': str(pantalla.id),
+                    'timestamp': ahora
+                }, room=sala_pantalla)
+                print(f"[CRON] ✅ Evento enviado a {sala_pantalla}")
+            
+            # Forma 3: Emitir a TODOS los clientes conectados
+            print(f"[CRON] 📢 Emitiendo a TODOS los clientes...")
+            socketio.emit('limpiar_historial', {
+                'motivo': 'limpieza_diaria',
+                'tipo': 'todos',
+                'timestamp': ahora
+            })
 
-            # Notificar a recepciones para limpiar su lista y historial
-            socketio.emit('limpieza_diaria', {
-                'mensaje': 'Limpieza diaria automática ejecutada',
-                'hora':    ahora
-            }, to='recepcion')
+            # ── NOTIFICAR A RECEPCIÓN ──────────────────────────────────────────
+            print(f"[CRON] 📢 Emitiendo 'limpiar_historial_diario' a sala 'recepcion'...")
+            socketio.emit('limpiar_historial_diario', {
+                'motivo': 'limpieza_diaria',
+                'tipo': 'recepcion',
+                'mensaje': 'Limpieza diaria automática ejecutada a las 00:00',
+                'hora': ahora
+            }, room='recepcion')
 
-            print(f"[CRON] 📡 Notificaciones enviadas a screen y recepcion")
+            # ── NOTIFICAR A ADMIN ──────────────────────────────────────────────
+            print(f"[CRON] 📢 Emitiendo 'limpieza_completada' a sala 'admin'...")
+            socketio.emit('limpieza_completada', {
+                'timestamp': ahora,
+                'turnos_eliminados': total_turnos,
+                'pacientes_eliminados': total_pacientes
+            }, room='admin')
+
+            print(f"[CRON] ✅ Limpieza diaria completada")
 
         except Exception as e:
             db.session.rollback()
@@ -125,7 +162,7 @@ def limpiar_pacientes_diario():
 scheduler = BackgroundScheduler()
 scheduler.add_job(
     func    = limpiar_pacientes_diario,
-    trigger = CronTrigger(hour=0, minute=0, second=0),
+    trigger = CronTrigger(hour=10, minute=7, second=0),
     id      = 'limpieza_diaria',
     name    = 'Limpiar pacientes a medianoche',
     replace_existing = True
