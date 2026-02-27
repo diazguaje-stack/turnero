@@ -64,17 +64,14 @@
             z-index: 200;
         }
 
-        /* ── Corner: recepcionista ── */
+                /* ── Corner: recepcionista ── */
         #recepcionistaCorner {
             position: fixed;
-            top: 0; left: 0;
+            top: 32px;
+            left: 32px;
             z-index: 100;
-            padding: 28px 36px;
-            display: flex;
-            align-items: center;
-            gap: 14px;
             opacity: 0;
-            transform: translateY(-8px);
+            transform: translateY(-12px);
             transition: opacity 0.6s ease, transform 0.6s ease;
         }
 
@@ -83,21 +80,23 @@
             transform: translateY(0);
         }
 
-        .corner-avatar {
-            width: 44px; height: 44px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, var(--accent), var(--bright));
-            display: flex; align-items: center; justify-content: center;
+        .corner-name {
+            font-size: 52px;
+            font-weight: 700;
+            color: var(--white);
+            letter-spacing: 0.05em;
             font-family: 'Playfair Display', serif;
-            font-size: 18px; font-weight: 700; color: white;
-            border: 2px solid rgba(79,142,247,0.4);
-            box-shadow: 0 0 16px rgba(79,142,247,0.25);
-            flex-shrink: 0;
+            text-shadow: 0 0 20px rgba(79,142,247,0.3);
+            line-height: 1;
+            text-transform: lowercase;
+            display: block;
         }
 
-        .corner-info { display: flex; flex-direction: column; }
-        .corner-label { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--bright); font-weight: 500; }
-        .corner-name  { font-size: 15px; font-weight: 600; color: var(--white); letter-spacing: 0.03em; }
+        /* Ocultar avatar e info */
+        .corner-avatar { display: none; }
+        .corner-info { display: none; }
+        .corner-label { display: none; }
+
 
         /* ── Bottom status bar ── */
         .status-bar {
@@ -482,11 +481,7 @@
     <div class="top-rule"></div>
 
     <div id="recepcionistaCorner">
-        <div class="corner-avatar" id="cornerAvatar">—</div>
-        <div class="corner-info">
-            <span class="corner-label">Recepción</span>
-            <span class="corner-name" id="cornerName">Sin asignar</span>
-        </div>
+        <span class="corner-name" id="cornerName">Sin asignar</span>
     </div>
 
     <div class="container">

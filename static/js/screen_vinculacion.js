@@ -109,10 +109,14 @@ function conectarSocket() {
         consultarStatus().then(sd => {
             if (sd?.status === 'vinculada') {
                 pantallaData = sd.pantalla;
+                
+                // ← ASEGURAR que se llama actualizarRecepcionista
+                console.log('[VIN] Datos de pantalla:', pantallaData);
+                actualizarRecepcionista(pantallaData);  // ← AQUÍ
+                
                 mostrarVinculada(pantallaData);
             }
         }).catch(() => {
-            // Solo recargar si es una desconexión real del servidor, no refresh
             if (_desconexionIntencional === false) {
                 location.reload();
             }
@@ -124,12 +128,16 @@ function conectarSocket() {
         detenerYRecargar('desvinculada', 1500);
     });
 
-    // ── Recepcionista cambiado ──
+        // ── Recepcionista cambiado ──
     _socket.on('recepcionista_asignado', (data) => {
         console.log('[VIN] recepcionista_asignado:', data);
         if (pantallaData) {
             pantallaData.recepcionista_nombre = data.recepcionista_nombre;
-            actualizarRecepcionista(pantallaData);
+            
+            console.log('[VIN] Nombre actualizado:', data.recepcionista_nombre);
+            
+            // ← ASEGURAR que se actualiza el corner
+            actualizarRecepcionista(pantallaData);  // ← AQUÍ
             actualizarTimestamp();
         }
     });
@@ -272,13 +280,18 @@ function actualizarRecepcionista(pantalla) {
     const nombre   = pantalla?.recepcionista_nombre || '';
     const corner   = document.getElementById('recepcionistaCorner');
     const nameEl   = document.getElementById('cornerName');
-    const avatar   = document.getElementById('cornerAvatar');
-    if (nameEl)  nameEl.textContent  = nombre || 'Sin asignar';
-    if (avatar)  avatar.textContent  = nombre ? nombre.charAt(0).toUpperCase() : '—';
-    if (corner)  corner.classList.toggle('visible', !!nombre);
-    // legacy
-    const leg = document.getElementById('recepcionistaName');
-    if (leg) leg.textContent = nombre || '-';
+    
+    console.log('[VIN] Actualizando recepcionista:', nombre);
+    
+    if (nameEl) {
+        nameEl.textContent = nombre || 'Sin asignar';
+        console.log('[VIN] ✅ cornerName actualizado:', nombre);
+    }
+    
+    if (corner) {
+        corner.classList.toggle('visible', !!nombre);
+        console.log('[VIN] ✅ corner visible:', !!nombre);
+    }
 }
 
 // =========================
