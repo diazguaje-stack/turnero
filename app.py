@@ -8,6 +8,7 @@ import os, hashlib
 from gtts import gTTS
 import jwt
 from models import db, Usuario, init_db, Pantalla, Paciente, Turno, uuid
+from app import app, db, Turno, Paciente, Pantalla, socketio
 from config import config
 from flask_socketio import SocketIO, emit, join_room
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -17,6 +18,10 @@ import atexit
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError 
 import uuid 
+import time
+import sys
+import signal
+
 # ===================================
 # CONFIGURACION
 # ===================================
@@ -75,6 +80,8 @@ _screen_disconnect_active = {}
 # LIMPIEZA DIARIA AUTOMÁTICA 00:00
 # ===================================
 
+scheduler = BackgroundScheduler()
+
 def limpiar_pacientes_diario():
     """
     Ejecuta a las 00:00 todos los días:
@@ -82,14 +89,11 @@ def limpiar_pacientes_diario():
     - Elimina todos los pacientes de la BD
     - Notifica a TODAS las screens para limpiar su display
     - Notifica a TODAS las recepciones para limpiar su historial
-    - Limpia _ultimo_llamado global
     """
-    global _ultimo_llamado
-
     with app.app_context():
         try:
             ahora = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"\n[CRON] ⏰ Limpieza diaria iniciada: {ahora}")
+            print(f"\n[SCHEDULER] ⏰ Limpieza diaria iniciada: {ahora}")
 
             total_turnos    = Turno.query.count()
             total_pacientes = Paciente.query.count()
@@ -99,22 +103,18 @@ def limpiar_pacientes_diario():
             Paciente.query.delete()
             db.session.commit()
 
-            _ultimo_llamado = None
+            print(f"[SCHEDULER] ✅ Eliminados: {total_turnos} turnos, {total_pacientes} pacientes")
 
-            print(f"[CRON] ✅ Eliminados: {total_turnos} turnos, {total_pacientes} pacientes")
-
-            # ── NOTIFICAR A SCREEN (VARIAS FORMAS) ──────────────────────────────
-            
-            # Forma 1: Emitir a sala 'screen'
-            print(f"[CRON] 📢 Emitiendo 'limpiar_historial' a sala 'screen'...")
+            # ── NOTIFICAR A SCREEN ──────────────────────────────
+            print(f"[SCHEDULER] 📢 Emitiendo 'limpiar_historial' a sala 'screen'...")
             socketio.emit('limpiar_historial', {
                 'motivo': 'limpieza_diaria',
                 'tipo': 'screen',
                 'timestamp': ahora
             }, room='screen')
             
-            # Forma 2: Emitir a TODAS las salas screen_* (una por pantalla)
-            print(f"[CRON] 📢 Emitiendo a salas screen_* (pantallas individuales)...")
+            # Emitir a pantallas individuales
+            print(f"[SCHEDULER] 📢 Emitiendo a salas screen_*...")
             pantallas = Pantalla.query.all()
             for pantalla in pantallas:
                 sala_pantalla = f'screen_{pantalla.id}'
@@ -124,18 +124,9 @@ def limpiar_pacientes_diario():
                     'pantalla_id': str(pantalla.id),
                     'timestamp': ahora
                 }, room=sala_pantalla)
-                print(f"[CRON] ✅ Evento enviado a {sala_pantalla}")
-            
-            # Forma 3: Emitir a TODOS los clientes conectados
-            print(f"[CRON] 📢 Emitiendo a TODOS los clientes...")
-            socketio.emit('limpiar_historial', {
-                'motivo': 'limpieza_diaria',
-                'tipo': 'todos',
-                'timestamp': ahora
-            })
 
             # ── NOTIFICAR A RECEPCIÓN ──────────────────────────────────────────
-            print(f"[CRON] 📢 Emitiendo 'limpiar_historial_diario' a sala 'recepcion'...")
+            print(f"[SCHEDULER] 📢 Emitiendo a sala 'recepcion'...")
             socketio.emit('limpiar_historial_diario', {
                 'motivo': 'limpieza_diaria',
                 'tipo': 'recepcion',
@@ -144,34 +135,50 @@ def limpiar_pacientes_diario():
             }, room='recepcion')
 
             # ── NOTIFICAR A ADMIN ──────────────────────────────────────────────
-            print(f"[CRON] 📢 Emitiendo 'limpieza_completada' a sala 'admin'...")
+            print(f"[SCHEDULER] 📢 Emitiendo a sala 'admin'...")
             socketio.emit('limpieza_completada', {
                 'timestamp': ahora,
                 'turnos_eliminados': total_turnos,
                 'pacientes_eliminados': total_pacientes
             }, room='admin')
 
-            print(f"[CRON] ✅ Limpieza diaria completada")
+            print(f"[SCHEDULER] ✅ Limpieza diaria completada")
 
         except Exception as e:
             db.session.rollback()
-            print(f"[CRON] ❌ Error en limpieza diaria: {str(e)}")
+            print(f"[SCHEDULER] ❌ Error en limpieza diaria: {str(e)}")
 
-
-# Scheduler — usa gevent-compatible background scheduler
-scheduler = BackgroundScheduler()
 scheduler.add_job(
     func    = limpiar_pacientes_diario,
-    trigger = CronTrigger(hour=9, minute=35, second=0),
+    trigger = CronTrigger(hour=10, minute=0, second=0),  # 00:00 UTC
     id      = 'limpieza_diaria',
     name    = 'Limpiar pacientes a medianoche',
     replace_existing = True
 )
-scheduler.start()
 
-# Apagar el scheduler limpiamente al cerrar la app
-atexit.register(lambda: scheduler.shutdown(wait=False))
-print(f"[CRON] ✅ Scheduler activo — limpieza programada a las 00:00")
+def start_scheduler():
+    """Inicia el scheduler"""
+    try:
+        scheduler.start()
+        print("[SCHEDULER] ✅ APScheduler iniciado correctamente")
+        print(f"[SCHEDULER] 📅 Job programado: limpieza a las 00:00 UTC")
+        print(f"[SCHEDULER] 🔄 Scheduler en ejecución...")
+    except Exception as e:
+        print(f"[SCHEDULER] ❌ Error al iniciar scheduler: {e}")
+        sys.exit(1)
+
+def shutdown_scheduler(signum=None, frame=None):
+    """Apaga el scheduler limpiamente"""
+    if scheduler.running:
+        print(f"\n[SCHEDULER] 🛑 Apagando scheduler...")
+        scheduler.shutdown(wait=False)
+        print(f"[SCHEDULER] ✅ Scheduler apagado")
+        sys.exit(0)
+
+# Registrar handlers para señales
+atexit.register(shutdown_scheduler)
+signal.signal(signal.SIGTERM, shutdown_scheduler)
+signal.signal(signal.SIGINT, shutdown_scheduler)
 
 
 def pagina_protegida(*roles):
@@ -1737,7 +1744,7 @@ def resetear_pantalla_delayed(device_fp):
     Solo se ejecuta si NO hubo reconexión en ese tiempo.
     Usa flag para evitar ejecuciones duplicadas en gevent.
     """
-    import time
+    
     time.sleep(5)
     
     # ← VERIFICAR si este timer debe ejecutarse
@@ -2114,7 +2121,11 @@ if __name__ == '__main__':
     print("   recepcion / recep123")
     print("=" * 60 + "\n")
 
+    start_scheduler()
     try:
-        socketio.run(app, host='0.0.0.0', port=port, debug=debug, allow_unsafe_werkzeug=True)
+        while True:
+            socketio.run(app, host='0.0.0.0', port=port, debug=debug, allow_unsafe_werkzeug=True)
+            time.sleep(60)
     except KeyboardInterrupt:
         print("\n\n⛔ Servidor detenido por el usuario")
+        shutdown_scheduler()
