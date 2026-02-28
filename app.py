@@ -149,7 +149,7 @@ def limpiar_pacientes_diario():
 
 scheduler.add_job(
     func    = limpiar_pacientes_diario,
-    trigger = CronTrigger(hour=10, minute=35, second=0),  # 00:00 UTC
+    trigger = CronTrigger(hour=10, minute=51, second=0),  # 00:00 UTC
     id      = 'limpieza_diaria',
     name    = 'Limpiar pacientes a medianoche',
     replace_existing = True
