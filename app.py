@@ -149,7 +149,7 @@ def limpiar_pacientes_diario():
 
 scheduler.add_job(
     func    = limpiar_pacientes_diario,
-    trigger = CronTrigger(hour=10, minute=51, second=0),  # 00:00 UTC
+    trigger = CronTrigger(hour=11, minute=15, second=0),  # 00:00 UTC
     id      = 'limpieza_diaria',
     name    = 'Limpiar pacientes a medianoche',
     replace_existing = True
@@ -164,16 +164,14 @@ def start_scheduler():
         print(f"[SCHEDULER] 🔄 Scheduler en ejecución...")
     except Exception as e:
         print(f"[SCHEDULER] ❌ Error al iniciar scheduler: {e}")
-        sys.exit(1)
-
+        
 def shutdown_scheduler(signum=None, frame=None):
     """Apaga el scheduler limpiamente"""
     if scheduler.running:
         print(f"\n[SCHEDULER] 🛑 Apagando scheduler...")
         scheduler.shutdown(wait=False)
         print(f"[SCHEDULER] ✅ Scheduler apagado")
-        sys.exit(0)
-
+        
 # Registrar handlers para señales
 atexit.register(shutdown_scheduler)
 signal.signal(signal.SIGTERM, shutdown_scheduler)
