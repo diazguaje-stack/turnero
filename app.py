@@ -407,8 +407,8 @@ def recepcion():
 
 @app.route('/screen')
 def screen():
-    return render_template('screen.html')
-
+    numero_recepcion = request.args.get('recepcion', '1')
+    return render_template('screen.html', numero_recepcion=numero_recepcion)
 
 @app.route('/api/tts', methods=['POST'])
 def generar_tts():
@@ -1748,6 +1748,58 @@ def on_join(data):
             print(f"[WS] ⚠️ Screen {request.sid} sin pantalla aún")
 
     emit('joined', {'room': room, 'status': 'ok'})
+
+@socketio.on('pedir_numero_recepcion')
+def on_pedir_numero_recepcion():
+    """
+    Screen solicita el número de recepción asignado.
+    Se busca la pantalla vinculada a través del device_id guardado en el sid.
+    
+    Flow:
+    1. screen_turnos.js emite: socket.emit('pedir_numero_recepcion')
+    2. app.py recibe en este handler
+    3. app.py busca la pantalla del socket actual
+    4. app.py emite de vuelta: 'numero_recepcion' con el número
+    5. screen_turnos.js recibe en socket.on('numero_recepcion', ...)
+    6. miNumeroRecepcion queda asignado ✅
+    """
+    device_fp = _screen_sids.get(request.sid)
+    
+    if not device_fp:
+        print(f"[WS] ⚠️ pedir_numero_recepcion: device_fp no encontrado para sid {request.sid}")
+        emit('numero_recepcion', {'numRecepcion': None})
+        return
+    
+    with app.app_context():
+        # Buscar la pantalla por device_id
+        pantalla = Pantalla.query.filter_by(device_id=device_fp).first()
+        
+        if not pantalla:
+            print(f"[WS] ⚠️ pedir_numero_recepcion: pantalla no encontrada para device_id {device_fp[:20]}...")
+            emit('numero_recepcion', {'numRecepcion': None})
+            return
+        
+        # Si la pantalla está vinculada y tiene recepcionista, obtener su número
+        if pantalla.estado == 'vinculada' and pantalla.recepcionista_id:
+            recepcionista = db.session.get(Usuario, pantalla.recepcionista_id)
+            if recepcionista:
+                # ← Enviar el nombre del recepcionista como número de recepción
+                num_recepcion = recepcionista.nombre_completo or recepcionista.usuario
+                print(f"[WS] ✅ Emitiendo numero_recepcion: {num_recepcion}")
+                emit('numero_recepcion', {
+                    'numRecepcion': num_recepcion, 
+                    'numero_recepcion': num_recepcion
+                })
+                return
+        
+        # Fallback: usar el número de pantalla
+        num_recepcion = str(pantalla.numero)
+        print(f"[WS] ✅ Emitiendo numero_recepcion (fallback): {num_recepcion}")
+        emit('numero_recepcion', {
+            'numRecepcion': num_recepcion, 
+            'numero_recepcion': num_recepcion
+        })
+
 
 
 @socketio.on('join_screen_propia')

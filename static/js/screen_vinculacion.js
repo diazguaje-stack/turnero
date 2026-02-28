@@ -84,7 +84,19 @@ function conectarSocket() {
         console.log('[VIN] ✅ Unido a sala:', data.room);
         _socketListo = true;
         // screen_turnos.js ya puede obtener el socket y registrar sus listeners
+        consultarStatus().then(sd => {
+            if (sd?.status === 'vinculada' && sd.pantalla) {
+                pantallaData = sd.pantalla;
+                actualizarRecepcionista(pantallaData);
+                actualizarTimestamp();
+                mostrarVinculada(pantallaData);
+                console.log('[VIN] ✅ Estado restaurado después de reconexión');
+            }
+        }).catch(err => {
+                console.error('[VIN] Error restaurando estado:', err);
+        });
     });
+
 
     _socket.on('disconnect', (reason) => {
         console.log('[VIN] Socket desconectado:', reason);

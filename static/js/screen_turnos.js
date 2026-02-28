@@ -658,9 +658,9 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('[TURNOS] ═══════════════════════════════════════════════════════');
     console.log('[TURNOS] INICIALIZANDO MÓDULO DE TURNOS');
     console.log('[TURNOS] ═══════════════════════════════════════════════════════');
-    console.log('[TURNOS] Esperando socket...');
+    console.log('[TURNOS] Esperando socket y número de recepción...');
     
-    // Esperar a que el socket esté disponible
+    // Esperar a que el socket esté disponible Y miNumeroRecepcion esté asignado
     esperarSocketYRegistrar();
 
     // Desbloquear audio en primer tap/click
@@ -676,9 +676,69 @@ function esperarSocketYRegistrar() {
     if (socketInstance) {
         console.log('[TURNOS] ✅ Socket obtenido');
         registrarListeners(socketInstance);
+        
+        // ← NUEVO: Esperar a que miNumeroRecepcion sea asignado por el servidor
+        esperarNumeroRecepcion();
     } else {
         console.log('[TURNOS] ⏳ Socket no disponible aún, reintentando en 100ms...');
         setTimeout(esperarSocketYRegistrar, 100);
+    }
+}
+
+/**
+ * Espera a que el servidor asigne miNumeroRecepcion (via evento 'numero_recepcion')
+ * Una vez asignado, restaura el turno anterior si existe.
+ */
+function esperarNumeroRecepcion() {
+    const maxIntentosEspera = 50; // 5 segundos máximo (50 * 100ms)
+    let intentos = 0;
+    
+    const checkNumero = setInterval(() => {
+        intentos++;
+        
+        if (miNumeroRecepcion) {
+            console.log(`[TURNOS] ✅ miNumeroRecepcion asignado: ${miNumeroRecepcion}`);
+            clearInterval(checkNumero);
+            
+            // ← AHORA sí, intentar restaurar el turno anterior
+            intentarRestaurarTurnoAnterior();
+            return;
+        }
+        
+        if (intentos >= maxIntentosEspera) {
+            console.warn('[TURNOS] ⚠️ Timeout esperando miNumeroRecepcion');
+            clearInterval(checkNumero);
+            return;
+        }
+    }, 100);
+}
+
+/**
+ * Intenta restaurar el turno anterior del último llamado guardado en localStorage
+ */
+function intentarRestaurarTurnoAnterior() {
+    if (!miNumeroRecepcion) {
+        console.log('[TURNOS] ⚠️ No se puede restaurar — miNumeroRecepcion es null');
+        return;
+    }
+    
+    const guardado = recuperarUltimoLlamadoDeRecepcion(miNumeroRecepcion);
+    
+    if (guardado) {
+        console.log('[TURNOS] ↩️ Restaurando turno anterior:', guardado);
+        
+        const linkedState = document.getElementById('linkedState');
+        const estaVinculada = linkedState && linkedState.style.display !== 'none';
+        
+        if (estaVinculada) {
+            // ← Restaurar SIN reproducir audio (false)
+            mostrarTurnoLlamado(guardado.codigo, guardado.nombre, null, false);
+            console.log('[TURNOS] ✅ Turno anterior restaurado sin audio');
+        } else {
+            console.log('[TURNOS] ℹ️ Pantalla no vinculada — turno guardado pero no mostrado');
+        }
+    } else {
+        console.log('[TURNOS] ℹ️ Sin turno anterior guardado');
     }
 }
 
