@@ -8,7 +8,6 @@ import os, hashlib
 from gtts import gTTS
 import jwt
 from models import db, Usuario, init_db, Pantalla, Paciente, Turno, uuid
-from app import app, db, Turno, Paciente, Pantalla, socketio
 from config import config
 from flask_socketio import SocketIO, emit, join_room
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -150,7 +149,7 @@ def limpiar_pacientes_diario():
 
 scheduler.add_job(
     func    = limpiar_pacientes_diario,
-    trigger = CronTrigger(hour=10, minute=0, second=0),  # 00:00 UTC
+    trigger = CronTrigger(hour=10, minute=35, second=0),  # 00:00 UTC
     id      = 'limpieza_diaria',
     name    = 'Limpiar pacientes a medianoche',
     replace_existing = True
@@ -2105,6 +2104,8 @@ def on_limpiar_historial(data=None):
 
 init_db(app)
 
+start_scheduler()
+
 if __name__ == '__main__':
     port  = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
@@ -2121,7 +2122,6 @@ if __name__ == '__main__':
     print("   recepcion / recep123")
     print("=" * 60 + "\n")
 
-    start_scheduler()
     try:
         while True:
             socketio.run(app, host='0.0.0.0', port=port, debug=debug, allow_unsafe_werkzeug=True)
