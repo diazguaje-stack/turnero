@@ -162,7 +162,7 @@ def limpiar_pacientes_diario():
 scheduler = BackgroundScheduler()
 scheduler.add_job(
     func    = limpiar_pacientes_diario,
-    trigger = CronTrigger(hour=0, minute=0, second=0),
+    trigger = CronTrigger(hour=9, minute=35, second=0),
     id      = 'limpieza_diaria',
     name    = 'Limpiar pacientes a medianoche',
     replace_existing = True
@@ -833,6 +833,124 @@ def get_pantallas_recepcion():
         return jsonify({'success': True, 'pantallas': [p.to_dict() for p in pantallas]}), 200
     except Exception as e:
         return jsonify({'success': False, 'message': 'Error al obtener pantallas'}), 500
+
+@app.route('/api/recepcion/limpiar-historial', methods=['POST'])
+@rol_requerido('recepcion', 'admin')
+def limpiar_historial_recepcion():
+    """
+    Limpia el historial de la recepción actual (del usuario autenticado).
+    
+    VALIDACIONES DE SEGURIDAD:
+    1. Usuario debe estar autenticado (ya hecho por @rol_requerido)
+    2. Usuario debe ser recepcionista o admin
+    3. Recepcionista SOLO puede limpiar su propio historial
+    4. Admin puede limpiar cualquier historial (si proporciona recepcionista_id)
+    """
+    try:
+        data = request.get_json() or {}
+        usuario_autenticado = request.current_user
+        rol_usuario = usuario_autenticado.get('role', 'recepcion').lower()
+        usuario_id = usuario_autenticado.get('user_id')
+        
+        print(f"[LIMPIAR] 📢 Solicitud de limpiar historial")
+        print(f"[LIMPIAR] Usuario autenticado: {usuario_autenticado.get('usuario')} (rol: {rol_usuario})")
+        
+        # ── OBTENER EL USUARIO AUTENTICADO ──────────────────────────────────────
+        usuario = db.session.get(Usuario, usuario_id)
+        if not usuario:
+            return jsonify({
+                'success': False,
+                'message': 'Usuario no encontrado'
+            }), 404
+        
+        # ── CASO 1: RECEPCIONISTA (SOLO su propio historial) ────────────────────
+        if rol_usuario == 'recepcion':
+            print(f"[LIMPIAR] 🔒 Modo RECEPCIONISTA - SOLO puede limpiar su historial")
+            
+            # Recepcionista SOLO puede limpiar historial de pantallas SUYAS
+            pantallas_suyas = Pantalla.query.filter_by(
+                recepcionista_id=usuario_id,
+                estado='vinculada'
+            ).all()
+            
+            if not pantallas_suyas:
+                print(f"[LIMPIAR] ⚠️ Recepcionista {usuario.nombre_completo} no tiene pantallas vinculadas")
+                return jsonify({
+                    'success': True,
+                    'message': 'No tienes pantallas vinculadas',
+                    'pantallas_limpiadas': 0
+                }), 200
+            
+            # Limpiar historial SOLO de sus pantallas
+            for pantalla in pantallas_suyas:
+                sala_pantalla = f'screen_{pantalla.id}'
+                socketio.emit('limpiar_historial', {
+                    'motivo': 'limpiar_manual',
+                    'numRecepcion': usuario.nombre_completo,
+                    'timestamp': datetime.utcnow().isoformat()
+                }, room=sala_pantalla)
+                print(f"[LIMPIAR] ✅ Historial limpiado - Pantalla {pantalla.numero} (Recepción: {usuario.nombre_completo})")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Historial limpiado para {len(pantallas_suyas)} pantalla(s)',
+                'pantallas_limpiadas': len(pantallas_suyas)
+            }), 200
+        
+        # ── CASO 2: ADMIN (puede limpiar cualquier recepcionista) ────────────────
+        elif rol_usuario == 'admin':
+            print(f"[LIMPIAR] 👨‍💼 Modo ADMIN - Puede limpiar cualquier recepción")
+            
+            recepcionista_id = data.get('recepcionista_id')
+            
+            if not recepcionista_id:
+                return jsonify({
+                    'success': False,
+                    'message': 'Admin debe proporcionar recepcionista_id'
+                }), 400
+            
+            # Validar que el recepcionista existe
+            recepcionista = db.session.get(Usuario, recepcionista_id)
+            if not recepcionista or recepcionista.rol != 'recepcion':
+                return jsonify({
+                    'success': False,
+                    'message': 'Recepcionista no válido'
+                }), 404
+            
+            # Limpiar pantallas del recepcionista
+            pantallas_recepcionista = Pantalla.query.filter_by(
+                recepcionista_id=recepcionista_id,
+                estado='vinculada'
+            ).all()
+            
+            for pantalla in pantallas_recepcionista:
+                sala_pantalla = f'screen_{pantalla.id}'
+                socketio.emit('limpiar_historial', {
+                    'motivo': 'limpiar_manual',
+                    'numRecepcion': recepcionista.nombre_completo,
+                    'timestamp': datetime.utcnow().isoformat()
+                }, room=sala_pantalla)
+                print(f"[LIMPIAR] ✅ Historial limpiado - Pantalla {pantalla.numero} (Recepción: {recepcionista.nombre_completo})")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Historial de {recepcionista.nombre_completo} limpiado ({len(pantallas_recepcionista)} pantalla(s))',
+                'pantallas_limpiadas': len(pantallas_recepcionista)
+            }), 200
+        
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Rol no autorizado para limpiar historial'
+            }), 403
+
+    except Exception as e:
+        print(f"[LIMPIAR] ❌ Error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error al limpiar historial: {str(e)}'
+        }), 500
+
 
 
 @app.route('/api/pantallas/<pantalla_id>/vincular', methods=['POST'])
@@ -1872,37 +1990,49 @@ def on_llamar_paciente(data):
         }, room=request.sid)
         return
 
-    # ── TODO OK: Construir payload y sala destino ──────────────────────────────
+    # ── OBTENER NOMBRE DEL RECEPCIONISTA ──────────────────────────────────────
+    recepcionista = db.session.get(Usuario, recepcionista_id)
+    nombre_recepcionista = recepcionista.nombre_completo if recepcionista else 'Sin asignar'
+    
+    print(f"[WS] 📋 Recepcionista: {nombre_recepcionista}")
+
+    # ── CONSTRUIR PAYLOAD CON NOMBRE DEL RECEPCIONISTA ──────────────────────────
+    # ← IMPORTANTE: Incluir el nombre del recepcionista para que screen_turnos.js
+    #   pueda filtrar y SOLO mostrar llamados de su recepción
     payload = {
-        'codigo':     codigo,
-        'nombre':     nombre,
-        'pacienteId': paciente_id,
-        'recepcion':  recepcion
+        'codigo':                 codigo,
+        'nombre':                 nombre,
+        'pacienteId':             paciente_id,
+        'recepcion':              nombre_recepcionista,  # ← CAMBIO: Enviar nombre completo
+        'recepcionista_id':       recepcionista_id,       # ← Agregar para referencia
+        'recepcionista_nombre':   nombre_recepcionista    # ← Agregar también aquí
     }
 
     sala_destino = f'screen_{pantalla.id}'
 
     print(f"[WS] ✅ Emitiendo a {sala_destino} (Pantalla {pantalla.numero})")
+    print(f"[WS]    Recepcionista: {nombre_recepcionista}")
     
     # ── EMITIR A LA PANTALLA VINCULADA ────────────────────────────────────────
     socketio.emit('llamar_paciente', payload, to=sala_destino)
 
     # ── GUARDAR último llamado ────────────────────────────────────────────────
     _ultimo_llamado = {
-        'codigo':        codigo,
-        'nombre':        nombre,
-        'pacienteId':    paciente_id,
-        'recepcion':     recepcion,
-        'recepcionistaId': recepcionista_id,
-        'pantalla_id':   str(pantalla.id),
-        'sala_destino':  sala_destino,
-        'timestamp':     datetime.utcnow().isoformat()
+        'codigo':                 codigo,
+        'nombre':                 nombre,
+        'pacienteId':             paciente_id,
+        'recepcion':              nombre_recepcionista,
+        'recepcionista_id':       recepcionista_id,
+        'recepcionista_nombre':   nombre_recepcionista,
+        'pantalla_id':            str(pantalla.id),
+        'sala_destino':           sala_destino,
+        'timestamp':              datetime.utcnow().isoformat()
     }
 
     # ── REENVIAR A RECEPCIÓN PARA HISTORIAL ───────────────────────────────────
-    # (Enviar al sid actual del recepcionista, NO a toda la sala)
     print(f"[WS] Emitiendo historial al recepcionista: {request.sid}")
     socketio.emit('llamar_paciente', payload, room=request.sid)
+
 
 @socketio.on('pedir_ultimo_llamado')
 def on_pedir_ultimo_llamado():
