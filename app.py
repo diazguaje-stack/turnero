@@ -13,7 +13,6 @@ from flask_socketio import SocketIO, emit, join_room
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from flask_migrate import Migrate
-import atexit
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError 
 import uuid 
@@ -149,7 +148,7 @@ def limpiar_pacientes_diario():
 
 scheduler.add_job(
     func    = limpiar_pacientes_diario,
-    trigger = CronTrigger(hour=11, minute=15, second=0),  # 00:00 UTC
+    trigger = CronTrigger(hour=11, minute=30, second=0),  # 00:00 UTC
     id      = 'limpieza_diaria',
     name    = 'Limpiar pacientes a medianoche',
     replace_existing = True
@@ -173,7 +172,6 @@ def shutdown_scheduler(signum=None, frame=None):
         print(f"[SCHEDULER] ✅ Scheduler apagado")
         
 # Registrar handlers para señales
-atexit.register(shutdown_scheduler)
 signal.signal(signal.SIGTERM, shutdown_scheduler)
 signal.signal(signal.SIGINT, shutdown_scheduler)
 
