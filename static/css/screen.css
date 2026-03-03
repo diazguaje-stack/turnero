@@ -467,3 +467,215 @@ body::after {
     .panel-left::after { display: none; }
     .panel-right { padding: 20px 16px; }
 }
+
+/* ============================================================
+   screen_multipanel.css
+   Agrega estos estilos a tu screen.html o archivo CSS existente.
+   Soporta 1, 2, 3 y 4 paneles con grid responsivo.
+   ============================================================ */
+
+/* ── Contenedor principal ─────────────────────────────────── */
+.multi-panel-grid {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    gap: 3px;
+    background: #0a0a0f;
+}
+
+/* ── Layouts según cantidad de paneles ───────────────────── */
+.layout-1 {
+    grid-template-columns: 1fr;
+    grid-template-rows:    1fr;
+}
+
+.layout-2 {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows:    1fr;
+}
+
+.layout-3 {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows:    1fr 1fr;
+}
+/* El tercer panel ocupa toda la fila inferior */
+.layout-3 .recepcion-panel:nth-child(3) {
+    grid-column: 1 / -1;
+}
+
+.layout-4 {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows:    1fr 1fr;
+}
+
+/* ── Panel individual ─────────────────────────────────────── */
+.recepcion-panel {
+    position: relative;
+    background: #0f0f1a;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    transition: border-color 0.3s, background 0.3s;
+    padding: 16px;
+}
+
+.recepcion-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.05) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+/* Resalte cuando hay un llamado nuevo */
+.recepcion-panel.panel-activo {
+    border-color: rgba(250, 204, 21, 0.6);
+    background: #13131f;
+    animation: panelFlash 0.4s ease;
+}
+
+@keyframes panelFlash {
+    0%   { background: rgba(250, 204, 21, 0.12); }
+    100% { background: #13131f; }
+}
+
+/* ── Header del panel (nombre de recepción) ──────────────── */
+.panel-header {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.panel-numero {
+    background: #6366f1;
+    color: #fff;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.panel-nombre-recepcion {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.35);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+}
+
+/* ── Estado idle ─────────────────────────────────────────── */
+.panel-idle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    opacity: 0.25;
+}
+
+.panel-idle-icon {
+    font-size: 2.5rem;
+    color: #6366f1;
+}
+
+.panel-idle-text {
+    font-size: 13px;
+    color: #aaa;
+    letter-spacing: 0.1em;
+}
+
+/* ── Estado turno activo ─────────────────────────────────── */
+.panel-turno {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    animation: fadeInPanel 0.3s ease;
+}
+
+@keyframes fadeInPanel {
+    from { opacity: 0; transform: scale(0.95); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+.panel-turno-label {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: rgba(255, 255, 255, 0.3);
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+/* Código del turno — tamaño adaptado al layout */
+.panel-codigo {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-weight: 700;
+    color: #f0f4ff;
+    letter-spacing: 4px;
+    line-height: 1;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+/* Tamaños según número de paneles */
+.layout-1 .panel-codigo { font-size: clamp(3rem, 10vw, 8rem); }
+.layout-2 .panel-codigo { font-size: clamp(2.5rem, 6vw,  5rem); }
+.layout-3 .panel-codigo { font-size: clamp(2rem,  5vw,  4rem); }
+.layout-4 .panel-codigo { font-size: clamp(1.8rem, 4vw,  3.5rem); }
+
+.panel-codigo.llamando {
+    color: #facc15;
+    text-shadow: 0 0 30px rgba(250, 204, 21, 0.5),
+                 0 0 60px rgba(250, 204, 21, 0.2);
+    animation: pulsarCodigo 1.5s ease-in-out infinite;
+}
+
+@keyframes pulsarCodigo {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.75; }
+}
+
+/* Nombre del paciente */
+.panel-nombre-paciente {
+    font-size: clamp(0.9rem, 2vw, 1.4rem);
+    color: rgba(240, 244, 255, 0.55);
+    letter-spacing: 0.05em;
+    text-align: center;
+    max-width: 90%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Divisor entre paneles ───────────────────────────────── */
+.multi-panel-grid > .recepcion-panel + .recepcion-panel {
+    border-left: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* ── Ajuste para pantallas muy pequeñas ─────────────────── */
+@media (max-width: 768px) {
+    .layout-3,
+    .layout-4 {
+        grid-template-columns: 1fr;
+        grid-template-rows: repeat(auto, 1fr);
+    }
+    .layout-3 .recepcion-panel:nth-child(3) {
+        grid-column: 1;
+    }
+}

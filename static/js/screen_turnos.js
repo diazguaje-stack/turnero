@@ -1,80 +1,51 @@
 // ============================================================
-// screen_turnos.js (HISTORIAL INDEPENDIENTE POR RECEPCIÓN)
-// - Turno actual → panel izquierdo
-// - Historial de llamados → panel derecho (SOLO de ESTA recepción)
-// - Text-to-Speech: via servidor gTTS (MP3)
-// - SIN DUPLICACIÓN DE LISTENERS
+// screen_turnos.js  v2  — MULTI-PANEL (hasta 4 recepciones)
+//
+// Arquitectura:
+//   - Al recibir 'numero_recepcion' con lista de recepcionistas,
+//     se construyen dinámicamente N paneles (1-4).
+//   - Cada panel tiene su propio estado (código, nombre, animación).
+//   - Los llamados 'llamar_paciente' actualizan el panel correcto
+//     usando data.panel_orden o buscando por recepcionista_nombre.
+//   - Cola de audio: los anuncios se procesan uno tras otro.
+//   - SIN historial en screen (solo en el dashboard de cada recepción).
 // ============================================================
 
-// ========== CONSTANTES ==========
-const STORAGE_BASE_KEY = 'screen_historial_'; // Base para keys con número de recepción
-
 // ========== ESTADO GLOBAL ==========
-let miNumeroRecepcion = null;   // ← CRÍTICO: Número de recepción de esta pantalla
-let miHistorial       = [];     // ← Historial SOLO de esta recepción
-let socket            = null;
-let _audioEl          = null;
-let _audioDesbloqueado = false;
+let miRecepcionistas      = [];
+let socket                = null;
+let _audioEl              = null;
+let _audioDesbloqueado    = false;
 let _listenersRegistrados = false;
+let _colaAudio            = [];
+let _reproduciendo        = false;
+let _panelesListos        = false;
+let _llamadosPendientes   = [];
+let panelState            = [];
 
-// =========================
-// PERSISTENCIA LOCAL (POR RECEPCIÓN)
-// =========================
+// ========== PERSISTENCIA ==========
 
-/**
- * Obtiene la clave de storage para el historial de una recepción específica
- * Ej: "screen_historial_1", "screen_historial_2"
- */
-function getStorageKeyParaRecepcion(numRecepcion) {
-    return `${STORAGE_BASE_KEY}${numRecepcion}`;
-}
-
-function guardarHistorialDeRecepcion(numRecepcion, historial) {
+function guardarEstadoPaneles() {
     try {
-        const key = getStorageKeyParaRecepcion(numRecepcion);
-        localStorage.setItem(key, JSON.stringify(historial));
-        console.log(`[HIST] 💾 Historial de recepción ${numRecepcion} guardado: ${historial.length} items`);
-    } catch (e) {
-        console.warn(`[HIST] ⚠️ No se pudo guardar historial de recepción ${numRecepcion}:`, e);
-    }
+        localStorage.setItem('screen_paneles_v2', JSON.stringify(panelState));
+    } catch (e) {}
 }
 
-function recuperarHistorialDeRecepcion(numRecepcion) {
+function recuperarEstadoPaneles() {
     try {
-        const key = getStorageKeyParaRecepcion(numRecepcion);
-        const data = localStorage.getItem(key);
-        if (data) {
-            const historial = JSON.parse(data);
-            console.log(`[HIST] ✅ Historial de recepción ${numRecepcion} recuperado: ${historial.length} items`);
-            return historial;
-        }
-    } catch (e) {
-        console.warn(`[HIST] ⚠️ Error al recuperar historial de recepción ${numRecepcion}:`, e);
-    }
-    return [];
+        const d = localStorage.getItem('screen_paneles_v2');
+        return d ? JSON.parse(d) : [];
+    } catch { return []; }
 }
 
-function guardarUltimoLlamadoDeRecepcion(numRecepcion, codigo, nombre) {
-    try {
-        const key = `screen_ultimo_llamado_${numRecepcion}`;
-        localStorage.setItem(key, JSON.stringify({ codigo, nombre, timestamp: Date.now() }));
-        console.log(`[HIST] 💾 Último llamado de recepción ${numRecepcion}: ${codigo}`);
-    } catch (e) {
-        console.warn(`[HIST] ⚠️ No se pudo guardar último llamado:`, e);
-    }
+function guardarUltimoLlamado(orden, codigo, nombre) {
+    try { localStorage.setItem(`screen_ultimo_${orden}`, JSON.stringify({ codigo, nombre, ts: Date.now() })); } catch(e) {}
 }
 
-function recuperarUltimoLlamadoDeRecepcion(numRecepcion) {
-    try {
-        const key = `screen_ultimo_llamado_${numRecepcion}`;
-        const data = localStorage.getItem(key);
-        return data ? JSON.parse(data) : null;
-    } catch { return null; }
+function recuperarUltimoLlamado(orden) {
+    try { const d = localStorage.getItem(`screen_ultimo_${orden}`); return d ? JSON.parse(d) : null; } catch { return null; }
 }
-
-// =========================
-// TEXT-TO-SPEECH
-// =========================
+// ========== AUDIO ==========
 
 function _getAudio() {
     if (!_audioEl) {
@@ -87,685 +58,274 @@ function _getAudio() {
 function _desbloquearAudio() {
     if (_audioDesbloqueado) return;
     _audioDesbloqueado = true;
-    console.log('[TTS] 🔓 Audio desbloqueado por interacción del usuario');
-
     const audio = _getAudio();
     audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
     audio.play().catch(() => {});
-
-    if (window._audioPendiente) {
-        console.log('[TTS] 🎬 Reproduciendo audio pendiente');
-        window._audioPendiente.play().catch(() => {});
-        window._audioPendiente = null;
-    }
 }
 
 function formatearCodigoParaVoz(codigo) {
     if (!codigo) return '';
-    return codigo
-        .split(/[-_]/)
-        .map(parte => {
-            if (/^[A-Za-z]+$/.test(parte)) return parte.split('').join(' ');
-            if (/^\d+$/.test(parte))        return parseInt(parte, 10).toString();
-            return parte;
-        })
-        .join(', ');
+    return codigo.split(/[-_]/).map(p => {
+        if (/^[A-Za-z]+$/.test(p)) return p.split('').join(' ');
+        if (/^\d+$/.test(p))       return parseInt(p, 10).toString();
+        return p;
+    }).join(', ');
 }
 
-async function anunciarTurno(nombre, codigo, recepcion) {
+// Encola un anuncio completo (texto ya formateado)
+function encolarAnuncio(nombre, codigo, recepcion) {
     const codigoHablado = formatearCodigoParaVoz(codigo);
-    
-    console.log('[TTS] ═══════════════════════════════════════════════════════');
-    console.log('[TTS] INICIANDO ANUNCIO COMPLETO');
-    console.log('[TTS] ═══════════════════════════════════════════════════════');
-    
-    // 1️⃣ PRIMER AUDIO: Paciente + Código
     let texto1 = '';
     if (nombre && nombre.trim()) texto1 += `Paciente ${nombre}. `;
     texto1 += `Código ${codigoHablado}.`;
-    
-    console.log('[TTS] 📢 PARTE 1/2: PACIENTE + CÓDIGO');
-    console.log('[TTS] Texto:', texto1);
-    const t1 = Date.now();
-    await reproducirAudio(texto1);
-    const t1_elapsed = Date.now() - t1;
-    console.log(`[TTS] ✅ PARTE 1 finalizada (${t1_elapsed}ms)`);
-    
-    // 2️⃣ PAUSA ESTRATÉGICA
-    console.log('[TTS] ⏸️ PAUSA de 800ms');
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // 3️⃣ SEGUNDO AUDIO: Recepción
-    console.log('[TTS] 📢 PARTE 2/2: INSTRUCCIÓN DE RECEPCIÓN');
-    if (recepcion) {
-        const numRecepcion = String(recepcion).replace(/recepci[oó]n\s*/i, '').trim();
-        if (numRecepcion) {
-            const texto2 = `Diríjase a recepción ${numRecepcion}.`;
-            console.log('[TTS] Texto:', texto2);
-            const t2 = Date.now();
-            await reproducirAudio(texto2);
-            const t2_elapsed = Date.now() - t2;
-            console.log(`[TTS] ✅ PARTE 2 finalizada (${t2_elapsed}ms)`);
-        } else {
-            console.warn('[TTS] ⚠️ recepcion sin número');
-        }
-    } else {
-        console.warn('[TTS] ⚠️ recepcion es NULL - omitiendo segunda parte');
+
+    const numRecepcion = String(recepcion || '').replace(/recepci[oó]n\s*/i, '').trim();
+    const texto2 = numRecepcion ? `Diríjase a recepción ${numRecepcion}.` : null;
+
+    _colaAudio.push({ texto: texto1 });
+    if (texto2) _colaAudio.push({ texto: texto2, pausa: 800 });
+
+    if (!_reproduciendo) _procesarColaAudio();
+}
+
+async function _procesarColaAudio() {
+    if (_colaAudio.length === 0) { _reproduciendo = false; return; }
+    _reproduciendo = true;
+
+    const item = _colaAudio.shift();
+
+    if (item.pausa) {
+        await new Promise(r => setTimeout(r, item.pausa));
     }
-    
-    console.log('[TTS] ═══════════════════════════════════════════════════════');
-    console.log('[TTS] ✅ ANUNCIO COMPLETO FINALIZADO');
-    console.log('[TTS] ═══════════════════════════════════════════════════════');
+
+    await reproducirAudio(item.texto);
+    _procesarColaAudio();
 }
 
 async function reproducirAudio(texto) {
-    console.log('[TTS] 🔊 Solicitando audio:', texto);
-    
     try {
-        const res = await fetch('/api/tts', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ texto })
+        const res  = await fetch('/api/tts', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ texto })
         });
         const data = await res.json();
-        
-        if (!data.success) {
-            console.warn('[TTS] ❌ Error del servidor:', data.message);
-            return;
-        }
-        
+        if (!data.success) return;
         const audio = _getAudio();
-        const audioUrl = data.url + '?t=' + Date.now();
-        audio.src = audioUrl;
+        audio.src   = data.url + '?t=' + Date.now();
         audio.volume = 1.0;
-        
-        console.log('[TTS] 📥 URL:', audioUrl);
-        
-        return new Promise((resolve) => {
-            let playStarted = false;
-            let hasEnded = false;
-            let timedOut = false;
-            
-            const timeoutId = setTimeout(() => {
-                timedOut = true;
-                console.warn('[TTS] ⏱️ TIMEOUT: Audio no se reprodujo en 45 segundos');
-                cleanup();
-                resolve();
-            }, 45000);
-            
-            const cleanup = () => {
-                clearTimeout(timeoutId);
-                audio.removeEventListener('loadstart', onLoadStart);
-                audio.removeEventListener('progress', onProgress);
-                audio.removeEventListener('durationchange', onDurationChange);
-                audio.removeEventListener('loadeddata', onLoadedData);
-                audio.removeEventListener('canplay', onCanPlay);
-                audio.removeEventListener('canplaythrough', onCanPlayThrough);
-                audio.removeEventListener('playing', onPlaying);
-                audio.removeEventListener('ended', onEnded);
-                audio.removeEventListener('error', onError);
-                audio.removeEventListener('abort', onAbort);
-            };
-            
-            const onLoadStart = () => console.log('[TTS] 📡 loadstart');
-            const onProgress = () => {
-                if (audio.buffered.length > 0) {
-                    const bufferedEnd = audio.buffered.end(audio.buffered.length - 1);
-                    const duration = audio.duration;
-                    if (duration > 0) {
-                        const percent = (bufferedEnd / duration * 100).toFixed(1);
-                        console.log(`[TTS] 📊 Progress: ${percent}%`);
-                    }
-                }
-            };
-            const onDurationChange = () => console.log('[TTS] ⏱️ durationchange:', audio.duration, 's');
-            const onLoadedData = () => console.log('[TTS] 📦 loadeddata');
-            const onCanPlay = () => console.log('[TTS] ▶️ canplay');
-            
-            const onCanPlayThrough = () => {
-                console.log('[TTS] ✅ canplaythrough - LISTO PARA REPRODUCIR');
-                if (!playStarted && !timedOut) {
-                    playStarted = true;
-                    console.log('[TTS] 🎬 INICIANDO REPRODUCCIÓN');
-                    
-                    const playPromise = audio.play();
-                    if (playPromise) {
-                        playPromise
-                            .then(() => console.log('[TTS] 🔊 REPRODUCCIÓN INICIADA EXITOSAMENTE'))
-                            .catch(err => {
-                                console.warn('[TTS] ⚠️ Autoplay bloqueado:', err.message);
-                                window._audioPendiente = audio;
-                                cleanup();
-                                resolve();
-                            });
-                    }
-                }
-            };
-            
-            const onPlaying = () => console.log('[TTS] ▶️ REPRODUCIÉNDOSE');
-            
-            const onEnded = () => {
-                if (!hasEnded) {
-                    hasEnded = true;
-                    console.log('[TTS] ✅ AUDIO FINALIZADO');
-                    cleanup();
-                    resolve();
-                }
-            };
-            
-            const onError = () => {
-                console.error('[TTS] ❌ ERROR EN AUDIO:', audio.error?.message);
-                cleanup();
-                resolve();
-            };
-            
-            const onAbort = () => {
-                console.warn('[TTS] ⚠️ ABORTADO');
-                cleanup();
-                resolve();
-            };
-            
-            audio.addEventListener('loadstart', onLoadStart);
-            audio.addEventListener('progress', onProgress);
-            audio.addEventListener('durationchange', onDurationChange);
-            audio.addEventListener('loadeddata', onLoadedData);
-            audio.addEventListener('canplay', onCanPlay);
-            audio.addEventListener('canplaythrough', onCanPlayThrough);
-            audio.addEventListener('playing', onPlaying);
-            audio.addEventListener('ended', onEnded);
-            audio.addEventListener('error', onError);
-            audio.addEventListener('abort', onAbort);
-            
-            console.log('[TTS] 🔄 Llamando a audio.load()');
+        return new Promise(resolve => {
+            let done = false;
+            const finish = () => { if (!done) { done = true; resolve(); } };
+            setTimeout(finish, 45000);
+            audio.addEventListener('ended',          finish, { once: true });
+            audio.addEventListener('error',          finish, { once: true });
+            audio.addEventListener('abort',          finish, { once: true });
+            audio.addEventListener('canplaythrough', () => audio.play().catch(finish), { once: true });
             audio.load();
         });
-        
-    } catch (err) {
-        console.error('[TTS] ❌ Error al obtener audio:', err);
+    } catch(e) { console.error('[TTS] Error:', e); }
+}
+
+// ========== CONSTRUCCIÓN DE PANELES ==========
+
+function construirPaneles(recepcionistas) {
+    _panelesListos   = false;
+    miRecepcionistas = recepcionistas;
+    const n          = recepcionistas.length;
+
+    panelState = recepcionistas.map((r, i) => {
+        const g = recuperarUltimoLlamado(i);
+        return { orden: i, recepcionistaId: r.id, recepcionistaNombre: r.nombre_completo,
+                 codigo: g?.codigo || null, nombre: g?.nombre || null };
+    });
+
+    const contenedor = document.getElementById('multiPanelContainer');
+    if (!contenedor) { console.warn('[PANEL] #multiPanelContainer no encontrado'); return; }
+
+    const layoutClass = ['', 'layout-1', 'layout-2', 'layout-3', 'layout-4'][n] || 'layout-4';
+    contenedor.className = `multi-panel-grid ${layoutClass}`;
+    contenedor.innerHTML = recepcionistas.map((r, i) => `
+        <div class="recepcion-panel" id="panel-${i}" data-orden="${i}">
+            <div class="panel-header">
+                <span class="panel-numero">${i + 1}</span>
+                <span class="panel-nombre-recepcion">${r.nombre_completo}</span>
+            </div>
+            <div class="panel-idle" id="panel-idle-${i}">
+                <div class="panel-idle-icon">◇</div>
+                <div class="panel-idle-text">Esperando llamada</div>
+            </div>
+            <div class="panel-turno" id="panel-turno-${i}" style="display:none;">
+                <div class="panel-turno-label">TURNO</div>
+                <div class="panel-codigo" id="panel-codigo-${i}">—</div>
+                <div class="panel-nombre-paciente" id="panel-nombre-${i}"></div>
+            </div>
+        </div>
+    `).join('');
+
+    // Restaurar último llamado (sin audio)
+    panelState.forEach(ps => { if (ps.codigo) _renderTurnoEnPanel(ps.orden, ps.codigo, ps.nombre); });
+
+    // Marcar listos y vaciar cola de pendientes
+    _panelesListos = true;
+    console.log(`[PANEL] ✅ ${n} panel(es) construidos`);
+
+    if (_llamadosPendientes.length > 0) {
+        console.log(`[PANEL] 📬 Procesando ${_llamadosPendientes.length} llamado(s) pendiente(s)`);
+        const pendientes = [..._llamadosPendientes];
+        _llamadosPendientes = [];
+        pendientes.forEach(d => mostrarTurnoEnPanel(d.orden, d.codigo, d.nombre, d.hablar));
     }
 }
 
-// =========================
-// HISTORIAL EN PANEL DERECHO (POR RECEPCIÓN)
-// =========================
+// ========== MOSTRAR TURNO EN PANEL ==========
 
-function agregarAlHistorial(codigo, nombre) {
-    if (!miNumeroRecepcion) {
-        console.warn('[HIST] ⚠️ No se conoce miNumeroRecepcion, no se puede agregar al historial');
-        return;
-    }
-    
-    console.log(`[HIST] Agregando al historial de recepción ${miNumeroRecepcion}: ${codigo} - ${nombre}`);
-    
-    const entrada = {
-        codigo,
-        nombre: nombre || '',
-        hora:   new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
-    };
+function _renderTurnoEnPanel(orden, codigo, nombre) {
+    const idleEl   = document.getElementById(`panel-idle-${orden}`);
+    const turnoEl  = document.getElementById(`panel-turno-${orden}`);
+    const codigoEl = document.getElementById(`panel-codigo-${orden}`);
+    const nombreEl = document.getElementById(`panel-nombre-${orden}`);
+    const panelEl  = document.getElementById(`panel-${orden}`);
+    if (!panelEl || !turnoEl) return false;
 
-    miHistorial.unshift(entrada);
-    
-    if (miHistorial.length > 50) {
-        miHistorial = miHistorial.slice(0, 50);
-        console.log('[HIST] ⚠️ Historial limitado a 50 items');
+    if (idleEl) idleEl.style.display = 'none';
+    turnoEl.style.display = 'flex';
+    if (codigoEl) {
+        codigoEl.textContent = codigo || '—';
+        codigoEl.classList.remove('llamando');
+        requestAnimationFrame(() => setTimeout(() => codigoEl.classList.add('llamando'), 50));
     }
+    if (nombreEl) nombreEl.textContent = nombre || '';
+    panelEl.classList.add('panel-activo');
+    setTimeout(() => panelEl.classList.remove('panel-activo'), 3000);
 
-    guardarHistorialDeRecepcion(miNumeroRecepcion, miHistorial);
-    console.log(`[HIST] ✅ Historial guardado (${miHistorial.length} items)`);
-    
-    renderizarHistorial();
-}
-
-function limpiarHistorialScreen() {
-    console.log(`[HIST] 🧹 Iniciando limpieza COMPLETA de screen (recepción: ${miNumeroRecepcion})...`);
-    
-    // ===== 1. LIMPIAR TURNO ACTUAL =====
-    console.log('[HIST] Limpiando turno actual...');
-    
-    if (miNumeroRecepcion) {
-        try {
-            localStorage.removeItem(`screen_ultimo_llamado_${miNumeroRecepcion}`);
-            console.log(`[HIST] ✅ localStorage limpiado: screen_ultimo_llamado_${miNumeroRecepcion}`);
-        } catch (error) {
-            console.error('[HIST] ❌ Error al limpiar último llamado:', error);
-        }
-    }
-    
-    window._ultimo_llamado = null;
-    window._llamadaPendiente = null;
-    console.log('[HIST] ✅ Variables globales limpiadas');
-    
-    const turnoActivo = document.getElementById('turnoActivo');
-    const idleState = document.getElementById('idleState');
-    
-    if (turnoActivo) {
-        turnoActivo.style.display = 'none';
-        console.log('[HIST] ✅ Panel de turno actual ocultado');
-    }
-    
-    if (idleState) {
-        idleState.classList.remove('hidden');
-        console.log('[HIST] ✅ Panel "Esperando llamada" mostrado');
-    }
-    
-    const turnoCodigo = document.getElementById('turnoCodigo');
-    const turnoNombre = document.getElementById('turnoNombre');
-    const turnoLabel = document.getElementById('turnoLabel');
-    const goldDivider = document.getElementById('goldDivider');
-    
-    if (turnoCodigo) {
-        turnoCodigo.textContent = '—';
-        turnoCodigo.classList.remove('visible', 'llamando');
-    }
-    
-    if (turnoNombre) {
-        turnoNombre.textContent = '';
-        turnoNombre.classList.remove('visible');
-    }
-    
-    if (turnoLabel) turnoLabel.classList.remove('visible');
-    if (goldDivider) goldDivider.classList.remove('visible');
-    
-    // ===== 2. LIMPIAR HISTORIAL DE ESTA RECEPCIÓN =====
-    console.log(`[HIST] Limpiando historial de recepción ${miNumeroRecepcion}...`);
-    
-    miHistorial = [];
-    console.log('[HIST] ✅ Array historial limpiado');
-    
-    if (miNumeroRecepcion) {
-        try {
-            const key = getStorageKeyParaRecepcion(miNumeroRecepcion);
-            localStorage.removeItem(key);
-            console.log(`[HIST] ✅ localStorage limpiado: ${key}`);
-        } catch (error) {
-            console.error('[HIST] ❌ Error al limpiar historial:', error);
-        }
-    }
-    
-    renderizarHistorial();
-    console.log('[HIST] ✅ UI del historial actualizada');
-    
-    // ===== 3. CERRAR MODALES =====
-    const historialModal = document.getElementById('historialModal');
-    if (historialModal && historialModal.style.display !== 'none') {
-        cerrarHistorialModal();
-    }
-    
-    // ===== 4. ACTUALIZAR TIMESTAMP =====
     const tsEl = document.getElementById('ultimaActualizacion');
-    if (tsEl) {
-        tsEl.textContent = new Date().toLocaleTimeString('es-ES', {
-            hour: '2-digit', minute: '2-digit', second: '2-digit'
-        });
-    }
-    
-    // ===== 5. INDICADOR DE CONEXIÓN =====
+    if (tsEl) tsEl.textContent = new Date().toLocaleTimeString('es-ES',
+        { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
     const dot = document.getElementById('conexionDot');
     if (dot) {
-        dot.style.background = '#ef4444';
-        dot.style.boxShadow = '0 0 12px #ef4444';
-        setTimeout(() => {
-            if (dot) { 
-                dot.style.background = '#22c55e'; 
-                dot.style.boxShadow = '0 0 8px #22c55e'; 
-            }
-        }, 1500);
+        dot.style.background = '#facc15'; dot.style.boxShadow = '0 0 12px #facc15';
+        setTimeout(() => { dot.style.background = '#22c55e'; dot.style.boxShadow = '0 0 8px #22c55e'; }, 1000);
     }
-    
-    console.log('[HIST] ═══════════════════════════════════════════════════════');
-    console.log('[HIST] ✅ LIMPIEZA COMPLETADA');
-    console.log('[HIST] ═══════════════════════════════════════════════════════');
+    return true;
 }
 
-function renderizarHistorial() {
-    const listEl  = document.getElementById('historyList');
-    const countEl = document.getElementById('historyCount');
-    const emptyEl = document.getElementById('historyEmpty');
+function mostrarTurnoEnPanel(orden, codigo, nombre, hablar = true) {
+    if (orden === undefined || orden === null || orden < 0) return;
 
-    if (!listEl) return;
-    if (countEl) countEl.textContent = miHistorial.length;
+    if (panelState[orden]) { panelState[orden].codigo = codigo; panelState[orden].nombre = nombre; }
+    guardarUltimoLlamado(orden, codigo, nombre);
 
-    if (miHistorial.length === 0) {
-        if (emptyEl) emptyEl.style.display = 'flex';
-        Array.from(listEl.children).forEach(c => { if (c.id !== 'historyEmpty') c.remove(); });
+    if (!_panelesListos) {
+        console.warn(`[PANEL] ⏳ Panel ${orden} no listo aún — encolando`);
+        _llamadosPendientes.push({ orden, codigo, nombre, hablar });
         return;
     }
 
-    if (emptyEl) emptyEl.style.display = 'none';
-    Array.from(listEl.children).forEach(c => { if (c.id !== 'historyEmpty') c.remove(); });
-
-    miHistorial.forEach((item, idx) => {
-        const div       = document.createElement('div');
-        div.className   = 'history-item';
-        div.innerHTML   = `
-            <span class="history-item-num">${miHistorial.length - idx}</span>
-            <span class="history-item-code">${item.codigo}</span>
-            <span class="history-item-name">${item.nombre}</span>
-            <span class="history-item-time">${item.hora}</span>
-        `;
-        listEl.appendChild(div);
-    });
-}
-
-function cerrarHistorialModal() {
-    const modal = document.getElementById('historialModal');
-    if (modal) {
-        modal.style.display = 'none';
-        console.log('[HIST] ✅ Modal cerrado');
-    }
-}
-
-// =========================
-// MOSTRAR TURNO LLAMADO
-// =========================
-
-function mostrarTurnoLlamado(codigo, nombre, recepcion = null, hablar = true) {
-    console.log(`[TUR] === mostrarTurnoLlamado ===`);
-    console.log(`[TUR] codigo: ${codigo}`);
-    console.log(`[TUR] nombre: ${nombre}`);
-    console.log(`[TUR] recepcion: ${recepcion}`);
-    console.log(`[TUR] hablar: ${hablar}`);
-
-    const idleState   = document.getElementById('idleState');
-    const turnoActivo = document.getElementById('turnoActivo');
-    const turnoCodigo = document.getElementById('turnoCodigo');
-    const turnoNombre = document.getElementById('turnoNombre');
-    const turnoLabel  = document.getElementById('turnoLabel');
-    const goldDivider = document.getElementById('goldDivider');
-
-    if (!turnoActivo || !turnoCodigo) {
-        console.warn('[TUR] ⚠️ Elementos del DOM no encontrados');
-        return;
-    }
-
-    if (idleState) idleState.classList.add('hidden');
-    turnoActivo.style.display = 'flex';
-
-    turnoCodigo.classList.remove('visible', 'llamando');
-    if (turnoNombre) { turnoNombre.classList.remove('visible'); turnoNombre.textContent = nombre || ''; }
-    if (turnoLabel)    turnoLabel.classList.remove('visible');
-    if (goldDivider)   goldDivider.classList.remove('visible');
-
-    turnoCodigo.textContent = codigo || '—';
-
-    requestAnimationFrame(() => {
-        if (turnoLabel) turnoLabel.classList.add('visible');
-        turnoCodigo.classList.add('visible');
-        setTimeout(() => {
-            turnoCodigo.classList.add('llamando');
-            if (goldDivider) goldDivider.classList.add('visible');
-        }, 150);
-        setTimeout(() => {
-            if (turnoNombre && nombre) turnoNombre.classList.add('visible');
-        }, 350);
-    });
+    const ok = _renderTurnoEnPanel(orden, codigo, nombre);
+    if (!ok) { console.warn(`[PANEL] Panel ${orden} no existe en el DOM`); return; }
 
     if (hablar) {
-        console.log(`[TUR] Reproduciendo audio`);
-        setTimeout(() => anunciarTurno(nombre, codigo, recepcion), 500);
-    }
-
-    const tsEl = document.getElementById('ultimaActualizacion');
-    if (tsEl) tsEl.textContent = new Date().toLocaleTimeString('es-ES', {
-        hour: '2-digit', minute: '2-digit', second: '2-digit'
-    });
-
-    const dot = document.getElementById('conexionDot');
-    if (dot) {
-        dot.style.background = '#facc15';
-        dot.style.boxShadow  = '0 0 12px #facc15';
-        setTimeout(() => {
-            if (dot) { dot.style.background = '#22c55e'; dot.style.boxShadow = '0 0 8px #22c55e'; }
-        }, 1000);
+        const recepNombre = panelState[orden]?.recepcionistaNombre || String(orden + 1);
+        setTimeout(() => encolarAnuncio(nombre, codigo, recepNombre), 500);
     }
 }
+function resolverOrdenPanel(data) {
+    // Prioridad 1: panel_orden explícito del servidor
+    if (data.panel_orden !== undefined && data.panel_orden !== null) return data.panel_orden;
+    // Prioridad 2: buscar por recepcionista_id
+    if (data.recepcionista_id) {
+        const idx = miRecepcionistas.findIndex(r => r.id === data.recepcionista_id);
+        if (idx >= 0) return idx;
+    }
+    // Prioridad 3: buscar por nombre
+    const nombre = data.recepcionista_nombre || data.recepcion || '';
+    if (nombre) {
+        const idx = miRecepcionistas.findIndex(r => r.nombre_completo === nombre);
+        if (idx >= 0) return idx;
+    }
+    console.warn(`[PANEL] No se pudo resolver panel para recepcionista, usando 0`);
+    return 0;
+}
 
-// =========================
-// REGISTRAR LISTENERS (UNA SOLA VEZ)
-// =========================
+// ========== LIMPIAR PANTALLA ==========
+
+function limpiarPantalla() {
+    panelState.forEach((ps, i) => {
+        ps.codigo = null; ps.nombre = null;
+        localStorage.removeItem(`screen_ultimo_${i}`);
+        const idleEl   = document.getElementById(`panel-idle-${i}`);
+        const turnoEl  = document.getElementById(`panel-turno-${i}`);
+        const codigoEl = document.getElementById(`panel-codigo-${i}`);
+        const nombreEl = document.getElementById(`panel-nombre-${i}`);
+        if (idleEl)   idleEl.style.display  = 'flex';
+        if (turnoEl)  turnoEl.style.display = 'none';
+        if (codigoEl) { codigoEl.textContent = '—'; codigoEl.classList.remove('llamando'); }
+        if (nombreEl) nombreEl.textContent = '';
+    });
+    _colaAudio = []; _reproduciendo = false;
+    console.log('[PANEL] 🧹 Pantalla limpiada');
+}
+
+// ========== LISTENERS ==========
 
 function registrarListeners(socketInstance) {
-    if (_listenersRegistrados) {
-        console.log('[TURNOS] ⚠️ Listeners ya registrados, ignorando...');
-        return;
-    }
+    if (_listenersRegistrados) return;
     _listenersRegistrados = true;
-    console.log('[TURNOS] 📡 Registrando listeners de socket (UNA SOLA VEZ)...');
-    
     socket = socketInstance;
-    
-    // ==================== LISTENER: limpiar_historial ====================
-    socket.on('limpiar_historial', (data) => {
-        console.log(`[HIST] 📢 Evento limpiar_historial recibido:`, data);
-        console.log(`[HIST] miNumeroRecepcion: ${miNumeroRecepcion}`);
-        
-        if (data.motivo === 'limpieza_diaria') {
-            console.log('[HIST] ⏰ LIMPIEZA DIARIA PROGRAMADA');
-            limpiarHistorialScreen();
-            return;
-        }
-        
-        // ← IMPORTANTE: Validar que la limpieza es SOLO para esta recepción
-        if (data.numRecepcion && miNumeroRecepcion && data.numRecepcion !== miNumeroRecepcion) {
-            console.log(`[HIST] ⚠️ Limpieza es para recepción ${data.numRecepcion}, esta es ${miNumeroRecepcion} - ignorando`);
-            return;
-        }
-        
-        console.log(`[HIST] 🧹 Limpieza de historial de recepción ${miNumeroRecepcion}`);
-        limpiarHistorialScreen();
-    });
-    
-    // ==================== LISTENER: limpieza_completada ====================
-    socket.on('limpieza_completada', (data) => {
-        console.log('[HIST] 📢 Limpieza completada recibida');
-        limpiarHistorialScreen();
-    });
+    console.log('[TURNOS] 📡 Registrando listeners...');
 
-    // ==================== LISTENER: llamar_paciente ====================
-    socket.on('llamar_paciente', (data) => {
-        console.log('[TURNOS] 📢 Evento llamar_paciente recibido:', data);
-        console.log(`[TURNOS] miNumeroRecepcion: ${miNumeroRecepcion}, data.numRecepcion: ${data.numRecepcion}`);
-        
-        // ← CRÍTICO: Validar que el llamado es SOLO para esta recepción
-        if (data.numRecepcion && miNumeroRecepcion && data.numRecepcion !== miNumeroRecepcion) {
-            console.log(`[TURNOS] ⚠️ Llamada es para recepción ${data.numRecepcion}, esta es ${miNumeroRecepcion} - ignorando`);
-            return;
-        }
-        
-        console.log(`[TURNOS] ✅ Llamada ES PARA ESTA RECEPCIÓN (${miNumeroRecepcion})`);
-        
-        if (miNumeroRecepcion) {
-            guardarUltimoLlamadoDeRecepcion(miNumeroRecepcion, data.codigo, data.nombre);
-        }
-
-        const linkedState   = document.getElementById('linkedState');
-        const estaVinculada = linkedState && linkedState.style.display !== 'none';
-
-        if (estaVinculada) {
-            const codigoAnterior = document.getElementById('turnoCodigo')?.textContent?.trim();
-            const nombreAnterior = document.getElementById('turnoNombre')?.textContent?.trim();
-            
-            // Agregar al historial si hay un código anterior diferente
-            if (codigoAnterior && codigoAnterior !== '—' && codigoAnterior !== data.codigo) {
-                agregarAlHistorial(codigoAnterior, nombreAnterior);
-            }
-            
-            mostrarTurnoLlamado(data.codigo, data.nombre, data.recepcion, true);
-        } else {
-            console.log('[TURNOS] ⚠️ Pantalla no vinculada, guardando como pendiente');
-            window._llamadaPendiente = data;
-        }
-    });
-
-    // ==================== LISTENER: historial_llamada ====================
-    socket.on('historial_llamada', (data) => {
-        console.log('[TURNOS] 📢 Historial de llamada recibido:', data);
-    });
-
-    // ==================== LISTENER: numero_recepcion ====================
     socket.on('numero_recepcion', (data) => {
-        miNumeroRecepcion = data.numRecepcion || data.numero_recepcion;
-        console.log(`[HIST] 📢 Número de recepción asignado: ${miNumeroRecepcion}`);
-        
-        // Cargar historial de ESTA recepción específica
-        miHistorial = recuperarHistorialDeRecepcion(miNumeroRecepcion);
-        renderizarHistorial();
-        console.log(`[HIST] ✅ Historial de recepción ${miNumeroRecepcion} cargado: ${miHistorial.length} items`);
+        console.log('[TURNOS] numero_recepcion recibido:', data);
+        const receps = data.recepcionistas;
+        if (receps && receps.length > 0) {
+            construirPaneles(receps);
+        } else if (data.numRecepcion) {
+            construirPaneles([{ id: null, nombre_completo: data.numRecepcion, orden: 0 }]);
+        }
     });
 
-    // Pedir número de recepción
+    socket.on('recepcionistas_asignados', (data) => {
+        console.log('[TURNOS] recepcionistas_asignados:', data);
+        if (data.recepcionistas && data.recepcionistas.length > 0) {
+            construirPaneles(data.recepcionistas);
+        }
+    });
+
+    socket.on('llamar_paciente', (data) => {
+        console.log('[TURNOS] llamar_paciente recibido:', data);
+        const orden = resolverOrdenPanel(data);
+        mostrarTurnoEnPanel(orden, data.codigo, data.nombre, true);
+    });
+
+    socket.on('limpiar_historial',   () => limpiarPantalla());
+    socket.on('limpieza_completada', () => limpiarPantalla());
+
     socket.emit('pedir_numero_recepcion');
-    console.log('[TURNOS] ✅ Listeners registrados correctamente (SIN DUPLICACIÓN)');
 
-    // ==================== OBSERVER DE VINCULACIÓN ====================
-    const linkedState = document.getElementById('linkedState');
-    if (!linkedState) {
-        console.warn('[TURNOS] ⚠️ linkedState no encontrado');
-        return;
-    }
-
-    function intentarRestaurar() {
-        if (linkedState.style.display === 'none') return;
-        
-        if (window._llamadaPendiente) {
-            console.log('[TURNOS] Restaurando llamada pendiente');
-            const p = window._llamadaPendiente;
-            window._llamadaPendiente = null;
-            mostrarTurnoLlamado(p.codigo, p.nombre, p.recepcion, true);
-            return;
-        }
-        
-        if (miNumeroRecepcion) {
-            const guardado = recuperarUltimoLlamadoDeRecepcion(miNumeroRecepcion);
-            if (guardado) {
-                console.log('[TURNOS] Restaurando último llamado guardado:', guardado);
-                mostrarTurnoLlamado(guardado.codigo, guardado.nombre, null, false);
-            }
-        }
-    }
-
-    new MutationObserver(intentarRestaurar)
-        .observe(linkedState, { attributes: true, attributeFilter: ['style'] });
-
-    setTimeout(intentarRestaurar, 200);
+    console.log('[TURNOS] ✅ Listeners registrados');
 }
 
-// =========================
-// INIT
-// =========================
+// ========== INIT ==========
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('[TURNOS] ═══════════════════════════════════════════════════════');
-    console.log('[TURNOS] INICIALIZANDO MÓDULO DE TURNOS');
-    console.log('[TURNOS] ═══════════════════════════════════════════════════════');
-    console.log('[TURNOS] Esperando socket y número de recepción...');
-    
-    // Esperar a que el socket esté disponible Y miNumeroRecepcion esté asignado
+    console.log('[TURNOS] Inicializando módulo multipanel...');
     esperarSocketYRegistrar();
-
-    // Desbloquear audio en primer tap/click
     document.addEventListener('click',      _desbloquearAudio, { once: true });
     document.addEventListener('touchstart', _desbloquearAudio, { once: true });
-    
-    console.log('[TURNOS] ═══════════════════════════════════════════════════════');
 });
 
 function esperarSocketYRegistrar() {
-    const socketInstance = window.getSocketScreen ? window.getSocketScreen() : null;
-    
-    if (socketInstance) {
-        console.log('[TURNOS] ✅ Socket obtenido');
-        registrarListeners(socketInstance);
-        
-        // ← NUEVO: Esperar a que miNumeroRecepcion sea asignado por el servidor
-        esperarNumeroRecepcion();
-    } else {
-        console.log('[TURNOS] ⏳ Socket no disponible aún, reintentando en 100ms...');
-        setTimeout(esperarSocketYRegistrar, 100);
-    }
+    const s = window.getSocketScreen ? window.getSocketScreen() : null;
+    if (s) { registrarListeners(s); }
+    else   { setTimeout(esperarSocketYRegistrar, 100); }
 }
 
-/**
- * Espera a que el servidor asigne miNumeroRecepcion (via evento 'numero_recepcion')
- * Una vez asignado, restaura el turno anterior si existe.
- */
-function esperarNumeroRecepcion() {
-    const maxIntentosEspera = 50; // 5 segundos máximo (50 * 100ms)
-    let intentos = 0;
-    
-    const checkNumero = setInterval(() => {
-        intentos++;
-        
-        if (miNumeroRecepcion) {
-            console.log(`[TURNOS] ✅ miNumeroRecepcion asignado: ${miNumeroRecepcion}`);
-            clearInterval(checkNumero);
-            
-            // ← AHORA sí, intentar restaurar el turno anterior
-            intentarRestaurarTurnoAnterior();
-            return;
-        }
-        
-        if (intentos >= maxIntentosEspera) {
-            console.warn('[TURNOS] ⚠️ Timeout esperando miNumeroRecepcion');
-            clearInterval(checkNumero);
-            return;
-        }
-    }, 100);
-}
-
-/**
- * Intenta restaurar el turno anterior del último llamado guardado en localStorage
- */
-function intentarRestaurarTurnoAnterior() {
-    if (!miNumeroRecepcion) {
-        console.log('[TURNOS] ⚠️ No se puede restaurar — miNumeroRecepcion es null');
-        return;
-    }
-    
-    const guardado = recuperarUltimoLlamadoDeRecepcion(miNumeroRecepcion);
-    
-    if (guardado) {
-        console.log('[TURNOS] ↩️ Restaurando turno anterior:', guardado);
-        
-        const linkedState = document.getElementById('linkedState');
-        const estaVinculada = linkedState && linkedState.style.display !== 'none';
-        
-        if (estaVinculada) {
-            // ← Restaurar SIN reproducir audio (false)
-            mostrarTurnoLlamado(guardado.codigo, guardado.nombre, null, false);
-            console.log('[TURNOS] ✅ Turno anterior restaurado sin audio');
-        } else {
-            console.log('[TURNOS] ℹ️ Pantalla no vinculada — turno guardado pero no mostrado');
-        }
-    } else {
-        console.log('[TURNOS] ℹ️ Sin turno anterior guardado');
-    }
-}
-
-// =========================
-// FUNCIONES GLOBALES DE DEBUG
-// =========================
-
-window.limpiarHistorialScreen = limpiarHistorialScreen;
-
-window.debugScreenCompleto = () => {
-    console.log('═══════════════════════════════════════════════');
-    console.log('DEBUG SCREEN COMPLETO');
-    console.log('═══════════════════════════════════════════════');
-    console.log('Número de recepción:', miNumeroRecepcion);
-    console.log('Turno actual (DOM):', {
-        codigo: document.getElementById('turnoCodigo')?.textContent,
-        nombre: document.getElementById('turnoNombre')?.textContent,
-        visible: document.getElementById('turnoActivo')?.style.display !== 'none'
-    });
-    console.log('Historial (memoria):', miHistorial.length, 'items');
-    console.log('Socket conectado:', socket ? socket.connected : false);
-    console.log('Listeners registrados:', _listenersRegistrados);
-    console.log('localStorage (actual recepción):', {
-        historial: miNumeroRecepcion ? localStorage.getItem(getStorageKeyParaRecepcion(miNumeroRecepcion)) : 'N/A',
-        ultimo_llamado: miNumeroRecepcion ? localStorage.getItem(`screen_ultimo_llamado_${miNumeroRecepcion}`) : 'N/A'
-    });
-    console.log('═══════════════════════════════════════════════');
+window.limpiarPantalla       = limpiarPantalla;
+window.debugScreenMultipanel = () => {
+    console.log('Recepcionistas:', miRecepcionistas);
+    console.log('PanelState:',    panelState);
+    console.log('PanelesListos:', _panelesListos);
+    console.log('Pendientes:',    _llamadosPendientes.length);
+    console.log('Cola audio:',    _colaAudio.length);
 };
-
-window.debugScreenCompleto();

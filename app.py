@@ -7,18 +7,13 @@ from functools import wraps
 import os, hashlib
 from gtts import gTTS
 import jwt
-from models import db, Usuario, init_db, Pantalla, Paciente, Turno, uuid
+from models import db, Usuario, init_db, Pantalla, Paciente, Turno, uuid, pantalla_recepciones
 from config import config
 from flask_socketio import SocketIO, emit, join_room
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError 
-import uuid 
 import time
-import sys
-import signal
 
 # ===================================
 # CONFIGURACION
@@ -78,102 +73,8 @@ _screen_disconnect_active = {}
 # LIMPIEZA DIARIA AUTOMÁTICA 00:00
 # ===================================
 
-scheduler = BackgroundScheduler()
 
-def limpiar_pacientes_diario():
-    """
-    Ejecuta a las 00:00 todos los días:
-    - Elimina todos los turnos de la BD
-    - Elimina todos los pacientes de la BD
-    - Notifica a TODAS las screens para limpiar su display
-    - Notifica a TODAS las recepciones para limpiar su historial
-    """
-    with app.app_context():
-        try:
-            ahora = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"\n[SCHEDULER] ⏰ Limpieza diaria iniciada: {ahora}")
-
-            total_turnos    = Turno.query.count()
-            total_pacientes = Paciente.query.count()
-
-            # Borrar en orden por FK: primero turnos, luego pacientes
-            Turno.query.delete()
-            Paciente.query.delete()
-            db.session.commit()
-
-            print(f"[SCHEDULER] ✅ Eliminados: {total_turnos} turnos, {total_pacientes} pacientes")
-
-            # ── NOTIFICAR A SCREEN ──────────────────────────────
-            print(f"[SCHEDULER] 📢 Emitiendo 'limpiar_historial' a sala 'screen'...")
-            socketio.emit('limpiar_historial', {
-                'motivo': 'limpieza_diaria',
-                'tipo': 'screen',
-                'timestamp': ahora
-            }, room='screen')
-            
-            # Emitir a pantallas individuales
-            print(f"[SCHEDULER] 📢 Emitiendo a salas screen_*...")
-            pantallas = Pantalla.query.all()
-            for pantalla in pantallas:
-                sala_pantalla = f'screen_{pantalla.id}'
-                socketio.emit('limpiar_historial', {
-                    'motivo': 'limpieza_diaria',
-                    'tipo': 'screen',
-                    'pantalla_id': str(pantalla.id),
-                    'timestamp': ahora
-                }, room=sala_pantalla)
-
-            # ── NOTIFICAR A RECEPCIÓN ──────────────────────────────────────────
-            print(f"[SCHEDULER] 📢 Emitiendo a sala 'recepcion'...")
-            socketio.emit('limpiar_historial_diario', {
-                'motivo': 'limpieza_diaria',
-                'tipo': 'recepcion',
-                'mensaje': 'Limpieza diaria automática ejecutada a las 00:00',
-                'hora': ahora
-            }, room='recepcion')
-
-            # ── NOTIFICAR A ADMIN ──────────────────────────────────────────────
-            print(f"[SCHEDULER] 📢 Emitiendo a sala 'admin'...")
-            socketio.emit('limpieza_completada', {
-                'timestamp': ahora,
-                'turnos_eliminados': total_turnos,
-                'pacientes_eliminados': total_pacientes
-            }, room='admin')
-
-            print(f"[SCHEDULER] ✅ Limpieza diaria completada")
-
-        except Exception as e:
-            db.session.rollback()
-            print(f"[SCHEDULER] ❌ Error en limpieza diaria: {str(e)}")
-
-scheduler.add_job(
-    func    = limpiar_pacientes_diario,
-    trigger = CronTrigger(hour=11, minute=30, second=0),  # 00:00 UTC
-    id      = 'limpieza_diaria',
-    name    = 'Limpiar pacientes a medianoche',
-    replace_existing = True
-)
-
-def start_scheduler():
-    """Inicia el scheduler"""
-    try:
-        scheduler.start()
-        print("[SCHEDULER] ✅ APScheduler iniciado correctamente")
-        print(f"[SCHEDULER] 📅 Job programado: limpieza a las 00:00 UTC")
-        print(f"[SCHEDULER] 🔄 Scheduler en ejecución...")
-    except Exception as e:
-        print(f"[SCHEDULER] ❌ Error al iniciar scheduler: {e}")
         
-def shutdown_scheduler(signum=None, frame=None):
-    """Apaga el scheduler limpiamente"""
-    if scheduler.running:
-        print(f"\n[SCHEDULER] 🛑 Apagando scheduler...")
-        scheduler.shutdown(wait=False)
-        print(f"[SCHEDULER] ✅ Scheduler apagado")
-        
-# Registrar handlers para señales
-signal.signal(signal.SIGTERM, shutdown_scheduler)
-signal.signal(signal.SIGINT, shutdown_scheduler)
 
 
 def pagina_protegida(*roles):
@@ -291,6 +192,21 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def _recepcionista_en_otra_pantalla(recepcionista_id, excluir_pantalla_id):
+    """
+    Devuelve True si el recepcionista está asignado a una pantalla
+    vinculada distinta de excluir_pantalla_id.
+    """
+    stmt = db.select(
+        pantalla_recepciones.c.pantalla_id
+    ).join(
+        Pantalla, Pantalla.id == pantalla_recepciones.c.pantalla_id
+    ).where(
+        pantalla_recepciones.c.recepcionista_id == recepcionista_id,
+        Pantalla.estado == 'vinculada',
+        Pantalla.id     != excluir_pantalla_id
+    )
+    return db.session.execute(stmt).first() is not None
 
 # ===================================
 # RUTAS DE AUTENTICACION
@@ -818,14 +734,12 @@ def update_user(user_id):
 @rol_requerido('admin')
 def get_pantallas():
     try:
-        from sqlalchemy.orm import joinedload
-        pantallas = (Pantalla.query
-                     .options(joinedload(Pantalla.recepcionista))  # ← carga la relación en 1 query
-                     .order_by(Pantalla.numero)
-                     .all())
+        pantallas = Pantalla.query.order_by(Pantalla.numero).all()
         return jsonify({'success': True, 'pantallas': [p.to_dict() for p in pantallas]}), 200
     except Exception as e:
+        print(f'[ERROR get_pantallas] {e}')
         return jsonify({'success': False, 'message': 'Error al obtener pantallas'}), 500
+
 
 @app.route('/api/recepcion/pantallas', methods=['GET'])
 @rol_requerido('recepcion', 'admin')
@@ -959,69 +873,85 @@ def limpiar_historial_recepcion():
 @rol_requerido('admin')
 def vincular_pantalla(pantalla_id):
     try:
-        data             = request.get_json()
-        codigo           = data.get('codigo', '').strip()
-        recepcionista_id = data.get('recepcionista_id', None)
+        data              = request.get_json()
+        codigo            = data.get('codigo', '').strip()
+        # Acepta tanto lista como ID único (retrocompatibilidad)
+        recepcionista_ids = data.get('recepcionista_ids', [])
+        if not recepcionista_ids and data.get('recepcionista_id'):
+            recepcionista_ids = [data['recepcionista_id']]
 
         if not codigo or len(codigo) != 6:
-            return jsonify({'success': False, 'message': 'Codigo invalido'}), 400
+            return jsonify({'success': False, 'message': 'Código inválido'}), 400
 
-        # ── Validación 1: recepcionista obligatorio ──────────────────
-        if not recepcionista_id:
-            return jsonify({
-                'success': False,
-                'message': 'Debes asignar un recepcionista para vincular la pantalla'
-            }), 400
+        if not recepcionista_ids:
+            return jsonify({'success': False,
+                            'message': 'Debes asignar al menos un recepcionista'}), 400
 
-        # ── Validación 2: recepcionista exclusivo ────────────────────
-        pantalla_ocupada = (Pantalla.query
-            .filter(
-                Pantalla.recepcionista_id == recepcionista_id,
-                Pantalla.estado           == 'vinculada',
-                Pantalla.id               != pantalla_id
-            ).first())
+        if len(recepcionista_ids) > 4:
+            return jsonify({'success': False,
+                            'message': 'Máximo 4 recepcionistas por pantalla'}), 400
 
-        if pantalla_ocupada:
-            recep        = db.session.get(Usuario, recepcionista_id)
-            nombre_recep = recep.nombre_completo if recep else 'El recepcionista'
-            return jsonify({
-                'success': False,
-                'message': f'"{nombre_recep}" ya está asignado a la Pantalla {pantalla_ocupada.numero}'
-            }), 409
-
-        # ── Buscar pantalla pendiente con ese código ──────────────────
+        # Validar que ninguno de los recepcionistas ya esté en OTRA pantalla vinculada
+        for rid in recepcionista_ids:
+            if _recepcionista_en_otra_pantalla(rid, pantalla_id):
+                recep = db.session.get(Usuario, rid)
+                nombre = recep.nombre_completo if recep else rid
+                return jsonify({'success': False,
+                                'message': f'"{nombre}" ya está asignado a otra pantalla'}), 409
+            
         pantalla = Pantalla.query.filter_by(
             id=pantalla_id, codigo_vinculacion=codigo, estado='pendiente'
         ).first()
-
         if not pantalla:
-            return jsonify({
-                'success': False,
-                'message': 'Código incorrecto o pantalla no disponible'
-            }), 404
+            return jsonify({'success': False,
+                            'message': 'Código incorrecto o pantalla no disponible'}), 404
 
-        # ── Validar recepcionista existe y está activo ────────────────
-        recepcionista = db.session.get(Usuario, recepcionista_id)
-        if not recepcionista or recepcionista.rol != 'recepcion' or not recepcionista.activo:
-            return jsonify({'success': False, 'message': 'Recepcionista no válido'}), 400
+        # Validar que todos los recepcionistas existan y estén activos
+        recepcionistas = []
+        for rid in recepcionista_ids:
+            r = db.session.get(Usuario, rid)
+            if not r or r.rol != 'recepcion' or not r.activo:
+                return jsonify({'success': False,
+                                'message': f'Recepcionista {rid} no válido'}), 400
+            recepcionistas.append(r)
 
-        # ── Vincular + asignar en una sola transacción ───────────────
+        # Limpiar asignaciones anteriores y crear nuevas
+        db.session.execute(
+            pantalla_recepciones.delete().where(
+                pantalla_recepciones.c.pantalla_id == pantalla_id
+            )
+        )
+        for orden, r in enumerate(recepcionistas):
+            db.session.execute(
+                pantalla_recepciones.insert().values(
+                    pantalla_id      = pantalla_id,
+                    recepcionista_id = r.id,
+                    orden            = orden
+                )
+            )
+
+        # Actualizar pantalla
         pantalla.estado           = 'vinculada'
         pantalla.vinculada_at     = datetime.utcnow()
-        pantalla.recepcionista_id = recepcionista_id  # ← atómico
+        pantalla.recepcionista_id = recepcionistas[0].id  # FK legacy = primer recepcionista
         db.session.commit()
 
+        receps_data = [{'id': str(r.id), 'nombre_completo': r.nombre_completo, 'orden': i}
+                       for i, r in enumerate(recepcionistas)]
+
         socketio.emit('pantalla_vinculada', {
-            'pantalla_id':          str(pantalla.id),
-            'numero':               pantalla.numero,
-            'estado':               'vinculada',
-            'recepcionista_nombre': recepcionista.nombre_completo,
-            'sala_propia':          f'screen_{pantalla.id}'   
+            'pantalla_id':    str(pantalla.id),
+            'numero':         pantalla.numero,
+            'estado':         'vinculada',
+            'recepcionistas': receps_data,
+            # compat legacy
+            'recepcionista_nombre': recepcionistas[0].nombre_completo,
+            'sala_propia':    f'screen_{pantalla.id}'
         }, room='screen')
 
-        socketio.emit('recepcionista_asignado', {
-            'pantalla_id':          str(pantalla.id),
-            'recepcionista_nombre': recepcionista.nombre_completo
+        socketio.emit('recepcionistas_asignados', {
+            'pantalla_id':    str(pantalla.id),
+            'recepcionistas': receps_data
         }, room='screen')
 
         return jsonify({
@@ -1032,6 +962,7 @@ def vincular_pantalla(pantalla_id):
 
     except Exception as e:
         db.session.rollback()
+        print(f'Error vincular_pantalla: {e}')
         return jsonify({'success': False, 'message': 'Error al vincular pantalla'}), 500
 
 @app.route('/api/pantallas/<pantalla_id>/desvincular', methods=['POST'])
@@ -1061,47 +992,91 @@ def desvincular_pantalla(pantalla_id):
         return jsonify({'success': False, 'message': 'Error al desvincular pantalla'}), 500
 
 
-@app.route('/api/pantallas/<pantalla_id>/asignar-recepcionista', methods=['POST'])
+@app.route('/api/pantallas/<pantalla_id>/asignar-recepcionistas', methods=['POST'])
 @rol_requerido('admin')
-def asignar_recepcionista(pantalla_id):
+def asignar_recepcionistas(pantalla_id):
+    """
+    Reemplaza TODOS los recepcionistas asignados a la pantalla.
+    Body: { "recepcionista_ids": ["id1", "id2", ...] }   (máx 4)
+    """
     try:
-        data             = request.get_json()
-        recepcionista_id = data.get('recepcionista_id')
-        pantalla         = db.session.get(Pantalla, pantalla_id)
+        data              = request.get_json()
+        recepcionista_ids = data.get('recepcionista_ids', [])
 
+        if len(recepcionista_ids) > 4:
+            return jsonify({'success': False,
+                            'message': 'Máximo 4 recepcionistas por pantalla'}), 400
+
+        pantalla = db.session.get(Pantalla, pantalla_id)
         if not pantalla:
             return jsonify({'success': False, 'message': 'Pantalla no encontrada'}), 404
 
-        if not recepcionista_id:
-            pantalla.recepcionista_id = None
-            db.session.commit()
-            return jsonify({'success': True, 'message': 'Recepcionista desasignado', 'pantalla': pantalla.to_dict()}), 200
+        # Validar que cada recepcionista exista y no esté en otra pantalla
+        recepcionistas = []
+        for rid in recepcionista_ids:
+            r = db.session.get(Usuario, rid)
+            if not r or r.rol != 'recepcion' or not r.activo:
+                return jsonify({'success': False,
+                                'message': f'Recepcionista {rid} no válido'}), 400
 
-        recepcionista = db.session.get(Usuario, recepcionista_id)
-        if not recepcionista:
-            return jsonify({'success': False, 'message': 'Recepcionista no encontrado'}), 404
-        if recepcionista.rol != 'recepcion':
-            return jsonify({'success': False, 'message': 'El usuario no es recepcionista'}), 400
+            ocupada = (db.session.query(pantalla_recepciones)
+                       .join(Pantalla, Pantalla.id == pantalla_recepciones.c.pantalla_id)
+                       .filter(
+                           pantalla_recepciones.c.recepcionista_id == rid,
+                           Pantalla.estado == 'vinculada',
+                           Pantalla.id     != pantalla_id
+                       ).first())
+            if ocupada:
+                return jsonify({'success': False,
+                                'message': f'"{r.nombre_completo}" ya está en otra pantalla'}), 409
+            recepcionistas.append(r)
 
-        pantalla.recepcionista_id = recepcionista_id
+        # Reemplazar asignaciones
+        db.session.execute(
+            pantalla_recepciones.delete().where(
+                pantalla_recepciones.c.pantalla_id == pantalla_id
+            )
+        )
+        for orden, r in enumerate(recepcionistas):
+            db.session.execute(
+                pantalla_recepciones.insert().values(
+                    pantalla_id      = pantalla_id,
+                    recepcionista_id = r.id,
+                    orden            = orden
+                )
+            )
+
+        # Actualizar FK legacy
+        pantalla.recepcionista_id = recepcionistas[0].id if recepcionistas else None
         db.session.commit()
 
-        socketio.emit('recepcionista_asignado', {
-            'pantalla_id':          str(pantalla.id),
-            'recepcionista_nombre': recepcionista.nombre_completo if recepcionista_id else None
+        receps_data = [{'id': str(r.id), 'nombre_completo': r.nombre_completo, 'orden': i}
+                       for i, r in enumerate(recepcionistas)]
+
+        # Notificar a la sala propia de la pantalla
+        sala_propia = f'screen_{pantalla.id}'
+        socketio.emit('recepcionistas_asignados', {
+            'pantalla_id':    str(pantalla.id),
+            'recepcionistas': receps_data
+        }, room=sala_propia)
+
+        # Notificar al admin
+        socketio.emit('recepcionistas_asignados', {
+            'pantalla_id':    str(pantalla.id),
+            'recepcionistas': receps_data
         }, room='admin')
 
-        socketio.emit('recepcionista_asignado', {
-            'pantalla_id':          str(pantalla.id),
-            'recepcionista_nombre': recepcionista.nombre_completo if recepcionista_id else None
-        }, room='screen')
-
-
-        return jsonify({'success': True, 'message': 'Recepcionista asignado', 'pantalla': pantalla.to_dict()}), 200
+        return jsonify({
+            'success':        True,
+            'message':        f'{len(recepcionistas)} recepcionista(s) asignado(s)',
+            'recepcionistas': receps_data,
+            'pantalla':       pantalla.to_dict()
+        }), 200
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': 'Error al asignar recepcionista'}), 500
+        print(f'Error asignar_recepcionistas: {e}')
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # ===================================
@@ -1830,96 +1805,109 @@ def on_join(data):
         # ── PASO 1: CANCELAR grace period si esta screen se reconecta ─────────
         if device_fp in _screen_disconnect_timers:
             print(f"[GRACE] ✅ Reconexión detectada → screen salvada")
-            # ← MARCAR que el timer NO debe ejecutarse
             _screen_disconnect_active[device_fp] = False
             _screen_disconnect_timers.pop(device_fp, None)
-        
+
         # ── PASO 2: Encontrar el SID ANTIGUO del mismo device_fp ──────────────
         old_sid = None
         for sid, fp in list(_screen_sids.items()):
             if fp == device_fp and sid != request.sid:
                 old_sid = sid
                 break
-        
+
         if old_sid:
             print(f"[WS] 🔄 Migrando de {old_sid} → {request.sid}")
-            
-            # Migrar pantalla_id del sid antiguo al nuevo
             if old_sid in _screen_pantalla:
                 pantalla_id = _screen_pantalla[old_sid]
                 _screen_pantalla[request.sid] = pantalla_id
-                print(f"[WS] 📋 Pantalla ID migrada: {pantalla_id}")
                 del _screen_pantalla[old_sid]
-            
-            # Remover el sid antiguo
             del _screen_sids[old_sid]
-        
+
         # ── PASO 3: Agregar el nuevo sid ──────────────────────────────────────
         _screen_sids[request.sid] = device_fp
 
-        # ── PASO 4: Buscar pantalla y unirse a sala propia ────────────────────
+        # ── PASO 4: Buscar pantalla y unirse a sala propia SOLO si vinculada ──
         pantalla = Pantalla.query.filter_by(device_id=device_fp).first()
         if pantalla:
-            sala_propia = f'screen_{pantalla.id}'
-            join_room(sala_propia)
-            _screen_pantalla[request.sid] = str(pantalla.id)
-            print(f"[WS] ✅ Screen {request.sid} → sala {sala_propia} (estado: {pantalla.estado})")
+            # ✅ Solo unirse a sala propia si está realmente vinculada
+            if pantalla.estado == 'vinculada':
+                sala_propia = f'screen_{pantalla.id}'
+                join_room(sala_propia)
+                _screen_pantalla[request.sid] = str(pantalla.id)
+                print(f"[WS] ✅ Screen {request.sid} → sala {sala_propia} (vinculada)")
+            elif pantalla.estado == 'pendiente':
+                print(f"[WS] ⏳ Screen {request.sid} → pendiente, esperando vinculación admin")
+            else:
+                # Estado 'disponible' pero tiene device_id → limpiar device_id inconsistente
+                print(f"[WS] ⚠️ Pantalla {pantalla.numero} en estado '{pantalla.estado}' con device_id → limpiando")
+                pantalla.device_id         = None
+                pantalla.codigo_vinculacion = None
+                db.session.commit()
+                # Notificar al frontend de la screen para que reinicie el flujo
+                emit('pantalla_reseteada', {
+                    'motivo': 'estado_inconsistente',
+                    'mensaje': 'Pantalla en estado disponible. Reiniciando...'
+                })
         else:
-            print(f"[WS] ⚠️ Screen {request.sid} sin pantalla aún")
+            print(f"[WS] ⚠️ Screen {request.sid} sin pantalla registrada — iniciará flujo /api/screen/init")
+            # Notificar para que el frontend limpie el localStorage y reinicie
+            emit('pantalla_reseteada', {
+                'motivo': 'sin_registro',
+                'mensaje': 'Dispositivo no registrado. Reiniciando...'
+            })
 
     emit('joined', {'room': room, 'status': 'ok'})
 
+
 @socketio.on('pedir_numero_recepcion')
 def on_pedir_numero_recepcion():
-    """
-    Screen solicita el número de recepción asignado.
-    Se busca la pantalla vinculada a través del device_id guardado en el sid.
-    
-    Flow:
-    1. screen_turnos.js emite: socket.emit('pedir_numero_recepcion')
-    2. app.py recibe en este handler
-    3. app.py busca la pantalla del socket actual
-    4. app.py emite de vuelta: 'numero_recepcion' con el número
-    5. screen_turnos.js recibe en socket.on('numero_recepcion', ...)
-    6. miNumeroRecepcion queda asignado ✅
-    """
     device_fp = _screen_sids.get(request.sid)
-    
+
     if not device_fp:
-        print(f"[WS] ⚠️ pedir_numero_recepcion: device_fp no encontrado para sid {request.sid}")
-        emit('numero_recepcion', {'numRecepcion': None})
+        emit('numero_recepcion', {'numRecepcion': None, 'recepcionistas': []})
         return
-    
+
     with app.app_context():
-        # Buscar la pantalla por device_id
         pantalla = Pantalla.query.filter_by(device_id=device_fp).first()
-        
+
         if not pantalla:
-            print(f"[WS] ⚠️ pedir_numero_recepcion: pantalla no encontrada para device_id {device_fp[:20]}...")
-            emit('numero_recepcion', {'numRecepcion': None})
+            emit('numero_recepcion', {'numRecepcion': None, 'recepcionistas': []})
             return
-        
-        # Si la pantalla está vinculada y tiene recepcionista, obtener su número
-        if pantalla.estado == 'vinculada' and pantalla.recepcionista_id:
-            recepcionista = db.session.get(Usuario, pantalla.recepcionista_id)
-            if recepcionista:
-                # ← Enviar el nombre del recepcionista como número de recepción
-                num_recepcion = recepcionista.nombre_completo or recepcionista.usuario
-                print(f"[WS] ✅ Emitiendo numero_recepcion: {num_recepcion}")
+
+        if pantalla.estado == 'vinculada':
+            # Obtener todos los recepcionistas asignados ordenados por 'orden'
+            filas = (db.session.query(pantalla_recepciones, Usuario)
+                     .join(Usuario, Usuario.id == pantalla_recepciones.c.recepcionista_id)
+                     .filter(pantalla_recepciones.c.pantalla_id == pantalla.id)
+                     .order_by(pantalla_recepciones.c.orden)
+                     .all())
+
+            recepcionistas = []
+            for fila in filas:
+                rid   = fila[0]
+                orden = fila[1]
+                u = db.session.get(Usuario, rid)
+                if u:
+                    recepcionistas.append({
+                        'id':              str(u.id),
+                        'nombre_completo': u.nombre_completo or u.usuario,
+                        'orden':           orden
+                    })
+            if recepcionistas:
+                print(f"[WS] ✅ Emitiendo {len(recepcionistas)} recepcionista(s) a {request.sid}")
                 emit('numero_recepcion', {
-                    'numRecepcion': num_recepcion, 
-                    'numero_recepcion': num_recepcion
+                    # Legacy: primer recepcionista
+                    'numRecepcion':  recepcionistas[0]['nombre_completo'],
+                    # NUEVO: lista completa para construir N paneles
+                    'recepcionistas': recepcionistas
                 })
                 return
-        
-        # Fallback: usar el número de pantalla
-        num_recepcion = str(pantalla.numero)
-        print(f"[WS] ✅ Emitiendo numero_recepcion (fallback): {num_recepcion}")
-        emit('numero_recepcion', {
-            'numRecepcion': num_recepcion, 
-            'numero_recepcion': num_recepcion
-        })
 
+        # Fallback
+        emit('numero_recepcion', {
+            'numRecepcion':   str(pantalla.numero),
+            'recepcionistas': [{'id': None, 'nombre_completo': str(pantalla.numero), 'orden': 0}]
+        })
 
 
 @socketio.on('join_screen_propia')
@@ -1957,83 +1945,70 @@ def on_llamar_paciente(data):
     codigo           = data.get('codigo', '')
     nombre           = data.get('nombre', '')
     paciente_id      = data.get('pacienteId', '')
-    recepcion        = data.get('recepcion', '')
     recepcionista_id = data.get('recepcionistaId', '')
 
-    print(f"[WS] 📢 Llamando: {codigo} — {nombre}")
-    print(f"[WS] RecepcionistaId: {recepcionista_id}")
+    print(f"[WS] 📢 Llamando: {codigo} — {nombre} | RecepcionistaId: {recepcionista_id}")
 
-    # ── VALIDACIÓN 1: Recepcionista ID es obligatorio ──────────────────────────
     if not recepcionista_id:
-        print(f"[WS] ❌ RecepcionistaId vacío — NO se emite")
-        socketio.emit('error_llamada', {
-            'mensaje': 'No hay recepcionista asignado'
-        }, room=request.sid)
+        socketio.emit('error_llamada', {'mensaje': 'No hay recepcionista asignado'}, room=request.sid)
         return
 
-    # ── VALIDACIÓN 2: Buscar pantalla vinculada a ESTE recepcionista ──────────
-    pantalla = Pantalla.query.filter_by(
-        recepcionista_id=recepcionista_id,
-        estado='vinculada'
-    ).first()
+    # ── Paso 1: buscar la fila en pantalla_recepciones ────────────────────────
+    stmt = db.select(
+        pantalla_recepciones.c.pantalla_id,
+        pantalla_recepciones.c.orden
+    ).join(
+        Pantalla, Pantalla.id == pantalla_recepciones.c.pantalla_id
+    ).where(
+        pantalla_recepciones.c.recepcionista_id == recepcionista_id,
+        Pantalla.estado == 'vinculada'
+    )
+    fila = db.session.execute(stmt).first()
 
-    if not pantalla:
+    if not fila:
         print(f"[WS] ❌ Recepcionista {recepcionista_id} no tiene pantalla vinculada")
-        socketio.emit('error_llamada', {
-            'mensaje': f'El recepcionista no tiene pantalla vinculada'
-        }, room=request.sid)
+        socketio.emit('error_llamada',
+                      {'mensaje': 'El recepcionista no tiene pantalla vinculada'},
+                      room=request.sid)
         return
 
-    # ── VALIDACIÓN 3: Pantalla tiene device_id (conectada) ────────────────────
-    if not pantalla.device_id:
-        print(f"[WS] ⚠️ Pantalla {pantalla.numero} está desconectada")
-        socketio.emit('error_llamada', {
-            'mensaje': f'Pantalla {pantalla.numero} desconectada'
-        }, room=request.sid)
+    pantalla_id_str = fila[0]
+    orden           = fila[1]
+
+    # ── Paso 2: cargar la pantalla ────────────────────────────────────────────
+    pantalla = db.session.get(Pantalla, pantalla_id_str)
+
+    if not pantalla or not pantalla.device_id:
+        socketio.emit('error_llamada',
+                      {'mensaje': f'Pantalla desconectada'},
+                      room=request.sid)
         return
 
-    # ── OBTENER NOMBRE DEL RECEPCIONISTA ──────────────────────────────────────
-    recepcionista = db.session.get(Usuario, recepcionista_id)
+    recepcionista        = db.session.get(Usuario, recepcionista_id)
     nombre_recepcionista = recepcionista.nombre_completo if recepcionista else 'Sin asignar'
-    
-    print(f"[WS] 📋 Recepcionista: {nombre_recepcionista}")
 
-    # ── CONSTRUIR PAYLOAD CON NOMBRE DEL RECEPCIONISTA ──────────────────────────
-    # ← IMPORTANTE: Incluir el nombre del recepcionista para que screen_turnos.js
-    #   pueda filtrar y SOLO mostrar llamados de su recepción
     payload = {
-        'codigo':                 codigo,
-        'nombre':                 nombre,
-        'pacienteId':             paciente_id,
-        'recepcion':              nombre_recepcionista,  # ← CAMBIO: Enviar nombre completo
-        'recepcionista_id':       recepcionista_id,       # ← Agregar para referencia
-        'recepcionista_nombre':   nombre_recepcionista    # ← Agregar también aquí
+        'codigo':               codigo,
+        'nombre':               nombre,
+        'pacienteId':           paciente_id,
+        'recepcion':            nombre_recepcionista,
+        'recepcionista_id':     recepcionista_id,
+        'recepcionista_nombre': nombre_recepcionista,
+        'panel_orden':          orden,
+        'pantalla_id':          str(pantalla.id),
     }
 
     sala_destino = f'screen_{pantalla.id}'
+    print(f"[WS] ✅ Emitiendo a {sala_destino} panel {orden} — {nombre_recepcionista}")
 
-    print(f"[WS] ✅ Emitiendo a {sala_destino} (Pantalla {pantalla.numero})")
-    print(f"[WS]    Recepcionista: {nombre_recepcionista}")
-    
-    # ── EMITIR A LA PANTALLA VINCULADA ────────────────────────────────────────
     socketio.emit('llamar_paciente', payload, to=sala_destino)
 
-    # ── GUARDAR último llamado ────────────────────────────────────────────────
-    _ultimo_llamado = {
-        'codigo':                 codigo,
-        'nombre':                 nombre,
-        'pacienteId':             paciente_id,
-        'recepcion':              nombre_recepcionista,
-        'recepcionista_id':       recepcionista_id,
-        'recepcionista_nombre':   nombre_recepcionista,
-        'pantalla_id':            str(pantalla.id),
-        'sala_destino':           sala_destino,
-        'timestamp':              datetime.utcnow().isoformat()
-    }
+    _ultimo_llamado = {**payload, 'sala_destino': sala_destino,
+                       'timestamp': datetime.utcnow().isoformat()}
 
-    # ── REENVIAR A RECEPCIÓN PARA HISTORIAL ───────────────────────────────────
-    print(f"[WS] Emitiendo historial al recepcionista: {request.sid}")
+    # Reenviar al recepcionista para su historial local
     socketio.emit('llamar_paciente', payload, room=request.sid)
+
 
 
 @socketio.on('pedir_ultimo_llamado')
@@ -2100,8 +2075,6 @@ def on_limpiar_historial(data=None):
 
 init_db(app)
 
-start_scheduler()
-
 if __name__ == '__main__':
     port  = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
@@ -2124,4 +2097,3 @@ if __name__ == '__main__':
             time.sleep(60)
     except KeyboardInterrupt:
         print("\n\n⛔ Servidor detenido por el usuario")
-        shutdown_scheduler()

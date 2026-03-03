@@ -78,24 +78,55 @@ function conectarSocket() {
             device_fingerprint: deviceFingerprint 
         });     // pedir unirse a la sala
     });
+    _socket.on('pantalla_reseteada', (data) => {
+        console.log('[VIN] 🔄 pantalla_reseteada recibido:', data.motivo);
+
+        // Limpiar fingerprint del localStorage para forzar nuevo registro
+        localStorage.removeItem('screen_device_id');
+
+        // Mostrar mensaje breve y recargar para reiniciar flujo desde cero
+        mostrarError(`🔄 ${data.mensaje || 'Reiniciando pantalla...'}`);
+        setTimeout(() => location.reload(), 2000);
+    });
+
 
     // ← join confirmado por el backend → AHORA el socket está en la sala
     _socket.on('joined', (data) => {
         console.log('[VIN] ✅ Unido a sala:', data.room);
         _socketListo = true;
-        // screen_turnos.js ya puede obtener el socket y registrar sus listeners
+
         consultarStatus().then(sd => {
-            if (sd?.status === 'vinculada' && sd.pantalla) {
+            if (!sd) return;
+
+            if (sd.status === 'vinculada' && sd.pantalla) {
                 pantallaData = sd.pantalla;
                 actualizarRecepcionista(pantallaData);
                 actualizarTimestamp();
                 mostrarVinculada(pantallaData);
-                console.log('[VIN] ✅ Estado restaurado después de reconexión');
+                console.log('[VIN] ✅ Estado restaurado: vinculada');
+
+            } else if (sd.status === 'pendiente' && sd.pantalla) {
+                pantallaData = sd.pantalla;
+                mostrarPendiente(pantallaData);
+                console.log('[VIN] ⏳ Estado restaurado: pendiente');
+
+            } else if (sd.status === 'desvinculada') {
+                // El device_id ya no existe en la BD → limpiar y reiniciar
+                console.log('[VIN] 🔄 Dispositivo desvinculado → limpiando localStorage');
+                localStorage.removeItem('screen_device_id');
+                setTimeout(() => location.reload(), 1000);
+
+            } else {
+                // Estado 'disponible' u otro inesperado → reiniciar flujo
+                console.log('[VIN] 🔄 Estado inesperado:', sd.status, '→ reiniciando');
+                localStorage.removeItem('screen_device_id');
+                setTimeout(() => location.reload(), 1000);
             }
         }).catch(err => {
-                console.error('[VIN] Error restaurando estado:', err);
+            console.error('[VIN] Error restaurando estado:', err);
         });
     });
+
 
 
     _socket.on('disconnect', (reason) => {
