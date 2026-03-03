@@ -7,22 +7,24 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/screen.css') }}">
-
 </head>
 <body>
     <script>
         const numeroRecepcionServidor = "{{ numero_recepcion }}" || '1';
         const urlParams = new URLSearchParams(window.location.search);
         let numeroRecepcion = urlParams.get('recepcion') || numeroRecepcionServidor || '1';
-        
-        if (!urlParams.has('recepcion') && numeroRecepcion) {
-            window.history.replaceState({}, document.title, 
+
+        // 🔧 FIX: Detectar modo preview lo antes posible para que los
+        // scripts que carguen después puedan leerlo sin esperar DOMContentLoaded
+        window.SCREEN_PREVIEW_MODE = urlParams.get('preview') === 'true';
+
+        if (!urlParams.has('recepcion') && numeroRecepcion && !window.SCREEN_PREVIEW_MODE) {
+            window.history.replaceState({}, document.title,
                 `${window.location.pathname}?recepcion=${numeroRecepcion}`);
         }
     </script>
-    
-    <div class="top-rule"></div>
 
+    <div class="top-rule"></div>
 
     <div id="recepcionistaCorner">
         <span class="corner-name" id="cornerName">Sin asignar</span>
@@ -37,7 +39,6 @@
         </div>
 
         <!-- Pendiente -->
-         
         <div id="pendingState">
             <div class="pending-header">Código de vinculación</div>
             <div class="codigo-frame">
@@ -54,13 +55,11 @@
 
                 <!-- IZQUIERDA: turno actual -->
                 <div class="panel-left">
-                    <!-- Sin paciente llamado -->
                     <div class="idle-state" id="idleState">
                         <div class="idle-icon">◈</div>
                         <div class="idle-text">Esperando llamada</div>
                     </div>
 
-                    <!-- Turno activo -->
                     <div id="turnoActivo" style="display:none; flex-direction:column; align-items:center;">
                         <div class="left-label" id="turnoLabel">Turno llamado</div>
                         <div class="turno-codigo" id="turnoCodigo"></div>
@@ -98,8 +97,6 @@
         <div id="ultimaActualizacion" class="status-text-bar">—</div>
     </div>
 
-    
-    <script src="/static/js/screen_turnos.js"></script> 
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='js/screen_vinculacion.js') }}"></script>
     <script src="{{ url_for('static', filename='js/screen_turnos.js') }}"></script>

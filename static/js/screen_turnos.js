@@ -17,14 +17,7 @@ let _audioEl          = null;
 let _audioDesbloqueado = false;
 let _listenersRegistrados = false;
 
-// =========================
-// PERSISTENCIA LOCAL (POR RECEPCIÓN)
-// =========================
 
-/**
- * Obtiene la clave de storage para el historial de una recepción específica
- * Ej: "screen_historial_1", "screen_historial_2"
- */
 function getStorageKeyParaRecepcion(numRecepcion) {
     return `${STORAGE_BASE_KEY}${numRecepcion}`;
 }
@@ -54,20 +47,32 @@ function recuperarHistorialDeRecepcion(numRecepcion) {
     return [];
 }
 
-function guardarUltimoLlamadoDeRecepcion(numRecepcion, codigo, nombre) {
+function guardarUltimoLlamadoDeRecepcion(numRecepcion, codigo, nombre,recepcion) {
     try {
-        const key = `screen_ultimo_llamado_${numRecepcion}`;
-        localStorage.setItem(key, JSON.stringify({ codigo, nombre, timestamp: Date.now() }));
-        console.log(`[HIST] 💾 Último llamado de recepción ${numRecepcion}: ${codigo}`);
+        const key = normalizarKeyRecepcion(numRecepcion);  // ← CAMBIO
+        localStorage.setItem(
+            `screen_ultimo_llamado_${key}`,
+            JSON.stringify({ codigo, nombre, recepcion,timestamp: Date.now() })
+        );
+        console.log(`[HIST] 💾 Último llamado recepción ${numRecepcion}: ${codigo}`);
     } catch (e) {
-        console.warn(`[HIST] ⚠️ No se pudo guardar último llamado:`, e);
+        console.warn('[HIST] ⚠️ No se pudo guardar último llamado:', e);
     }
 }
 
+function normalizarKeyRecepcion(numRecepcion) {
+    if (!numRecepcion) return 'desconocida';
+    return String(numRecepcion)
+        .toLowerCase()
+        .replace(/recepci[oó]n\s*/i, '')  // quita "recepcion" o "recepción"
+        .trim() || String(numRecepcion);
+}
+
+
 function recuperarUltimoLlamadoDeRecepcion(numRecepcion) {
     try {
-        const key = `screen_ultimo_llamado_${numRecepcion}`;
-        const data = localStorage.getItem(key);
+        const key = normalizarKeyRecepcion(numRecepcion);  // ← CAMBIO
+        const data = localStorage.getItem(`screen_ultimo_llamado_${key}`);
         return data ? JSON.parse(data) : null;
     } catch { return null; }
 }
@@ -575,22 +580,23 @@ function registrarListeners(socketInstance) {
         console.log(`[TURNOS] ✅ Llamada ES PARA ESTA RECEPCIÓN (${miNumeroRecepcion})`);
         
         if (miNumeroRecepcion) {
-            guardarUltimoLlamadoDeRecepcion(miNumeroRecepcion, data.codigo, data.nombre);
+            guardarUltimoLlamadoDeRecepcion(miNumeroRecepcion, data.codigo, data.nombre,data.recepcion);
         }
 
         const linkedState   = document.getElementById('linkedState');
         const estaVinculada = linkedState && linkedState.style.display !== 'none';
+        const esModoPreview = window.location.search.includes('preview=true');  // ← NUEVO
 
-        if (estaVinculada) {
+        if (estaVinculada || esModoPreview) {  // ← CAMBIO
             const codigoAnterior = document.getElementById('turnoCodigo')?.textContent?.trim();
             const nombreAnterior = document.getElementById('turnoNombre')?.textContent?.trim();
             
-            // Agregar al historial si hay un código anterior diferente
             if (codigoAnterior && codigoAnterior !== '—' && codigoAnterior !== data.codigo) {
                 agregarAlHistorial(codigoAnterior, nombreAnterior);
             }
             
-            mostrarTurnoLlamado(data.codigo, data.nombre, data.recepcion, true);
+            // En preview no hablar (false), en pantalla real sí (true)
+            mostrarTurnoLlamado(data.codigo, data.nombre, data.recepcion, !esModoPreview);  // ← CAMBIO
         } else {
             console.log('[TURNOS] ⚠️ Pantalla no vinculada, guardando como pendiente');
             window._llamadaPendiente = data;
@@ -653,6 +659,17 @@ function registrarListeners(socketInstance) {
 // =========================
 // INIT
 // =========================
+function _init() {
+    console.log('[TURNOS] ═══════════════════════════════════════════════════════');
+    console.log('[TURNOS] INICIALIZANDO MÓDULO DE TURNOS');
+    console.log('[TURNOS] ═══════════════════════════════════════════════════════');
+
+    esperarSocketYRegistrar();
+
+    document.addEventListener('click',      _desbloquearAudio, { once: true });
+    document.addEventListener('touchstart', _desbloquearAudio, { once: true });
+}
+
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[TURNOS] ═══════════════════════════════════════════════════════');
@@ -672,43 +689,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function esperarSocketYRegistrar() {
     const socketInstance = window.getSocketScreen ? window.getSocketScreen() : null;
-    
+
     if (socketInstance) {
         console.log('[TURNOS] ✅ Socket obtenido');
         registrarListeners(socketInstance);
-        
-        // ← NUEVO: Esperar a que miNumeroRecepcion sea asignado por el servidor
         esperarNumeroRecepcion();
     } else {
-        console.log('[TURNOS] ⏳ Socket no disponible aún, reintentando en 100ms...');
+        console.log('[TURNOS] ⏳ Socket no disponible, reintentando en 100ms...');
         setTimeout(esperarSocketYRegistrar, 100);
     }
 }
-
 /**
  * Espera a que el servidor asigne miNumeroRecepcion (via evento 'numero_recepcion')
  * Una vez asignado, restaura el turno anterior si existe.
  */
 function esperarNumeroRecepcion() {
-    const maxIntentosEspera = 50; // 5 segundos máximo (50 * 100ms)
+    const MAX = 50; // 5 segundos
     let intentos = 0;
-    
-    const checkNumero = setInterval(() => {
+    const check = setInterval(() => {
         intentos++;
-        
-        if (miNumeroRecepcion) {
-            console.log(`[TURNOS] ✅ miNumeroRecepcion asignado: ${miNumeroRecepcion}`);
-            clearInterval(checkNumero);
-            
-            // ← AHORA sí, intentar restaurar el turno anterior
-            intentarRestaurarTurnoAnterior();
-            return;
+
+        if (!miNumeroRecepcion && window._previewNumeroRecepcion) {
+            miNumeroRecepcion = window._previewNumeroRecepcion;
         }
-        
-        if (intentos >= maxIntentosEspera) {
+        if (miNumeroRecepcion) {
+            console.log(`[TURNOS] ✅ miNumeroRecepcion: ${miNumeroRecepcion}`);
+            clearInterval(check);
+            intentarRestaurarTurnoAnterior();
+        } else if (intentos >= MAX) {
             console.warn('[TURNOS] ⚠️ Timeout esperando miNumeroRecepcion');
-            clearInterval(checkNumero);
-            return;
+            clearInterval(check);
         }
     }, 100);
 }
@@ -726,13 +736,12 @@ function intentarRestaurarTurnoAnterior() {
     
     if (guardado) {
         console.log('[TURNOS] ↩️ Restaurando turno anterior:', guardado);
-        
-        const linkedState = document.getElementById('linkedState');
+        const linkedState   = document.getElementById('linkedState');
         const estaVinculada = linkedState && linkedState.style.display !== 'none';
+        const esModoPreview = window.location.search.includes('preview=true');
         
-        if (estaVinculada) {
-            // ← Restaurar SIN reproducir audio (false)
-            mostrarTurnoLlamado(guardado.codigo, guardado.nombre, null, false);
+        if (estaVinculada || esModoPreview) {
+            mostrarTurnoLlamado(guardado.codigo, guardado.nombre,guardado.recepcion || null, false);
             console.log('[TURNOS] ✅ Turno anterior restaurado sin audio');
         } else {
             console.log('[TURNOS] ℹ️ Pantalla no vinculada — turno guardado pero no mostrado');
@@ -767,5 +776,4 @@ window.debugScreenCompleto = () => {
     });
     console.log('═══════════════════════════════════════════════');
 };
-
-window.debugScreenCompleto();
+_init();
