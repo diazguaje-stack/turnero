@@ -9,36 +9,30 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/screen.css') }}">
 </head>
 <body>
+
     <script>
+        // Número de recepción legacy (no se usa activamente en v2, pero evita errores)
         const numeroRecepcionServidor = "{{ numero_recepcion }}" || '1';
         const urlParams = new URLSearchParams(window.location.search);
         let numeroRecepcion = urlParams.get('recepcion') || numeroRecepcionServidor || '1';
-
-        // 🔧 FIX: Detectar modo preview lo antes posible para que los
-        // scripts que carguen después puedan leerlo sin esperar DOMContentLoaded
-        window.SCREEN_PREVIEW_MODE = urlParams.get('preview') === 'true';
-
-        if (!urlParams.has('recepcion') && numeroRecepcion && !window.SCREEN_PREVIEW_MODE) {
-            window.history.replaceState({}, document.title,
-                `${window.location.pathname}?recepcion=${numeroRecepcion}`);
-        }
     </script>
 
     <div class="top-rule"></div>
 
+    <!-- Nombre de recepción(es) en esquina superior -->
     <div id="recepcionistaCorner">
         <span class="corner-name" id="cornerName">Sin asignar</span>
     </div>
 
     <div class="container">
 
-        <!-- Conectando -->
+        <!-- Estado: Conectando -->
         <div id="connectingState">
             <div class="spinner-ring"></div>
             <span class="connecting-label">Conectando</span>
         </div>
 
-        <!-- Pendiente -->
+        <!-- Estado: Pendiente de vinculación -->
         <div id="pendingState">
             <div class="pending-header">Código de vinculación</div>
             <div class="codigo-frame">
@@ -49,46 +43,19 @@
             </p>
         </div>
 
-        <!-- Vinculada: layout dividido -->
+        <!-- Estado: Vinculada — multipanel ocupa TODA la pantalla -->
         <div id="linkedState">
-            <div class="screen-split">
-
-                <!-- IZQUIERDA: turno actual -->
-                <div class="panel-left">
-                    <div class="idle-state" id="idleState">
-                        <div class="idle-icon">◈</div>
-                        <div class="idle-text">Esperando llamada</div>
-                    </div>
-
-                    <div id="turnoActivo" style="display:none; flex-direction:column; align-items:center;">
-                        <div class="left-label" id="turnoLabel">Turno llamado</div>
-                        <div class="turno-codigo" id="turnoCodigo"></div>
-                        <div class="gold-divider" id="goldDivider"></div>
-                        <div class="turno-nombre" id="turnoNombre"></div>
-                    </div>
-                </div>
-
-                <!-- DERECHA: historial -->
-                <div class="panel-right">
-                    <div class="history-header">
-                        <span class="history-title">Llamados anteriores</span>
-                        <span class="history-count" id="historyCount">0</span>
-                    </div>
-                    <div class="history-list" id="historyList">
-                        <div class="history-empty" id="historyEmpty">
-                            <div class="history-empty-icon">◇</div>
-                            <div class="history-empty-text">Sin registros aún</div>
-                        </div>
-                    </div>
-                </div>
-
+            <div id="multiPanelContainer" class="multi-panel-grid layout-1">
+                <!-- Construido dinámicamente por screen_turnos.js -->
             </div>
         </div>
 
         <!-- Error -->
         <div id="errorMessage"></div>
+
     </div>
 
+    <!-- Barra de estado inferior -->
     <div class="status-bar">
         <div>
             <span class="status-dot" id="conexionDot"></span>
@@ -97,9 +64,11 @@
         <div id="ultimaActualizacion" class="status-text-bar">—</div>
     </div>
 
+    <!-- Scripts — Socket.io PRIMERO, luego vinculacion, luego turnos -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='js/screen_vinculacion.js') }}"></script>
     <script src="{{ url_for('static', filename='js/screen_turnos.js') }}"></script>
     <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+
 </body>
 </html>

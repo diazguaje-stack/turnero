@@ -1,23 +1,33 @@
+// ============================================================
+// screen_vinculacion.js
+// Responsabilidad: comunicación con pantallas.js (admin)
+// Maneja: fingerprint, /api/screen/init, estados de vinculación,
+//         recepcionista en esquina, sala 'screen'
+//
+// IMPORTANTE: expone window.getSocketScreen() SOLO cuando el socket
+// ya confirmó unirse a la sala 'screen' (evento 'joined').
+// screen_turnos.js espera esta confirmación antes de registrar sus listeners.
+// ============================================================
 
 const API_URL = window.location.origin;
 const SCREEN_API = {
-    init:      `${API_URL}/api/screen/init`,
-    status:    `${API_URL}/api/screen/status`,
-    // 🔧 FIX: endpoint solo lectura para preview (no modifica estado)
-    statusById: (id) => `${API_URL}/api/screen/status-by-id/${id}`
+    init:   `${API_URL}/api/screen/init`,
+    status: `${API_URL}/api/screen/status`
 };
 
-let deviceFingerprint       = null;
-let pantallaData            = null;
-let intentoInicializacion   = 0;
-let _socket                 = null;
-let _socketListo            = false;
-let _desconexionIntencional = false;
-let _esPreview              = false; // 🔧 FIX: flag global de modo preview
+let deviceFingerprint     = null;
+let pantallaData          = null;
+let intentoInicializacion = 0;
+let _socket               = null;
+let _socketListo          = false;   // true cuando 'joined' confirmó sala 'screen'
+let _desconexionIntencional = false; // flag para distinguir refresh de cierre
 
 const MAX_INTENTOS    = 5;
 const DELAY_REINTENTO = 3000;
 
+// ── API pública para screen_turnos.js ──────────────────────
+// Devuelve el socket SOLO si ya está en sala 'screen'.
+// screen_turnos.js llama esto en loop hasta que sea truthy.
 window.getSocketScreen = () => (_socketListo ? _socket : null);
 
 // =========================
@@ -25,192 +35,36 @@ window.getSocketScreen = () => (_socketListo ? _socket : null);
 // =========================
 
 document.addEventListener('DOMContentLoaded', () => {
-    // ── 🔧 FIX: Detectar modo PREVIEW ────────────────────────────────────────
-    const urlParams  = new URLSearchParams(window.location.search);
-    _esPreview       = urlParams.get('preview') === 'true';
-    const pantallaId = urlParams.get('pantalla_id');
-
-    if (_esPreview) {
-        console.log('[VIN] 👁️ Modo PREVIEW — solo lectura, sin socket ni fingerprint');
-        _activarModoPreview(pantallaId);
-        return; // ← NO conectar socket, NO llamar init, NO generar fingerprint
-    }
-
-    // ── Flujo normal ──────────────────────────────────────────────────────────
     console.log('[VIN] Iniciando módulo de vinculación...');
+    // Generar fingerprint ANTES de conectar el socket
     deviceFingerprint = generarDeviceFingerprint();
-    conectarSocket();
+    conectarSocket();       // ya tiene el fingerprint disponible
     inicializarPantalla();
 });
 
-// 🔧 FIX: beforeunload solo actúa si NO es preview
 window.addEventListener('beforeunload', () => {
-    if (_esPreview) return; // preview se puede cerrar libremente
+    // Detectar si es refresh (F5, Ctrl+R) vs cierre de pestaña
+    // En refresh, el socket se reconectará automáticamente
+    // Solo desconectar manualmente si es un cierre intencional
     _desconexionIntencional = true;
     if (_socket && !_isRefresh()) {
         _socket.disconnect();
     }
 });
 
+// Detecta si es un refresh en lugar de un cierre
 function _isRefresh() {
+    // Si hay performance.navigation (deprecated pero útil como fallback)
     if (window.performance && window.performance.navigation) {
-        return window.performance.navigation.type === 1;
+        return window.performance.navigation.type === 1; // TYPE_RELOAD
     }
+    // En navegadores modernos, asumir que beforeunload + navegación es refresh
+    // No hay forma 100% confiable, pero el socket se reconectará de todos modos
     return true;
 }
 
 // =========================
-// 🔧 FIX: MODO PREVIEW
-// Carga el estado actual de la pantalla por ID via HTTP
-// sin crear socket ni fingerprint. Es pura vista.
-// =========================
-
-async function _activarModoPreview(pantallaId) {
-    // Mostrar banner de preview para que el admin sepa que es solo lectura
-    _mostrarBannerPreview();
-
-    if (!pantallaId) {
-        mostrarError('Vista previa: pantalla_id no especificado');
-        return;
-    }
-
-    try {
-        const token    = sessionStorage.getItem('jwt_token')
-                      || localStorage.getItem('jwt_token_admin');
-        const headers  = token
-            ? { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
-            : { 'Content-Type': 'application/json' };
-
-        const response = await fetchConTimeout(SCREEN_API.statusById(pantallaId), {
-            method: 'GET',
-            headers
-        }, 8000);
-
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const data = await response.json();
-
-        if (!data.success || !data.pantalla) {
-            mostrarError('Vista previa: no se pudo obtener el estado de la pantalla');
-            return;
-        }
-
-        pantallaData = data.pantalla;
-
-        const nombreRecepcion = pantallaData.recepcionista_nombre 
-                             || String(pantallaData.numero);
-        window._previewNumeroRecepcion = nombreRecepcion;
-        console.log('[VIN] Preview recepcion asignada:', nombreRecepcion);
-
-        if (data.status === 'vinculada') {
-            mostrarVinculada(pantallaData);
-            
-            // FIX: Forzar restauración del turno después de que el DOM esté visible
-            setTimeout(() => {
-                const numRec = window._previewNumeroRecepcion;
-                if (!numRec) return;
-                
-                // Buscar en localStorage con la key normalizada
-                const key = numRec.toLowerCase()
-                    .replace(/recepci[oó]n\s*/i, '')
-                    .trim() || numRec;
-                
-                const guardadoRaw = localStorage.getItem(`screen_ultimo_llamado_${key}`);
-                if (guardadoRaw) {
-                    try {
-                        const guardado = JSON.parse(guardadoRaw);
-                        console.log('[VIN/PREVIEW] 🔄 Restaurando turno desde preview:', guardado);
-                        if (typeof mostrarTurnoLlamado === 'function') {
-                            mostrarTurnoLlamado(guardado.codigo, guardado.nombre, guardado.recepcion || null, false);
-                        }
-                    } catch(e) {
-                        console.warn('[VIN/PREVIEW] Error parseando turno guardado:', e);
-                    }
-                } else {
-                    console.log('[VIN/PREVIEW] Sin turno guardado para recepción:', numRec);
-                }
-            }, 800); // esperar a que screen_turnos.js esté listo
-            
-        } else if (data.status === 'pendiente') {
-            mostrarPendiente(pantallaData);
-        } else {
-            mostrarError(`Vista previa — estado: ${data.status}`);
-        }
-
-        _suscribirPreviewSoloLectura(pantallaId);
-
-    } catch (error) {
-        console.error('[VIN] Error en modo preview:', error);
-        mostrarError(`Vista previa — Error: ${error.message}`);
-    }
-}
-
-function _mostrarBannerPreview() {
-    const banner = document.createElement('div');
-    banner.id    = 'previewBanner';
-    banner.style.cssText = `
-        position: fixed;
-        top: 0; left: 0; right: 0;
-        background: rgba(99, 102, 241, 0.92);
-        color: #fff;
-        text-align: center;
-        padding: 8px 16px;
-        font-size: 13px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-        z-index: 9999;
-        pointer-events: none;
-    `;
-    banner.textContent = '👁️ MODO VISTA PREVIA — Solo lectura | Esta ventana no afecta la pantalla real';
-    document.body.appendChild(banner);
-}
-
-function _suscribirPreviewSoloLectura(pantallaId) {
-    try {
-        const s = io({ 
-            reconnection: false,
-            transports: ['websocket']
-        });
-        
-        _socket = s;
-        _socketListo = true;
-        s.on('connect', () => {
-            s.emit('join', { room: 'admin' });
-            s.emit('join', { room: `screen_${pantallaId}` });
-            console.log('[VIN/PREVIEW] 👁️ Conectado como observador pasivo');
-            s.emit('pedir_numero_recepcion_preview', { pantalla_id: pantallaId });
-        });
-
-
-        s.on('recepcionista_asignado', (data) => {
-            if (String(data.pantalla_id) === String(pantallaId) && pantallaData) {
-                pantallaData.recepcionista_nombre = data.recepcionista_nombre;
-                actualizarRecepcionista(pantallaData);
-                window._previewNumeroRecepcion=data.recepcionista_nombre;
-                console.log('[VIN/PREVIEW] Recepcionista actualizado en preview:', data.recepcionista_nombre);
-            }
-        });
-
-        // Si la pantalla real se desvincula, mostrar estado actualizado
-        s.on('pantalla_desvinculada', (data) => {
-            if (String(data.pantalla_id) === String(pantallaId)) {
-                mostrarError('La pantalla real fue desvinculada');
-            }
-        });
-
-        // NO escuchar 'disconnect' para recargar — el preview puede quedarse abierto
-        s.on('disconnect', () => {
-            console.log('[VIN/PREVIEW] Observador desconectado (normal al cerrar)');
-        });
-
-    } catch (e) {
-        // Si falla la suscripción pasiva, el preview sigue funcionando en modo estático
-        console.warn('[VIN/PREVIEW] No se pudo suscribir a eventos en tiempo real:', e);
-    }
-}
-
-// =========================
-// WEBSOCKET (solo flujo normal)
+// WEBSOCKET
 // =========================
 
 function conectarSocket() {
@@ -218,63 +72,115 @@ function conectarSocket() {
 
     _socket.on('connect', () => {
         console.log('[VIN] Socket conectado:', _socket.id);
-        _socketListo = false;
-        _socket.emit('join', {
+        _socketListo = false;                          // resetear en cada reconexión
+        _socket.emit('join', { 
             room: 'screen',
-            device_fingerprint: deviceFingerprint
-        });
+            device_fingerprint: deviceFingerprint 
+        });     // pedir unirse a la sala
+    });
+    _socket.on('pantalla_reseteada', (data) => {
+        console.log('[VIN] 🔄 pantalla_reseteada recibido:', data.motivo);
+
+        // Limpiar fingerprint del localStorage para forzar nuevo registro
+        localStorage.removeItem('screen_device_id');
+
+        // Mostrar mensaje breve y recargar para reiniciar flujo desde cero
+        mostrarError(`🔄 ${data.mensaje || 'Reiniciando pantalla...'}`);
+        setTimeout(() => location.reload(), 2000);
     });
 
+
+    // ← join confirmado por el backend → AHORA el socket está en la sala
     _socket.on('joined', (data) => {
         console.log('[VIN] ✅ Unido a sala:', data.room);
         _socketListo = true;
+
         consultarStatus().then(sd => {
-            if (sd?.status === 'vinculada' && sd.pantalla) {
+            if (!sd) return;
+
+            if (sd.status === 'vinculada' && sd.pantalla) {
                 pantallaData = sd.pantalla;
                 actualizarRecepcionista(pantallaData);
                 actualizarTimestamp();
                 mostrarVinculada(pantallaData);
-                console.log('[VIN] ✅ Estado restaurado después de reconexión');
+                console.log('[VIN] ✅ Estado restaurado: vinculada');
+
+            } else if (sd.status === 'pendiente' && sd.pantalla) {
+                pantallaData = sd.pantalla;
+                mostrarPendiente(pantallaData);
+                console.log('[VIN] ⏳ Estado restaurado: pendiente');
+
+            } else if (sd.status === 'desvinculada') {
+                // El device_id ya no existe en la BD → limpiar y reiniciar
+                console.log('[VIN] 🔄 Dispositivo desvinculado → limpiando localStorage');
+                localStorage.removeItem('screen_device_id');
+                setTimeout(() => location.reload(), 1000);
+
+            } else {
+                // Estado 'disponible' u otro inesperado → reiniciar flujo
+                console.log('[VIN] 🔄 Estado inesperado:', sd.status, '→ reiniciando');
+                localStorage.removeItem('screen_device_id');
+                setTimeout(() => location.reload(), 1000);
             }
         }).catch(err => {
             console.error('[VIN] Error restaurando estado:', err);
         });
     });
 
+
+
     _socket.on('disconnect', (reason) => {
         console.log('[VIN] Socket desconectado:', reason);
         _socketListo = false;
+        // NO recargar automáticamente en cada desconexión
+        // El socket se reconectará automáticamente con socket.io
     });
 
+    // ── Admin vinculó → mostrar pantalla activa ──
     _socket.on('pantalla_vinculada', (data) => {
         console.log('[VIN] pantalla_vinculada:', data);
+
+        // ── Unirse a sala propia usando el nuevo evento dedicado ──
         if (data.pantalla_id) {
             _socket.emit('join_screen_propia', {
                 pantalla_id:        data.pantalla_id,
                 device_fingerprint: deviceFingerprint
             });
+            console.log('[VIN] Solicitando unión a sala propia:', `screen_${data.pantalla_id}`);
         }
+
         consultarStatus().then(sd => {
             if (sd?.status === 'vinculada') {
                 pantallaData = sd.pantalla;
-                actualizarRecepcionista(pantallaData);
+                
+                // ← ASEGURAR que se llama actualizarRecepcionista
+                console.log('[VIN] Datos de pantalla:', pantallaData);
+                actualizarRecepcionista(pantallaData);  // ← AQUÍ
+                
                 mostrarVinculada(pantallaData);
             }
         }).catch(() => {
-            if (!_desconexionIntencional) location.reload();
+            if (_desconexionIntencional === false) {
+                location.reload();
+            }
         });
     });
-
+    // ── Admin desvinculó → recargar ──
     _socket.on('pantalla_desvinculada', () => {
         console.log('[VIN] pantalla_desvinculada');
         detenerYRecargar('desvinculada', 1500);
     });
 
+        // ── Recepcionista cambiado ──
     _socket.on('recepcionista_asignado', (data) => {
         console.log('[VIN] recepcionista_asignado:', data);
         if (pantallaData) {
             pantallaData.recepcionista_nombre = data.recepcionista_nombre;
-            actualizarRecepcionista(pantallaData);
+            
+            console.log('[VIN] Nombre actualizado:', data.recepcionista_nombre);
+            
+            // ← ASEGURAR que se actualiza el corner
+            actualizarRecepcionista(pantallaData);  // ← AQUÍ
             actualizarTimestamp();
         }
     });
@@ -318,6 +224,7 @@ async function inicializarPantalla() {
         pantallaData          = data.pantalla;
         intentoInicializacion = 0;
 
+        // Esperar hasta 3s a que el socket confirme join a sala 'screen'
         await esperarSocketListo(3000);
 
         switch (data.status) {
@@ -342,6 +249,7 @@ async function inicializarPantalla() {
     }
 }
 
+// Espera hasta `maxMs` a que _socketListo sea true
 function esperarSocketListo(maxMs = 3000) {
     return new Promise(resolve => {
         if (_socketListo) return resolve();
@@ -398,26 +306,31 @@ function mostrarVinculada(pantalla) {
     document.getElementById('connectingState').style.display = 'none';
     const ps = document.getElementById('pendingState');
     if (ps) ps.style.display = 'none';
+
     const ls = document.getElementById('linkedState');
     if (ls) ls.style.display = 'flex';
+
     actualizarRecepcionista(pantalla);
     actualizarTimestamp();
     console.log('[VIN] Estado: vinculada ✅');
 }
 
 // =========================
-// RECEPCIONISTA
+// RECEPCIONISTA — esquina superior izquierda
 // =========================
 
 function actualizarRecepcionista(pantalla) {
-    const nombre = pantalla?.recepcionista_nombre || '';
-    const corner = document.getElementById('recepcionistaCorner');
-    const nameEl = document.getElementById('cornerName');
+    const nombre   = pantalla?.recepcionista_nombre || '';
+    const corner   = document.getElementById('recepcionistaCorner');
+    const nameEl   = document.getElementById('cornerName');
+    
     console.log('[VIN] Actualizando recepcionista:', nombre);
+    
     if (nameEl) {
         nameEl.textContent = nombre || 'Sin asignar';
         console.log('[VIN] ✅ cornerName actualizado:', nombre);
     }
+    
     if (corner) {
         corner.classList.toggle('visible', !!nombre);
         console.log('[VIN] ✅ corner visible:', !!nombre);
@@ -460,6 +373,7 @@ function mostrarError(msg) {
     if (cs) cs.style.display = 'none';
     console.error('[VIN]', msg);
 }
+
 // =========================
 // FINGERPRINT
 // =========================
