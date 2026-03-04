@@ -105,6 +105,13 @@ function conectarSocket() {
                 mostrarVinculada(pantallaData);
                 console.log('[VIN] ✅ Estado restaurado: vinculada');
 
+                if (pantallaData.id) {
+                    _socket.emit('join_screen_propia', {
+                        pantalla_id:        pantallaData.id,
+                        device_fingerprint: deviceFingerprint
+                    });
+                }
+
             } else if (sd.status === 'pendiente' && sd.pantalla) {
                 pantallaData = sd.pantalla;
                 mostrarPendiente(pantallaData);

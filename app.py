@@ -2104,6 +2104,35 @@ def on_join_screen_propia(data):
     print(f"[WS] ✅ Screen vinculada al sid {request.sid} → sala {sala_propia}")
     emit('joined_screen_propia', {'sala': sala_propia, 'pantalla_id': pantalla_id})
 
+    with app.app_context():
+            pantalla = db.session.get(Pantalla, pantalla_id)
+            if pantalla and pantalla.estado == 'vinculada':
+                filas = (db.session.execute(
+                    db.select(
+                        pantalla_recepciones.c.recepcionista_id,
+                        pantalla_recepciones.c.orden
+                    ).where(
+                        pantalla_recepciones.c.pantalla_id == pantalla_id
+                    ).order_by(pantalla_recepciones.c.orden)
+                )).fetchall()
+
+                recepcionistas = []
+                for fila in filas:
+                    u = db.session.get(Usuario, fila[0])
+                    if u:
+                        recepcionistas.append({
+                            'id':              str(u.id),
+                            'nombre_completo': u.nombre_completo or u.usuario,
+                            'orden':           fila[1]
+                        })
+
+                if recepcionistas:
+                    emit('numero_recepcion', {
+                        'numRecepcion':   recepcionistas[0]['nombre_completo'],
+                        'recepcionistas': recepcionistas
+                    })
+                    print(f"[WS] 📋 Recepcionistas enviados tras join_screen_propia: {len(recepcionistas)}")
+
 
 @socketio.on('llamar_paciente')
 def on_llamar_paciente(data):
