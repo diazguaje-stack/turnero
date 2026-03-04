@@ -287,6 +287,7 @@ function registrarListeners(socketInstance) {
         if (data.recepcionistas && data.recepcionistas.length > 0) construirPaneles(data.recepcionistas);
     });
 
+    
     socket.on('llamar_paciente', (data) => {
         const orden  = resolverOrdenPanel(data);
         const medico = data.medico || data.medico_nombre || null;
@@ -297,7 +298,26 @@ function registrarListeners(socketInstance) {
     socket.on('limpieza_completada', () => limpiarPantalla());
 
     socket.emit('pedir_numero_recepcion');
+
+    socket.on('publicidad_cambiada', (data) => {
+        const zona = document.getElementById('zonaPublicidad');
+        if (!zona) return;
+        if (data.activo && data.url) {
+            zona.style.border  = 'none';
+            zona.style.padding = '0';
+            zona.innerHTML = data.tipo === 'video'
+                ? `<video src="${data.url}" autoplay muted loop playsinline
+                    style="width:100%;height:100%;object-fit:cover;display:block;"></video>`
+                : `<img src="${data.url}"
+                    style="width:100%;height:100%;object-fit:cover;display:block;">`;
+        } else {
+            zona.innerHTML     = '';
+            zona.style.border  = '1px dashed rgba(75,142,245,0.12)';
+            zona.style.padding = '';
+        }
+    });
 }
+
 
 // ── Init ──────────────────────────────────────────────────
 
@@ -311,6 +331,23 @@ function esperarSocketYRegistrar() {
     const s = window.getSocketScreen ? window.getSocketScreen() : null;
     if (s) registrarListeners(s);
     else   setTimeout(esperarSocketYRegistrar, 100);
+
+   fetch('/api/publicidad/activo')
+     .then(r => r.json())
+     .then(d => {
+         if (!d.activo) return;
+         const zona = document.getElementById('zonaPublicidad');
+         if (!zona || !d.url) return;
+         zona.style.border  = 'none';
+         zona.style.padding = '0';
+         zona.innerHTML = d.tipo === 'video'
+             ? `<video src="${d.url}" autoplay muted loop playsinline
+                  style="width:100%;height:100%;object-fit:cover;display:block;"></video>`
+             : `<img src="${d.url}"
+                  style="width:100%;height:100%;object-fit:cover;display:block;">`;
+     })
+     .catch(() => {});
+
 }
 
 window.limpiarPantalla = limpiarPantalla;

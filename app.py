@@ -14,6 +14,16 @@ from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError 
 import time
+import json
+import uuid as _uuid
+from werkzeug.utils import secure_filename
+import os
+
+
+
+
+
+
 
 # ===================================
 # CONFIGURACION
@@ -69,13 +79,59 @@ _screen_disconnect_active = {}
 # HELPERS JWT       
 # ===================================
 
-# ===================================
-# LIMPIEZA DIARIA AUTOMÁTICA 00:00
-# ===================================
 
 
         
 
+_PUB_DIR    = os.path.join(os.path.dirname(__file__), 'static', 'publicidad')
+_PUB_ESTADO = os.path.join(_PUB_DIR, 'estado.json')
+os.makedirs(_PUB_DIR, exist_ok=True)
+
+_TIPOS_PERMITIDOS = {
+    'image/jpeg': 'imagen', 'image/png':  'imagen',
+    'image/gif':  'imagen', 'image/webp': 'imagen',
+    'video/mp4':  'video',  'video/webm': 'video',
+}
+_PUB_MAX = 100 * 1024 * 1024   # 100 MB
+
+
+def _pub_leer_estado():
+    try:
+        if os.path.exists(_PUB_ESTADO):
+            with open(_PUB_ESTADO) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {'activo_id': None}
+
+
+def _pub_guardar_estado(activo_id):
+    with open(_PUB_ESTADO, 'w') as f:
+        json.dump({'activo_id': activo_id}, f)
+
+
+def _pub_listar():
+    result = []
+    for fname in sorted(os.listdir(_PUB_DIR)):
+        if fname == 'estado.json':
+            continue
+        fpath = os.path.join(_PUB_DIR, fname)
+        if not os.path.isfile(fpath):
+            continue
+        partes      = fname.split('_', 1)
+        fid         = partes[0]
+        nombre_orig = partes[1] if len(partes) > 1 else fname
+        ext         = nombre_orig.rsplit('.', 1)[-1].lower() if '.' in nombre_orig else ''
+        tipo        = 'video' if ext in ('mp4', 'webm') else 'imagen'
+        result.append({
+            'id':     fid,
+            'nombre': nombre_orig,
+            'url':    f'/static/publicidad/{fname}',
+            'tipo':   tipo,
+            'tamaño': os.path.getsize(fpath),
+            '_fname': fname,
+        })
+    return result
 
 def pagina_protegida(*roles):
     """
@@ -1143,6 +1199,117 @@ def screen_status():
     except Exception as e:
         return jsonify({'success': False, 'message': 'Error al verificar estado'}), 500
 
+
+
+# ── GET /api/publicidad/archivos ─────────────────────────────
+@app.route('/api/publicidad/archivos', methods=['GET'])
+@rol_requerido('admin')
+def pub_listar():
+    try:
+        archivos = _pub_listar()
+        estado   = _pub_leer_estado()
+        return jsonify({'success': True, 'archivos': archivos,
+                        'activo_id': estado.get('activo_id')}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ── POST /api/publicidad/subir ───────────────────────────────
+@app.route('/api/publicidad/subir', methods=['POST'])
+@rol_requerido('admin')
+def pub_subir():
+    try:
+        if 'archivo' not in request.files:
+            return jsonify({'success': False, 'message': 'No se recibió ningún archivo'}), 400
+        file = request.files['archivo']
+        mime = file.content_type
+        if mime not in _TIPOS_PERMITIDOS:
+            return jsonify({'success': False,
+                            'message': 'Tipo no permitido. Usa JPG, PNG, GIF, WEBP, MP4 o WEBM.'}), 400
+        file.seek(0, 2); size = file.tell(); file.seek(0)
+        if size > _PUB_MAX:
+            return jsonify({'success': False, 'message': 'El archivo supera 100 MB.'}), 400
+        fid   = str(_uuid.uuid4())[:8]
+        fname = f'{fid}_{secure_filename(file.filename)}'
+        file.save(os.path.join(_PUB_DIR, fname))
+        return jsonify({'success': True, 'archivo': {
+            'id': fid, 'nombre': secure_filename(file.filename),
+            'url': f'/static/publicidad/{fname}',
+            'tipo': _TIPOS_PERMITIDOS[mime], 'tamaño': size,
+        }}), 201
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ── POST /api/publicidad/activar/<id> ────────────────────────
+@app.route('/api/publicidad/activar/<archivo_id>', methods=['POST'])
+@rol_requerido('admin')
+def pub_activar(archivo_id):
+    try:
+        archivo = next((a for a in _pub_listar() if a['id'] == archivo_id), None)
+        if not archivo:
+            return jsonify({'success': False, 'message': 'Archivo no encontrado'}), 404
+        _pub_guardar_estado(archivo_id)
+        socketio.emit('publicidad_cambiada', {
+            'activo': True, 'archivo_id': archivo_id,
+            'url': archivo['url'], 'tipo': archivo['tipo'],
+        }, room='screen')
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ── POST /api/publicidad/desactivar ──────────────────────────
+@app.route('/api/publicidad/desactivar', methods=['POST'])
+@rol_requerido('admin')
+def pub_desactivar():
+    try:
+        _pub_guardar_estado(None)
+        socketio.emit('publicidad_cambiada',
+                      {'activo': False, 'archivo_id': None, 'url': None, 'tipo': None},
+                      room='screen')
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ── DELETE /api/publicidad/eliminar/<id> ─────────────────────
+@app.route('/api/publicidad/eliminar/<archivo_id>', methods=['DELETE'])
+@rol_requerido('admin')
+def pub_eliminar(archivo_id):
+    try:
+        archivo = next((a for a in _pub_listar() if a['id'] == archivo_id), None)
+        if not archivo:
+            return jsonify({'success': False, 'message': 'Archivo no encontrado'}), 404
+        fpath = os.path.join(_PUB_DIR, archivo['_fname'])
+        if os.path.exists(fpath):
+            os.remove(fpath)
+        if _pub_leer_estado().get('activo_id') == archivo_id:
+            _pub_guardar_estado(None)
+            socketio.emit('publicidad_cambiada',
+                          {'activo': False, 'archivo_id': None, 'url': None, 'tipo': None},
+                          room='screen')
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ── GET /api/publicidad/activo  (sin auth — para screen.html) ─
+@app.route('/api/publicidad/activo', methods=['GET'])
+def pub_activo():
+    """Screen lo llama al conectarse para restaurar publicidad persistida."""
+    try:
+        estado = _pub_leer_estado()
+        if not estado.get('activo_id'):
+            return jsonify({'success': True, 'activo': False}), 200
+        archivo = next((a for a in _pub_listar() if a['id'] == estado['activo_id']), None)
+        if not archivo:
+            return jsonify({'success': True, 'activo': False}), 200
+        return jsonify({'success': True, 'activo': True,
+                        'archivo_id': archivo['id'], 'url': archivo['url'],
+                        'tipo': archivo['tipo']}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 # ===================================
 # RUTAS DE MEDICOS

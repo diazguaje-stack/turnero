@@ -174,9 +174,8 @@ function renderInfoPantalla(p) {
                     ${chipsHtml}
                 </span>
             </div>
-            ${p.device_id ? `<div class="device-id-small" style="margin-top:12px;">
-                Device ID: ${p.device_id.substring(0,40)}...</div>` : ''}
-            <a href="/screen" target="_blank" class="link-pantalla">🔗 Abrir pantalla completa</a>`;
+                ${p.device_id ? `<div class="device-id-small" style="margin-top:12px;">
+            </div>` : ''}`;
     }
 
     return '';
