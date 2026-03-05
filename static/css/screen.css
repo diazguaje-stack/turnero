@@ -284,16 +284,18 @@ body::before {
 /* ── NOMBRE DEL PACIENTE — casi igual de grande que el código ── */
 /* CAMBIO 1: tamaño proporcional al código, blanco, efecto alerta */
 .panel-nombre-paciente {
-    font-family:'Outfit', sans-serif;
-    font-weight:600;
-    color:var(--white);
-    letter-spacing:0.04em; text-align:center;
-    max-width:92%;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    color: var(--white);
+    letter-spacing: 0.04em;
+    text-align: center;
+    max-width: 92%;
+    overflow: hidden;
+    white-space: normal;        /* ← permite salto de línea */
+    word-break: break-word;     /* ← rompe si una palabra es muy larga */
     text-shadow: 0 1px 16px rgba(0,0,0,0.7);
     transition: color 0.3s ease, text-shadow 0.3s ease;
 }
-
 /* Tamaños: ~65-70% del código */
 .layout-1 .panel-nombre-paciente { font-size:clamp(2.5rem, 7vw,  6rem);  }
 .layout-2 .panel-nombre-paciente { font-size:clamp(1.8rem, 5vw,  3.8rem); }
