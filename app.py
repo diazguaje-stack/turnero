@@ -1250,30 +1250,40 @@ def pub_activar(archivo_id):
         if not archivo:
             return jsonify({'success': False, 'message': 'Archivo no encontrado'}), 404
         _pub_guardar_estado(archivo_id)
-        socketio.emit('publicidad_cambiada', {
+
+        payload = {
             'activo': True, 'archivo_id': archivo_id,
             'url': archivo['url'], 'tipo': archivo['tipo'],
-        }, room='screen')
+        }
+
+        # ← Emitir a sala genérica Y a cada sala propia
+        socketio.emit('publicidad_cambiada', payload, room='screen')
+        for p in Pantalla.query.filter_by(estado='vinculada').all():
+            socketio.emit('publicidad_cambiada', payload, room=f'screen_{p.id}')
+
         return jsonify({'success': True}), 200
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
-# ── POST /api/publicidad/desactivar ──────────────────────────
 @app.route('/api/publicidad/desactivar', methods=['POST'])
 @rol_requerido('admin')
 def pub_desactivar():
     try:
         _pub_guardar_estado(None)
-        socketio.emit('publicidad_cambiada',
-                      {'activo': False, 'archivo_id': None, 'url': None, 'tipo': None},
-                      room='screen')
+
+        payload = {'activo': False, 'archivo_id': None, 'url': None, 'tipo': None}
+
+        # ← Mismo fix
+        socketio.emit('publicidad_cambiada', payload, room='screen')
+        for p in Pantalla.query.filter_by(estado='vinculada').all():
+            socketio.emit('publicidad_cambiada', payload, room=f'screen_{p.id}')
+
         return jsonify({'success': True}), 200
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
-# ── DELETE /api/publicidad/eliminar/<id> ─────────────────────
 @app.route('/api/publicidad/eliminar/<archivo_id>', methods=['DELETE'])
 @rol_requerido('admin')
 def pub_eliminar(archivo_id):
@@ -1286,13 +1296,17 @@ def pub_eliminar(archivo_id):
             os.remove(fpath)
         if _pub_leer_estado().get('activo_id') == archivo_id:
             _pub_guardar_estado(None)
-            socketio.emit('publicidad_cambiada',
-                          {'activo': False, 'archivo_id': None, 'url': None, 'tipo': None},
-                          room='screen')
+            payload = {'activo': False, 'archivo_id': None, 'url': None, 'tipo': None}
+
+            # ← Mismo fix
+            socketio.emit('publicidad_cambiada', payload, room='screen')
+            for p in Pantalla.query.filter_by(estado='vinculada').all():
+                socketio.emit('publicidad_cambiada', payload, room=f'screen_{p.id}')
+
         return jsonify({'success': True}), 200
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
-
+    
 
 # ── GET /api/publicidad/activo  (sin auth — para screen.html) ─
 @app.route('/api/publicidad/activo', methods=['GET'])
@@ -2000,6 +2014,7 @@ def on_join(data):
             if pantalla.estado == 'vinculada':
                 sala_propia = f'screen_{pantalla.id}'
                 join_room(sala_propia)
+                join_room('screen')
                 _screen_pantalla[request.sid] = str(pantalla.id)
                 print(f"[WS] ✅ Screen {request.sid} → sala {sala_propia} (vinculada)")
             elif pantalla.estado == 'pendiente':
@@ -2096,6 +2111,7 @@ def on_join_screen_propia(data):
 
     sala_propia = f'screen_{pantalla_id}'
     join_room(sala_propia)
+    join_room('screen')
     _screen_pantalla[request.sid] = str(pantalla_id)
 
     if device_fp:

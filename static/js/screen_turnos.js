@@ -303,22 +303,22 @@ function registrarListeners(socketInstance) {
         const zona = document.getElementById('zonaPublicidad');
         if (!zona) return;
         if (data.activo && data.url) {
-            zona.style.border  = 'none';
-            zona.style.padding = '0';
+            zona.style.border      = 'none';
+            zona.style.padding     = '0';
+            zona.style.visibility  = 'visible';   // ← AÑADIR
             zona.innerHTML = data.tipo === 'video'
                 ? `<video src="${data.url}" autoplay muted loop playsinline
                     style="width:100%;height:100%;object-fit:cover;display:block;"></video>`
                 : `<img src="${data.url}"
                     style="width:100%;height:100%;object-fit:cover;display:block;">`;
         } else {
-            zona.innerHTML     = '';
-            zona.style.border  = '1px dashed rgba(75,142,245,0.12)';
-            zona.style.padding = '';
+            zona.innerHTML         = '';
+            zona.style.visibility  = 'hidden';    // ← volver a ocultar al desactivar
+            zona.style.border      = '1px dashed rgba(75,142,245,0.12)';
+            zona.style.padding     = '';
         }
     });
 }
-
-
 // ── Init ──────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {

@@ -50,41 +50,31 @@
             </p>
         </div>
 
-        <!-- Estado 3: Pantalla vinculada — layout turnos + publicidad -->
         <div id="linkedState">
             <div class="screen-split">
 
-                <!-- ZONA SUPERIOR: paneles de turno (65%) -->
-                <div class="zona-turnos">
-                    <div id="multiPanelContainer" class="multi-panel-grid layout-1">
-                        <!-- Construido dinámicamente por screen_turnos.js -->
-                    </div>
-                </div>
-
-                <!-- Separador áureo entre zonas -->
-                <div class="zona-separador"></div>
-
-                <!-- ZONA INFERIOR: publicidad (35%) -->
+                <!-- IZQUIERDA: publicidad -->
                 <div class="zona-publicidad">
                     <div class="pub-placeholder">
                         <span class="pub-label">Publicidad</span>
-                        <!--
-                            ═══════════════════════════════════════════════
-                              ZONA DE PUBLICIDAD — Reemplaza pub-content:
-                              <img src="/static/img/banner.jpg" style="width:100%;height:100%;object-fit:cover">
-                              <video src="/static/video/clip.mp4" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover">
-                              <iframe src="https://tu-url.com" style="width:100%;height:100%;border:none">
-                            ═══════════════════════════════════════════════
-                        -->
                         <div class="pub-content" id="zonaPublicidad">
                             Espacio publicitario
                         </div>
                     </div>
                 </div>
 
+                <!-- Separador vertical dorado -->
+                <div class="zona-separador"></div>
+
+                <!-- DERECHA: turnos -->
+                <div class="zona-turnos">
+                    <div id="multiPanelContainer" class="multi-panel-grid layout-1">
+                    </div>
+                </div>
+
             </div>
         </div>
-
+        
         <!-- Mensaje de error -->
         <div id="errorMessage"></div>
 
