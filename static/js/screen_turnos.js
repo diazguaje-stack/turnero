@@ -35,7 +35,14 @@ function _desbloquearAudio() {
     const a = _getAudio();
     a.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
     a.play().catch(() => {});
+
+    try {
+        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        // Algunos navegadores lo crean en 'suspended', resume forzado
+        if (_audioCtx.state === 'suspended') _audioCtx.resume();
+    } catch(e) {}
 }
+
 function formatearCodigoParaVoz(codigo) {
     if (!codigo) return '';
     return codigo.split(/[-_]/).map(p => {
@@ -66,36 +73,60 @@ function encolarAnuncio(nombre, codigo, recepcion) {
 function _reproducirBeep() {
     return new Promise(resolve => {
         try {
-            const ctx  = new (window.AudioContext || window.webkitAudioContext)();
-            const osc  = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
+            // Si no hay contexto (no hubo click aún), saltar el beep silenciosamente
+            if (!_audioCtx) { resolve(); return; }
 
-            osc.type      = 'sine';
-            osc.frequency.setValueAtTime(880, ctx.currentTime);          // La5 — tono de alerta claro
-            gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.6, ctx.currentTime + 0.01);
-            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.28);
+            const ctx = _audioCtx;
 
-            osc.start(ctx.currentTime);
-            osc.stop(ctx.currentTime + 0.3);
-            osc.onended = () => { ctx.close(); resolve(); };
+            const doBeep = () => {
+                const osc  = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, ctx.currentTime);
+                gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.6,    ctx.currentTime + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.28);
+
+                osc.start(ctx.currentTime);
+                osc.stop(ctx.currentTime + 0.3);
+                // ← CRÍTICO: timeout de seguridad por si onended no dispara
+                const t = setTimeout(() => resolve(), 500);
+                osc.onended = () => { clearTimeout(t); resolve(); };
+            };
+
+            if (ctx.state === 'suspended') {
+                ctx.resume().then(doBeep).catch(() => resolve());
+            } else {
+                doBeep();
+            }
         } catch(e) { resolve(); }
     });
 }
+
 async function _procesarColaAudio() {
     if (_colaAudio.length === 0) { _reproduciendo = false; return; }
     _reproduciendo = true;
     const item = _colaAudio.shift();
 
-    if (item.pausa) await new Promise(r => setTimeout(r, item.pausa));
+    try {
+        if (item.pausa) await new Promise(r => setTimeout(r, item.pausa));
 
-    if (item.beep) {
-        await _reproducirBeep();
-    } else if (item.texto) {
-        await reproducirAudio(item.texto);
+        if (item.beep) {
+            // Timeout de seguridad: si el beep no resuelve en 1s, continuar
+            await Promise.race([
+                _reproducirBeep(),
+                new Promise(r => setTimeout(r, 1000))
+            ]);
+        } else if (item.texto) {
+            await reproducirAudio(item.texto);
+        }
+    } catch(e) {
+        console.warn('[AUDIO] Error en cola:', e);
     }
+
     _procesarColaAudio();
 }
 async function reproducirAudio(texto) {
@@ -270,6 +301,30 @@ function limpiarPantalla() {
     _colaAudio=[]; _reproduciendo=false;
 }
 
+
+function limpiarPanel(orden) {
+    const ps = panelState[orden];
+    if (!ps) return;
+
+    ps.codigo = null; ps.nombre = null; ps.medico = null;
+    try { localStorage.removeItem(`screen_ultimo_${orden}`); } catch(e) {}
+
+    const idleEl   = document.getElementById(`panel-idle-${orden}`);
+    const turnoEl  = document.getElementById(`panel-turno-${orden}`);
+    const codigoEl = document.getElementById(`panel-codigo-${orden}`);
+    const nombreEl = document.getElementById(`panel-nombre-${orden}`);
+    const doctorEl = document.getElementById(`panel-doctor-${orden}`);
+
+    if (idleEl)   idleEl.style.display  = 'flex';
+    if (turnoEl)  turnoEl.style.display = 'none';
+    if (codigoEl) { codigoEl.textContent = '—'; codigoEl.classList.remove('llamando'); }
+    if (nombreEl) { nombreEl.textContent = '';  nombreEl.classList.remove('llamando'); }
+    if (doctorEl) doctorEl.textContent = '';
+
+    // ← NO tocar _colaAudio ni _reproduciendo aquí
+    console.log(`[PANEL] 🧹 Panel ${orden} limpiado — recepcionista ${ps.recepcionistaId}`);
+}
+
 // ── Listeners ─────────────────────────────────────────────
 
 function registrarListeners(socketInstance) {
@@ -286,7 +341,7 @@ function registrarListeners(socketInstance) {
     socket.on('recepcionistas_asignados', (data) => {
         if (data.recepcionistas && data.recepcionistas.length > 0) construirPaneles(data.recepcionistas);
     });
-
+    
     
     socket.on('llamar_paciente', (data) => {
         const orden  = resolverOrdenPanel(data);
@@ -294,7 +349,27 @@ function registrarListeners(socketInstance) {
         mostrarTurnoEnPanel(orden, data.codigo, data.nombre, medico, true);
     });
 
-    socket.on('limpiar_historial',   () => limpiarPantalla());
+
+
+    socket.on('limpiar_historial', (data) => {
+        const recepId = data?.recepcionistaId;
+
+        if (!recepId) {
+            // Sin ID → limpieza global
+            limpiarPantalla();
+            return;
+        }
+
+        // Buscar el panel de ESTE recepcionista
+        const idx = miRecepcionistas.findIndex(r => String(r.id) === String(recepId));
+        if (idx === -1) {
+            console.warn(`[PANEL] limpiar_historial: recepcionista ${recepId} no encontrado en esta pantalla`);
+            return;
+        }
+
+        limpiarPanel(idx);
+    });
+
     socket.on('limpieza_completada', () => limpiarPantalla());
 
     socket.emit('pedir_numero_recepcion');

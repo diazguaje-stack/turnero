@@ -2262,7 +2262,6 @@ def on_limpiar_historial(data=None):
     print(f"[WS] 🧹 Historial limpiado — recepcionistaId: {recepcionista_id}")
 
     if recepcionista_id:
-        # Buscar la pantalla vinculada a ESTE recepcionista
         pantalla = Pantalla.query.filter_by(
             recepcionista_id = recepcionista_id,
             estado           = 'vinculada'
@@ -2271,19 +2270,24 @@ def on_limpiar_historial(data=None):
         if pantalla:
             sala_destino = f'screen_{pantalla.id}'
             print(f"[WS] 🧹 Limpiando solo: {sala_destino} (Pantalla {pantalla.numero})")
-            socketio.emit('limpiar_historial', {}, to=sala_destino)
+            # ← CRÍTICO: pasar recepcionistaId para que el cliente sepa QUÉ panel limpiar
+            socketio.emit('limpiar_historial',
+                          {'recepcionistaId': recepcionista_id},
+                          to=sala_destino)
 
-            # Limpiar _ultimo_llamado solo si era de esta pantalla
             if _ultimo_llamado and _ultimo_llamado.get('sala_destino') == sala_destino:
                 _ultimo_llamado = None
         else:
-            print(f"[WS] ⚠️ Recepcionista {recepcionista_id} no tiene pantalla vinculada — nada que limpiar")
+            print(f"[WS] ⚠️ Sin pantalla vinculada — buscando por panel_orden")
+            # Buscar en qué panel_orden está este recepcionista en cualquier pantalla activa
+            # y emitir a todas las screens activas con el recepcionistaId
+            socketio.emit('limpiar_historial',
+                          {'recepcionistaId': recepcionista_id},
+                          to='screen')
     else:
-        # Fallback: sin recepcionistaId → limpiar global (comportamiento anterior)
         print(f"[WS] 🧹 Sin recepcionistaId → limpieza global")
         _ultimo_llamado = None
         socketio.emit('limpiar_historial', {}, to='screen')
-
 
 init_db(app)
 

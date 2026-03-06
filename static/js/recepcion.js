@@ -12,7 +12,6 @@ let intervaloRefresco = null;
 let socket            = null;
 let historialLlamados = [];
 const INTERVALO_REFRESCO_MS = 15_000;
-const STORAGE_KEY = 'historial_llamados'; // ← CLAVE PARA PERSISTENCIA
 
 // ==================== INICIALIZACIÓN ====================
 
@@ -149,7 +148,7 @@ function conectarSocket() {
             
             // ← CRÍTICO: Limpiar también del localStorage
             try {
-                localStorage.removeItem(STORAGE_KEY);
+                localStorage.removeItem(getStoragekey());
                 console.log('[RECEPCION] ✅ localStorage limpiado por scheduler');
             } catch (error) {
                 console.error('[RECEPCION] Error al limpiar localStorage:', error);
@@ -184,6 +183,19 @@ function mostrarNotificacionRecepcion(mensaje, tipo = 'info', duracion = 3000) {
     }
 }
 
+
+function getStorageKey() {
+    try {
+        const token = sessionStorage.getItem('jwt_token');
+        if (token) {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            const userId = payload.user_id || payload.usuario || 'default';
+            return `historial_llamados_${userId}`;
+        }
+    } catch(e) {}
+    return 'historial_llamados_default';
+}
+
 // ==================== FUNCIONES DE PERSISTENCIA ====================
 
 /**
@@ -191,7 +203,7 @@ function mostrarNotificacionRecepcion(mensaje, tipo = 'info', duracion = 3000) {
  */
 function guardarHistorialEnStorage() {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(historialLlamados));
+        localStorage.setItem(getStoragekey(), JSON.stringify(historialLlamados));
         console.log(`💾 Historial guardado en localStorage (${historialLlamados.length} items)`);
     } catch (error) {
         console.error('❌ Error al guardar historial en localStorage:', error);
@@ -199,7 +211,7 @@ function guardarHistorialEnStorage() {
         if (error.name === 'QuotaExceededError') {
             historialLlamados = historialLlamados.slice(0, Math.floor(historialLlamados.length / 2));
             try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(historialLlamados));
+                localStorage.setItem(getStoragekey(), JSON.stringify(historialLlamados));
                 console.log('⚠️ localStorage lleno, se redujeron los registros');
             } catch (e) {
                 console.error('❌ No se pudo guardar ni siquiera el historial reducido:', e);
@@ -213,7 +225,7 @@ function guardarHistorialEnStorage() {
  */
 function cargarHistorialDelStorage() {
     try {
-        const guardado = localStorage.getItem(STORAGE_KEY);
+        const guardado = localStorage.getItem(getStoragekey());
         if (guardado) {
             historialLlamados = JSON.parse(guardado);
             console.log(`✅ Historial cargado desde localStorage (${historialLlamados.length} items)`);
