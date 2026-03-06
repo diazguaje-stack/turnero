@@ -16,8 +16,10 @@ const INTERVALO_REFRESCO_MS = 15_000;
 // ==================== INICIALIZACIÓN ====================
 
 document.addEventListener('DOMContentLoaded', () => {
-    cargarHistorialDelStorage(); // ← CARGAR ANTES QUE TODO
-    verificarSesion();
+    // ← NO cargar historial aquí todavía
+    verificarSesion().then(() => {
+        cargarHistorialDelStorage(); // ← Ahora sí, JWT ya está disponible
+    });
     cargarPacientes();
     cargarPapelera();
     conectarSocket();
@@ -148,7 +150,7 @@ function conectarSocket() {
             
             // ← CRÍTICO: Limpiar también del localStorage
             try {
-                localStorage.removeItem(getStoragekey());
+                localStorage.removeItem();
                 console.log('[RECEPCION] ✅ localStorage limpiado por scheduler');
             } catch (error) {
                 console.error('[RECEPCION] Error al limpiar localStorage:', error);
@@ -193,7 +195,9 @@ function getStorageKey() {
             return `historial_llamados_${userId}`;
         }
     } catch(e) {}
-    return 'historial_llamados_default';
+    // Fallback: usar el usuario guardado en sessionStorage directamente
+    const usuario = sessionStorage.getItem('usuario') || 'default';
+    return `historial_llamados_${usuario}`;
 }
 
 // ==================== FUNCIONES DE PERSISTENCIA ====================
@@ -203,7 +207,7 @@ function getStorageKey() {
  */
 function guardarHistorialEnStorage() {
     try {
-        localStorage.setItem(getStoragekey(), JSON.stringify(historialLlamados));
+        localStorage.setItem(getStorageKey(), JSON.stringify(historialLlamados));
         console.log(`💾 Historial guardado en localStorage (${historialLlamados.length} items)`);
     } catch (error) {
         console.error('❌ Error al guardar historial en localStorage:', error);
@@ -211,7 +215,7 @@ function guardarHistorialEnStorage() {
         if (error.name === 'QuotaExceededError') {
             historialLlamados = historialLlamados.slice(0, Math.floor(historialLlamados.length / 2));
             try {
-                localStorage.setItem(getStoragekey(), JSON.stringify(historialLlamados));
+                localStorage.setItem(getStorageKey(), JSON.stringify(historialLlamados));
                 console.log('⚠️ localStorage lleno, se redujeron los registros');
             } catch (e) {
                 console.error('❌ No se pudo guardar ni siquiera el historial reducido:', e);
@@ -225,7 +229,7 @@ function guardarHistorialEnStorage() {
  */
 function cargarHistorialDelStorage() {
     try {
-        const guardado = localStorage.getItem(getStoragekey());
+        const guardado = localStorage.getItem(getStorageKey());
         if (guardado) {
             historialLlamados = JSON.parse(guardado);
             console.log(`✅ Historial cargado desde localStorage (${historialLlamados.length} items)`);
@@ -401,6 +405,7 @@ async function verificarSesion() {
     if (userAvatarEl) userAvatarEl.textContent = nombreCompleto.charAt(0).toUpperCase();
 
     console.log(`✅ Recepción lista para: ${nombreCompleto}`);
+    // ← ya retorna implícitamente la Promise por ser async
 }
 
 function logout() {
