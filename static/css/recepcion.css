@@ -654,7 +654,7 @@ body {
     padding: 8px 12px;
     cursor: pointer;
     min-width: 90px;
-    max-width: 110px;
+    max-width: 130px;
     transition: border-color 0.2s, background 0.2s;
     user-select: none;
 }
@@ -681,9 +681,8 @@ body {
     color: #555;
     text-align: center;
     margin-top: 3px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;      /* ← permite salto de línea */
+    word-break: break-word;   /* ← rompe palabras muy largas */
     max-width: 100px;
 }
 

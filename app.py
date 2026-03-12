@@ -14,6 +14,16 @@ from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError 
 import time
+import json
+import uuid as _uuid
+from werkzeug.utils import secure_filename
+import os
+
+
+
+
+
+
 
 # ===================================
 # CONFIGURACION
@@ -69,13 +79,59 @@ _screen_disconnect_active = {}
 # HELPERS JWT       
 # ===================================
 
-# ===================================
-# LIMPIEZA DIARIA AUTOMÁTICA 00:00
-# ===================================
 
 
         
 
+_PUB_DIR    = os.path.join(os.path.dirname(__file__), 'static', 'publicidad')
+_PUB_ESTADO = os.path.join(_PUB_DIR, 'estado.json')
+os.makedirs(_PUB_DIR, exist_ok=True)
+
+_TIPOS_PERMITIDOS = {
+    'image/jpeg': 'imagen', 'image/png':  'imagen',
+    'image/gif':  'imagen', 'image/webp': 'imagen',
+    'video/mp4':  'video',  'video/webm': 'video',
+}
+_PUB_MAX = 100 * 1024 * 1024   # 100 MB
+
+
+def _pub_leer_estado():
+    try:
+        if os.path.exists(_PUB_ESTADO):
+            with open(_PUB_ESTADO) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {'activo_id': None}
+
+
+def _pub_guardar_estado(activo_id):
+    with open(_PUB_ESTADO, 'w') as f:
+        json.dump({'activo_id': activo_id}, f)
+
+
+def _pub_listar():
+    result = []
+    for fname in sorted(os.listdir(_PUB_DIR)):
+        if fname == 'estado.json':
+            continue
+        fpath = os.path.join(_PUB_DIR, fname)
+        if not os.path.isfile(fpath):
+            continue
+        partes      = fname.split('_', 1)
+        fid         = partes[0]
+        nombre_orig = partes[1] if len(partes) > 1 else fname
+        ext         = nombre_orig.rsplit('.', 1)[-1].lower() if '.' in nombre_orig else ''
+        tipo        = 'video' if ext in ('mp4', 'webm') else 'imagen'
+        result.append({
+            'id':     fid,
+            'nombre': nombre_orig,
+            'url':    f'/static/publicidad/{fname}',
+            'tipo':   tipo,
+            'tamaño': os.path.getsize(fpath),
+            '_fname': fname,
+        })
+    return result
 
 def pagina_protegida(*roles):
     """
@@ -1144,6 +1200,131 @@ def screen_status():
         return jsonify({'success': False, 'message': 'Error al verificar estado'}), 500
 
 
+
+# ── GET /api/publicidad/archivos ─────────────────────────────
+@app.route('/api/publicidad/archivos', methods=['GET'])
+@rol_requerido('admin')
+def pub_listar():
+    try:
+        archivos = _pub_listar()
+        estado   = _pub_leer_estado()
+        return jsonify({'success': True, 'archivos': archivos,
+                        'activo_id': estado.get('activo_id')}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ── POST /api/publicidad/subir ───────────────────────────────
+@app.route('/api/publicidad/subir', methods=['POST'])
+@rol_requerido('admin')
+def pub_subir():
+    try:
+        if 'archivo' not in request.files:
+            return jsonify({'success': False, 'message': 'No se recibió ningún archivo'}), 400
+        file = request.files['archivo']
+        mime = file.content_type
+        if mime not in _TIPOS_PERMITIDOS:
+            return jsonify({'success': False,
+                            'message': 'Tipo no permitido. Usa JPG, PNG, GIF, WEBP, MP4 o WEBM.'}), 400
+        file.seek(0, 2); size = file.tell(); file.seek(0)
+        if size > _PUB_MAX:
+            return jsonify({'success': False, 'message': 'El archivo supera 100 MB.'}), 400
+        fid   = str(_uuid.uuid4())[:8]
+        fname = f'{fid}_{secure_filename(file.filename)}'
+        file.save(os.path.join(_PUB_DIR, fname))
+        return jsonify({'success': True, 'archivo': {
+            'id': fid, 'nombre': secure_filename(file.filename),
+            'url': f'/static/publicidad/{fname}',
+            'tipo': _TIPOS_PERMITIDOS[mime], 'tamaño': size,
+        }}), 201
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ── POST /api/publicidad/activar/<id> ────────────────────────
+@app.route('/api/publicidad/activar/<archivo_id>', methods=['POST'])
+@rol_requerido('admin')
+def pub_activar(archivo_id):
+    try:
+        archivo = next((a for a in _pub_listar() if a['id'] == archivo_id), None)
+        if not archivo:
+            return jsonify({'success': False, 'message': 'Archivo no encontrado'}), 404
+        _pub_guardar_estado(archivo_id)
+
+        payload = {
+            'activo': True, 'archivo_id': archivo_id,
+            'url': archivo['url'], 'tipo': archivo['tipo'],
+        }
+
+        # ← Emitir a sala genérica Y a cada sala propia
+        socketio.emit('publicidad_cambiada', payload, room='screen')
+        for p in Pantalla.query.filter_by(estado='vinculada').all():
+            socketio.emit('publicidad_cambiada', payload, room=f'screen_{p.id}')
+
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/publicidad/desactivar', methods=['POST'])
+@rol_requerido('admin')
+def pub_desactivar():
+    try:
+        _pub_guardar_estado(None)
+
+        payload = {'activo': False, 'archivo_id': None, 'url': None, 'tipo': None}
+
+        # ← Mismo fix
+        socketio.emit('publicidad_cambiada', payload, room='screen')
+        for p in Pantalla.query.filter_by(estado='vinculada').all():
+            socketio.emit('publicidad_cambiada', payload, room=f'screen_{p.id}')
+
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/publicidad/eliminar/<archivo_id>', methods=['DELETE'])
+@rol_requerido('admin')
+def pub_eliminar(archivo_id):
+    try:
+        archivo = next((a for a in _pub_listar() if a['id'] == archivo_id), None)
+        if not archivo:
+            return jsonify({'success': False, 'message': 'Archivo no encontrado'}), 404
+        fpath = os.path.join(_PUB_DIR, archivo['_fname'])
+        if os.path.exists(fpath):
+            os.remove(fpath)
+        if _pub_leer_estado().get('activo_id') == archivo_id:
+            _pub_guardar_estado(None)
+            payload = {'activo': False, 'archivo_id': None, 'url': None, 'tipo': None}
+
+            # ← Mismo fix
+            socketio.emit('publicidad_cambiada', payload, room='screen')
+            for p in Pantalla.query.filter_by(estado='vinculada').all():
+                socketio.emit('publicidad_cambiada', payload, room=f'screen_{p.id}')
+
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+    
+
+# ── GET /api/publicidad/activo  (sin auth — para screen.html) ─
+@app.route('/api/publicidad/activo', methods=['GET'])
+def pub_activo():
+    """Screen lo llama al conectarse para restaurar publicidad persistida."""
+    try:
+        estado = _pub_leer_estado()
+        if not estado.get('activo_id'):
+            return jsonify({'success': True, 'activo': False}), 200
+        archivo = next((a for a in _pub_listar() if a['id'] == estado['activo_id']), None)
+        if not archivo:
+            return jsonify({'success': True, 'activo': False}), 200
+        return jsonify({'success': True, 'activo': True,
+                        'archivo_id': archivo['id'], 'url': archivo['url'],
+                        'tipo': archivo['tipo']}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 # ===================================
 # RUTAS DE MEDICOS
 # ===================================
@@ -1833,6 +2014,7 @@ def on_join(data):
             if pantalla.estado == 'vinculada':
                 sala_propia = f'screen_{pantalla.id}'
                 join_room(sala_propia)
+                join_room('screen')
                 _screen_pantalla[request.sid] = str(pantalla.id)
                 print(f"[WS] ✅ Screen {request.sid} → sala {sala_propia} (vinculada)")
             elif pantalla.estado == 'pendiente':
@@ -1929,6 +2111,7 @@ def on_join_screen_propia(data):
 
     sala_propia = f'screen_{pantalla_id}'
     join_room(sala_propia)
+    join_room('screen')
     _screen_pantalla[request.sid] = str(pantalla_id)
 
     if device_fp:
@@ -1936,6 +2119,35 @@ def on_join_screen_propia(data):
 
     print(f"[WS] ✅ Screen vinculada al sid {request.sid} → sala {sala_propia}")
     emit('joined_screen_propia', {'sala': sala_propia, 'pantalla_id': pantalla_id})
+
+    with app.app_context():
+            pantalla = db.session.get(Pantalla, pantalla_id)
+            if pantalla and pantalla.estado == 'vinculada':
+                filas = (db.session.execute(
+                    db.select(
+                        pantalla_recepciones.c.recepcionista_id,
+                        pantalla_recepciones.c.orden
+                    ).where(
+                        pantalla_recepciones.c.pantalla_id == pantalla_id
+                    ).order_by(pantalla_recepciones.c.orden)
+                )).fetchall()
+
+                recepcionistas = []
+                for fila in filas:
+                    u = db.session.get(Usuario, fila[0])
+                    if u:
+                        recepcionistas.append({
+                            'id':              str(u.id),
+                            'nombre_completo': u.nombre_completo or u.usuario,
+                            'orden':           fila[1]
+                        })
+
+                if recepcionistas:
+                    emit('numero_recepcion', {
+                        'numRecepcion':   recepcionistas[0]['nombre_completo'],
+                        'recepcionistas': recepcionistas
+                    })
+                    print(f"[WS] 📋 Recepcionistas enviados tras join_screen_propia: {len(recepcionistas)}")
 
 
 @socketio.on('llamar_paciente')
@@ -2050,7 +2262,6 @@ def on_limpiar_historial(data=None):
     print(f"[WS] 🧹 Historial limpiado — recepcionistaId: {recepcionista_id}")
 
     if recepcionista_id:
-        # Buscar la pantalla vinculada a ESTE recepcionista
         pantalla = Pantalla.query.filter_by(
             recepcionista_id = recepcionista_id,
             estado           = 'vinculada'
@@ -2059,19 +2270,24 @@ def on_limpiar_historial(data=None):
         if pantalla:
             sala_destino = f'screen_{pantalla.id}'
             print(f"[WS] 🧹 Limpiando solo: {sala_destino} (Pantalla {pantalla.numero})")
-            socketio.emit('limpiar_historial', {}, to=sala_destino)
+            # ← CRÍTICO: pasar recepcionistaId para que el cliente sepa QUÉ panel limpiar
+            socketio.emit('limpiar_historial',
+                          {'recepcionistaId': recepcionista_id},
+                          to=sala_destino)
 
-            # Limpiar _ultimo_llamado solo si era de esta pantalla
             if _ultimo_llamado and _ultimo_llamado.get('sala_destino') == sala_destino:
                 _ultimo_llamado = None
         else:
-            print(f"[WS] ⚠️ Recepcionista {recepcionista_id} no tiene pantalla vinculada — nada que limpiar")
+            print(f"[WS] ⚠️ Sin pantalla vinculada — buscando por panel_orden")
+            # Buscar en qué panel_orden está este recepcionista en cualquier pantalla activa
+            # y emitir a todas las screens activas con el recepcionistaId
+            socketio.emit('limpiar_historial',
+                          {'recepcionistaId': recepcionista_id},
+                          to='screen')
     else:
-        # Fallback: sin recepcionistaId → limpiar global (comportamiento anterior)
         print(f"[WS] 🧹 Sin recepcionistaId → limpieza global")
         _ultimo_llamado = None
         socketio.emit('limpiar_historial', {}, to='screen')
-
 
 init_db(app)
 

@@ -5,23 +5,31 @@
 document.addEventListener('DOMContentLoaded', async function () {
     console.log('Panel de administrador cargando...');
 
-    // 1. Verificar sesión PRIMERO — si falla, redirige al login y para aquí
-    await checkAuth();         // config.js
+    // 1. Verificar sesión PRIMERO
+    await checkAuth();
 
     // 2. Setup de navegación
-    setupNavegacion();         // config.js
+    setupNavegacion();
 
     // 3. Inicializar listeners de formularios y modales
-    initUsuarios();            // usuarios.js
+    initUsuarios();
 
-    // 4. Cargar datos iniciales UNA SOLA VEZ
-    await loadUsersFromBackend(); // usuarios.js
+    // 4. Cargar datos iniciales
+    await loadUsersFromBackend();
 
-    // 5. Conectar WebSocket DESPUÉS de que todo esté listo
-    // Así los eventos WS no llegan antes de que el DOM y la sesión estén listos
-    conectarSocketAdmin();     // usuarios.js
+    // 5. Conectar WebSocket
+    conectarSocketAdmin();
+
+    // 6. Inicializar Publicidad — DESPUÉS del socket
+    //    Esperamos un tick para que socketAdmin esté disponible
+    setTimeout(() => {
+        if (typeof Publicidad !== 'undefined' && typeof socketAdmin !== 'undefined') {
+            Publicidad.init(socketAdmin);
+            console.log('✅ Publicidad inicializada');
+        } else {
+            console.warn('⚠️ Publicidad o socketAdmin no disponible');
+        }
+    }, 300);
 
     console.log('✅ Panel de administrador listo');
 });
-
-console.log('✅ main.js cargado');

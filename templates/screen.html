@@ -5,34 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pantalla de Turnos</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/screen.css') }}">
 </head>
 <body>
 
     <script>
-        // Número de recepción legacy (no se usa activamente en v2, pero evita errores)
+        // FIX #6: el código de vinculación SOLO vive en el modal del admin.
+        // En esta pantalla solo se muestra el número de código en el estado
+        // "pendiente" para que el admin lo ingrese. No se expone en linkedState.
         const numeroRecepcionServidor = "{{ numero_recepcion }}" || '1';
         const urlParams = new URLSearchParams(window.location.search);
         let numeroRecepcion = urlParams.get('recepcion') || numeroRecepcionServidor || '1';
     </script>
 
+    <!-- Línea dorada superior -->
     <div class="top-rule"></div>
 
-    <!-- Nombre de recepción(es) en esquina superior -->
-    <div id="recepcionistaCorner">
-        <span class="corner-name" id="cornerName">Sin asignar</span>
+    <!--
+        FIX #1 y #3: #recepcionistaCorner está en el HTML para compatibilidad
+        con screen_vinculacion.js, pero el CSS lo oculta con display:none !important.
+        No aparecerá nunca, ni antes ni después de vincular.
+    -->
+    <div id="recepcionistaCorner" aria-hidden="true">
+        <span class="corner-name" id="cornerName"></span>
     </div>
 
     <div class="container">
 
-        <!-- Estado: Conectando -->
+        <!-- Estado 1: Conectando al servidor -->
         <div id="connectingState">
             <div class="spinner-ring"></div>
             <span class="connecting-label">Conectando</span>
         </div>
 
-        <!-- Estado: Pendiente de vinculación -->
+        <!-- Estado 2: Esperando vinculación — muestra código para el admin -->
         <div id="pendingState">
             <div class="pending-header">Código de vinculación</div>
             <div class="codigo-frame">
@@ -43,28 +50,46 @@
             </p>
         </div>
 
-        <!-- Estado: Vinculada — multipanel ocupa TODA la pantalla -->
         <div id="linkedState">
-            <div id="multiPanelContainer" class="multi-panel-grid layout-1">
-                <!-- Construido dinámicamente por screen_turnos.js -->
+            <div class="screen-split">
+
+                <!-- IZQUIERDA: publicidad -->
+                <div class="zona-publicidad">
+                    <div class="pub-placeholder">
+                        <span class="pub-label">Publicidad</span>
+                        <div class="pub-content" id="zonaPublicidad">
+                            Espacio publicitario
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Separador vertical dorado -->
+                <div class="zona-separador"></div>
+
+                <!-- DERECHA: turnos -->
+                <div class="zona-turnos">
+                    <div id="multiPanelContainer" class="multi-panel-grid layout-1">
+                    </div>
+                </div>
+
             </div>
         </div>
-
-        <!-- Error -->
+        
+        <!-- Mensaje de error -->
         <div id="errorMessage"></div>
 
     </div>
 
     <!-- Barra de estado inferior -->
     <div class="status-bar">
-        <div>
+        <div style="display:flex;align-items:center;">
             <span class="status-dot" id="conexionDot"></span>
             <span class="status-text-bar">Sistema de Turnos</span>
         </div>
         <div id="ultimaActualizacion" class="status-text-bar">—</div>
     </div>
 
-    <!-- Scripts — Socket.io PRIMERO, luego vinculacion, luego turnos -->
+    <!-- Scripts: Socket primero, luego vinculacion, luego turnos -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='js/screen_vinculacion.js') }}"></script>
     <script src="{{ url_for('static', filename='js/screen_turnos.js') }}"></script>

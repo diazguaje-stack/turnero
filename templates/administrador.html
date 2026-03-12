@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Panel de Administrador</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/administrador.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/publicidad.css') }}">
 </head>
 <body>
     <!-- Header -->
@@ -62,11 +63,23 @@
                     </svg>
                     Estadísticas
                 </button>
+                <!-- NUEVO -->
+                <button class="nav-item" data-section="publicidad">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+                        <path d="M8 21h8M12 17v4"></path>
+                        <line x1="7" y1="8" x2="7.01" y2="8"></line>
+                        <line x1="11" y1="8" x2="17" y2="8"></line>
+                        <line x1="11" y1="11" x2="17" y2="11"></line>
+                    </svg>
+                    Publicidad
+                </button>
             </nav>
         </aside>
 
         <!-- Content Area -->
         <main class="content">
+
             <!-- Section: Usuarios -->
             <section id="section-usuarios" class="section active">
                 <div class="section-header">
@@ -85,9 +98,7 @@
                         🗑 Papelera
                     </button>
                 </div>
-
                 <div id="usersGrid" class="users-grid"></div>
-
                 <div id="emptyState" class="empty-state" style="display: none;">
                     <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -108,9 +119,7 @@
                         <p class="section-description">Administra las pantallas de turnos del sistema</p>
                     </div>
                 </div>
-
                 <div id="pantallasMessageContainer"></div>
-
                 <div id="pantallasGrid" class="pantallas-grid">
                     <div style="text-align: center; padding: 40px; color: #6b7280;">
                         Cargando pantallas...
@@ -126,7 +135,6 @@
                         <p class="section-description">Métricas y datos generales</p>
                     </div>
                 </div>
-
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-icon">
@@ -142,7 +150,6 @@
                             <p>Usuarios Totales</p>
                         </div>
                     </div>
-
                     <div class="stat-card">
                         <div class="stat-icon">
                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -155,7 +162,6 @@
                             <p>Disponibilidad</p>
                         </div>
                     </div>
-
                     <div class="stat-card">
                         <div class="stat-icon">
                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -169,6 +175,86 @@
                     </div>
                 </div>
             </section>
+
+            <!-- ═══════════════════════════════════
+                 Section: Publicidad  ← NUEVA
+            ════════════════════════════════════ -->
+            <section id="section-publicidad" class="section">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">🎬 Publicidad</h2>
+                        <p class="section-description">Sube imágenes o videos para mostrar en la zona inferior de las pantallas de turnos</p>
+                    </div>
+                    <button class="pub-btn-refresh" onclick="Publicidad.cargarArchivos()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                        </svg>
+                        Actualizar lista
+                    </button>
+                </div>
+
+                <div class="pub-layout">
+
+                    <!-- Izquierda: subida + lista -->
+                    <div class="pub-panel">
+
+                        <label for="pub-file-input" class="pub-dropzone" id="pub-dropzone">
+                            <div class="pub-dz-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                            </div>
+                            <p class="pub-dz-title">Arrastra aquí tu imagen o video</p>
+                            <p class="pub-dz-hint">o haz clic para explorar archivos del equipo</p>
+                            <span class="pub-dz-types">JPG · PNG · GIF · WEBP · MP4 · WEBM &nbsp;·&nbsp; máx. 100 MB</span>
+                        </label>
+
+                        
+                        <!-- Abre el explorador de archivos del sistema operativo -->
+                        <input type="file" id="pub-file-input"
+                            accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm"
+                            style="visibility:hidden; position:absolute; width:0; height:0;">
+
+                        <div class="pub-progress-wrap">
+                            <div class="pub-progress-fill" id="pub-progress-fill"></div>
+                        </div>
+                        <p class="pub-upload-msg" id="pub-upload-msg"></p>
+
+                        <div class="pub-list-header">
+                            <span class="pub-list-title">Archivos disponibles</span>
+                            <span class="pub-list-count" id="pub-count">0</span>
+                        </div>
+
+                        <!-- Lista renderizada por publicidad.js -->
+                        <div class="pub-list" id="pub-lista">
+                            <div class="pub-empty">
+                                <p>No hay archivos todavía.<br>Sube una imagen o video para comenzar.</p>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    
+                        <div class="pub-activo-info" id="pub-activo-info" style="display:none">
+                            <span class="pub-activo-dot"></span>
+                            <span class="pub-activo-nombre" id="pub-activo-nombre">—</span>
+                            <button class="pub-btn-stop" onclick="Publicidad.desactivar()">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="6" y="4" width="4" height="16"></rect>
+                                    <rect x="14" y="4" width="4" height="16"></rect>
+                                </svg>
+                                Detener
+                            </button>
+                        </div>
+
+                    </div>
+
+                </div>
+            </section>
+            
         </main>
     </div>
 
@@ -188,7 +274,6 @@
                 <!-- Campos trampa para evitar autocompletado -->
                 <input type="text" name="fakeuser" style="display:none">
                 <input type="password" name="fakepass" style="display:none">
-
                 <div class="form-group">
                     <label for="newUsername">Usuario</label>
                     <input type="text" id="newUsername" name="usuario_nuevo" required placeholder="Ingresa el nombre de usuario" autocomplete="new-username" readonly onfocus="this.removeAttribute('readonly')">
@@ -233,7 +318,6 @@
         </div>
     </div>
 
-    
     <!-- Modal: Detalles de Usuario -->
     <div id="userDetailsModal" class="modal">
         <div class="modal-content">
@@ -326,12 +410,14 @@
     </div>
 
     <div id="toast" class="toast"></div>
+
     <!-- DEBE estar antes de cualquier script que use io() -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='js/config.js') }}"></script>
     <script src="{{ url_for('static', filename='js/usuarios.js') }}"></script>
     <script src="{{ url_for('static', filename='js/pantallas.js') }}"></script>
     <script src="{{ url_for('static', filename='js/estadisticas.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/publicidad.js') }}"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
 </body>
